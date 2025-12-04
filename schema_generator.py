@@ -1,11 +1,15 @@
 import json
 import os
 import re
-from langchain_ollama.llms import OllamaLLM
+from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.documents import Document
+from langchain_chroma import Chroma
 
 # === CONFIG ===
 SCHEMA_FILE = "schema_canonico.json"
+DB_DIR = "./vector_store"
+COLLECTION_NAME = "schema_canonico"
 MODEL_NAME = "gemma3:12b"
 
 # === LLM ===
@@ -85,15 +89,76 @@ Answer only with "A" or "B".
 
 
 # === 2️⃣ Function to generate/update canonical schema ===
-def generate_schema_canonical(raw_schema_text: str, current_schema: dict | None = None) -> dict:
+def update_schema_with_existing(raw_schema_text: str, current_schema: dict | None = None) -> dict:
     """
     Uses an LLM model to generate or update the canonical schema.
     If a current schema exists, it passes it as context.
     """
 
-    context_part = ""
+    current_schema_text = ""
     if current_schema:
-        context_part = f"Current schema:\n{json.dumps(current_schema, indent=2, ensure_ascii=False)}\n\n"
+        current_schema_text = f"Current schema:\n{json.dumps(current_schema, indent=2, ensure_ascii=False)}\n\n"
+
+    print("\n📄 Raw schema text being sent to LLM:\n")
+    print(raw_schema_text)
+    print("\n" + "="*60 + "\n")
+
+    template = """
+You are an expert database schema analyst.
+
+You have been provided with:
+1. The CURRENT canonical schema (JSON format)
+2. NEW text describing additional tables or modifications to existing tables
+
+Your task:
+- Analyze the new text to identify any NEW tables or MODIFIED columns in existing tables
+- Preserve all existing tables and columns from the current schema
+- Add only the NEW tables or merge modifications into existing tables
+- Return a SINGLE, complete JSON schema that includes both the current schema and the updates
+
+IMPORTANT RULES:
+- Do NOT remove any existing tables or columns
+- If a table already exists, ADD new columns or UPDATE existing ones (don't duplicate)
+- Maintain the same JSON structure: {{"tables": [...], "semantic_notes": [...]}}
+- Return ONLY the updated JSON schema, no other text or explanations
+- Each table must have: "name", "columns" (array)
+- Each column must have: "name", "type", "constraints" (array)
+
+=== CURRENT SCHEMA ===
+{current_schema_str}
+
+=== NEW TEXT ===
+{new_text}
+
+Return the UPDATED schema JSON:
+"""
+
+    chain = ChatPromptTemplate.from_template(template) | model
+    response = chain.invoke({
+        "current_schema": current_schema_text,
+        "raw_schema_text": raw_schema_text
+    })
+
+    # parsing
+    if isinstance(response, str):
+        content = response.strip()
+    elif hasattr(response, "content"):
+        content = response.content.strip()
+    else:
+        content = str(response).strip()
+
+    print(f"📄 Raw LLM response: {content}")  # Debug output
+
+    # Try to extract JSON with multiple methods
+    schema = extract_json_from_response(content)
+    
+    return schema
+
+# === 2️⃣ Function to generate/update canonical schema ===
+def generate_schema_canonical(raw_schema_text: str) -> dict:
+    """
+    Uses an LLM model to generate the canonical schema.
+    """
 
     print("\n📄 Raw schema text being sent to LLM:\n")
     print(raw_schema_text)
@@ -130,7 +195,6 @@ Rules:
 - If no current schema, create new one
 - If current schema exists, update it with new tables/columns
 
-{context_part}
 SQL DDL to process:
 \"\"\"{raw_schema_text}\"\"\"
 
@@ -139,7 +203,6 @@ Return ONLY the JSON object:
 
     chain = ChatPromptTemplate.from_template(template) | model
     response = chain.invoke({
-        "context_part": context_part,
         "raw_schema_text": raw_schema_text
     })
 
@@ -214,6 +277,118 @@ def create_schema_manually(content: str) -> dict:
     print(f"🛠️  Manually created schema with {len(tables)} tables")
     return schema
 
+def validate_schema_structure(schema: dict) -> bool:
+    """Validate that the schema has the expected structure"""
+    if not isinstance(schema, dict):
+        return False
+    if "tables" not in schema:
+        return False
+    if not isinstance(schema["tables"], list):
+        return False
+    
+    # Check if tables have proper structure
+    for table in schema["tables"]:
+        if not isinstance(table, dict):
+            return False
+        if "name" not in table:
+            return False
+        if "columns" not in table or not isinstance(table["columns"], list):
+            return False
+    
+    return True
+
+# === FUNCTION: COMPLETE SCHEMA UPDATE WORKFLOW ===
+def update_schema_with_vector_store(new_text: str) -> dict:
+    """
+    Main orchestrator function that handles schema updates when a vector store exists.
+    
+    Workflow:
+    1. Load the current schema from file
+    2. Generate an updated schema using LLM prompt with current schema + new text
+    3. Save the updated schema to file
+    4. Validate the schema structure
+    5. Recreate the vector store
+    
+    Returns the updated schema.
+    """
+    # Step 1: Load current schema
+    if not os.path.exists(SCHEMA_FILE):
+        raise FileNotFoundError(f"Schema file '{SCHEMA_FILE}' not found. Please create a schema first.")
+    
+    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+        current_schema = json.load(f)
+    
+    print("\n📘 Current schema loaded:")
+    print_schema_preview(current_schema)
+    
+    # Step 2: Generate updated schema
+    print("\n🔄 Updating schema with new information...")
+    updated_schema = update_schema_with_existing(new_text, current_schema)
+    
+    return updated_schema
+
+# === FUNCTION: VECTOR STORE CONSTRUCTION / UPDATE ===
+def build_vector_store(schema_data: dict):
+    """
+    Builds or updates the vector store (RAG) starting from the canonical schema.
+    """
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+
+    documents = []
+    ids = []
+
+    for table in schema_data.get("tables", []):
+        table_name = table.get("name", "unknown_table")
+        columns = table.get("columns", [])
+
+        col_lines = []
+        for col in columns:
+            col_name = col.get("name", "unknown_column")
+            col_type = col.get("type", "UNKNOWN_TYPE")
+            constraints = ", ".join(col.get("constraints", []))
+            col_line = f"- {col_name} ({col_type}) {constraints}".strip()
+            col_lines.append(col_line)
+
+        text = f"Table: {table_name}\nColumns:\n" + "\n".join(col_lines)
+        doc = Document(page_content=text, metadata={"table": table_name})
+        documents.append(doc)
+        ids.append(table_name)
+
+    print(f"\n📄 Created {len(documents)} documents to embed...")
+
+    add_schema = not os.path.exists(DB_DIR)
+
+    vector_store = Chroma(
+        collection_name=COLLECTION_NAME,
+        persist_directory=DB_DIR,
+        embedding_function=embeddings,
+    )
+
+    if add_schema:
+        print("🧠 Creating a new vector store...")
+        vector_store.add_documents(documents=documents, ids=ids)
+    else:
+        print("🔄 Updating existing vector store...")
+        # For updates, we need to handle existing documents
+        existing_ids = vector_store.get()["ids"]
+        if existing_ids:
+            vector_store.delete(ids=existing_ids)
+        vector_store.add_documents(documents=documents, ids=ids)
+    
+    print("✅ Vector store updated and saved in:", DB_DIR)
+
+    # Confirmation print
+    print("\n🔎 Current content of the vector store:")
+    all_docs = vector_store.get(include=["metadatas", "documents"])
+
+    for i, (doc_text, meta) in enumerate(zip(all_docs["documents"], all_docs["metadatas"])):  # type: ignore
+        print(f"\n🧱 Document #{i+1}")
+        print("📘 Table:", meta.get("table", "N/A"))
+        print("📄 Content:")
+        print(doc_text)
+        print("-" * 50)
+
+    return vector_store
 
 # === MAIN ===
 if __name__ == "__main__":
@@ -237,75 +412,107 @@ if __name__ == "__main__":
         print("❌ No text provided. Exiting.")
         exit()
 
-    # Load existing schema (if present)
-    if os.path.exists(SCHEMA_FILE):
+    # === CHECK IF SCHEMA FILE AND VECTOR STORE EXIST ===
+    schema_exists = os.path.exists(SCHEMA_FILE) and os.path.getsize(SCHEMA_FILE) > 0
+    vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
+
+    if schema_exists and vector_store_exists:
+        print("\n✅ Existing schema and vector store detected!")
+        print(f"📂 Found: {SCHEMA_FILE}")
+        print(f"📂 Found: {DB_DIR}\n")
+
+        # Load current schema
         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
             current_schema = json.load(f)
-        print("📂 Existing schema found and loaded.")
-        # Classify update
-        print("\n🔍 Analyzing update type...")
+
+        print("📘 Current schema:")
+        print_schema_preview(current_schema)
+
+        # === CLASSIFY THE UPDATE ===
+        print("\n🔍 Classifying the update...")
         update_type = classify_update(raw_text)
-        print(f"📄 Type detected: {update_type}")
-        # Update based on type
+        print(f"📊 Update type classified as: {update_type}\n")
+
         if update_type == "semantic":
-            print("🧠 Semantic update: adding description.")
-            if current_schema is None:
-                current_schema = {"tables": [], "semantic_notes": []}
-            current_schema.setdefault("semantic_notes", []).append(raw_text)
+            # === SEMANTIC UPDATE: Add notes to existing schema ===
+            print("📝 Processing SEMANTIC update (adding notes to existing schema)...")
+            
+            # Add new semantic notes to the existing schema
+            if "semantic_notes" not in current_schema:
+                current_schema["semantic_notes"] = []
+            
+            current_schema["semantic_notes"].append(raw_text)
+            
             schema = current_schema
+            print("✅ Semantic notes added to schema.")
 
-        elif update_type == "structural":
-            print("🏗️ Structural update: regenerating canonical schema via LLM...")
-            schema = generate_schema_canonical(raw_text, current_schema)
-        else:
-            print("⚠️ Type not recognized, no modification applied.")
-            schema = current_schema or {"tables": [], "semantic_notes": []}
+        else:  # structural update
+            # === STRUCTURAL UPDATE: Generate new schema ===
+            print("🔧 Processing STRUCTURAL update (generating new schema)...")
+            
+            schema = update_schema_with_existing(raw_text, current_schema)
+            print("✅ Structural schema generated.")
+
     else:
-        current_schema = None
-        print("🆕 No previous schema, a new one will be created.")
-        schema = generate_schema_canonical(raw_text, current_schema)
+        # === NO EXISTING SCHEMA/VECTOR STORE: Generate from scratch ===
+        print("\n❌ No existing schema or vector store found.")
+        print("🆕 Generating schema from scratch...\n")
+        
+        schema = generate_schema_canonical(raw_text)
+        print("✅ New schema generated.")
 
-    # Save to file
+    # === SAVE AND VALIDATE SCHEMA ===
     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
         json.dump(schema, f, indent=2, ensure_ascii=False)
+    print(f"\n✅ Schema saved to '{SCHEMA_FILE}'")
 
-    print("\n✅ Updated canonical schema saved in schema_canonico.json.")
+    print("\n📘 Final schema preview:")
+    print_schema_preview(schema)
     
-    # Show schema preview
-    print_schema_preview(schema)
-
-
-def update_schema(raw_text: str) -> dict:
-    """
-    Reusable function: updates schema_canonico.json based on the provided text.
-    """
-    if not raw_text.strip():
-        raise ValueError("No text provided for schema update.")
-
-    if os.path.exists(SCHEMA_FILE):
-        with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
-            current_schema = json.load(f)
+    if validate_schema_structure(schema):
+        print("\n✅ Schema validation passed.")
+        print(f"📊 Found {len(schema.get('tables', []))} tables in schema.")
+        
+        # Build/recreate vector store
+        print("\n🔨 Building/recreating vector store...")
+        build_vector_store(schema)
+        print("\n✅ Workflow completed successfully!")
     else:
-        current_schema = None
+        print("\n❌ Schema validation failed. Schema has invalid structure.")
+        schema = None
 
-    update_type = classify_update(raw_text)
 
-    if update_type == "semantic":
-        if current_schema is None:
-            current_schema = {"tables": [], "semantic_notes": []}
-        current_schema.setdefault("semantic_notes", []).append(raw_text)
-        schema = current_schema
+# def update_schema(raw_text: str) -> dict:
+#     """
+#     Reusable function: updates schema_canonico.json based on the provided text.
+#     """
+#     if not raw_text.strip():
+#         raise ValueError("No text provided for schema update.")
 
-    elif update_type == "structural":
-        schema = generate_schema_canonical(raw_text, current_schema)
+#     if os.path.exists(SCHEMA_FILE):
+#         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+#             current_schema = json.load(f)
+#     else:
+#         current_schema = None
 
-    else:
-        schema = current_schema or {"tables": [], "semantic_notes": []}
+#     update_type = classify_update(raw_text)
 
-    with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
-        json.dump(schema, f, indent=2, ensure_ascii=False)
+#     if update_type == "semantic":
+#         if current_schema is None:
+#             current_schema = {"tables": [], "semantic_notes": []}
+#         current_schema.setdefault("semantic_notes", []).append(raw_text)
+#         schema = current_schema
 
-    # Show preview even when using the function
-    print_schema_preview(schema)
+#     elif update_type == "structural":
+#         schema = generate_schema_canonical(raw_text)
 
-    return schema
+#     else:
+#         schema = current_schema or {"tables": [], "semantic_notes": []}
+
+#     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
+#         json.dump(schema, f, indent=2, ensure_ascii=False)
+
+#     # Show preview even when using the function
+#     print_schema_preview(schema)
+
+#     return schema
