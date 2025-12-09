@@ -1,6 +1,12 @@
 import json
 import os
 import re
+from utils.schema_utils import (
+    print_schema_preview,
+    extract_json_from_response,
+    create_schema_manually,
+    validate_schema_structure,
+)
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
@@ -50,6 +56,82 @@ def print_schema_preview(schema: dict):
         print("\n📝 No semantic notes")
     
     print("=" * 60)
+    
+def extract_json_from_response(content: str) -> dict:
+    """Extract JSON from LLM response using multiple methods"""
+    
+    # Method 1: Direct JSON parsing
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+    
+    # Method 2: Extract JSON between curly braces
+    try:
+        # Find the first { and last }
+        start = content.find('{')
+        end = content.rfind('}') + 1
+        
+        if start >= 0 and end > start:
+            json_str = content[start:end]
+            # Clean up common issues
+            json_str = re.sub(r',\s*}', '}', json_str)  # Remove trailing commas
+            json_str = re.sub(r',\s*]', ']', json_str)  # Remove trailing commas in arrays
+            return json.loads(json_str)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    
+    # Method 3: Look for code blocks
+    try:
+        json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', content, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(1))
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    
+    # Method 4: Manual parsing as fallback
+    print("⚠️ Could not parse JSON automatically, creating schema manually...")
+    return create_schema_manually(content)
+
+def create_schema_manually(content: str) -> dict:
+    """Create a basic schema structure manually as fallback"""
+    schema = {
+        "tables": [],
+        "semantic_notes": ["Schema generated manually due to parsing issues"]
+    }
+    
+    # Simple table detection from CREATE TABLE statements
+    create_table_pattern = r'CREATE TABLE\s+(\w+)\s*\('
+    tables = re.findall(create_table_pattern, content, re.IGNORECASE)
+    
+    for table_name in tables:
+        schema["tables"].append({
+            "name": table_name,
+            "columns": []
+        })
+    
+    print(f"🛠️  Manually created schema with {len(tables)} tables")
+    return schema
+
+def validate_schema_structure(schema: dict) -> bool:
+    """Validate that the schema has the expected structure"""
+    if not isinstance(schema, dict):
+        return False
+    if "tables" not in schema:
+        return False
+    if not isinstance(schema["tables"], list):
+        return False
+    
+    # Check if tables have proper structure
+    for table in schema["tables"]:
+        if not isinstance(table, dict):
+            return False
+        if "name" not in table:
+            return False
+        if "columns" not in table or not isinstance(table["columns"], list):
+            return False
+    
+    return True
 
 # === 1️⃣ Semantic classification function ===
 def classify_update(text: str) -> str:
@@ -220,82 +302,6 @@ Return ONLY the JSON object:
     schema = extract_json_from_response(content)
     
     return schema
-
-def extract_json_from_response(content: str) -> dict:
-    """Extract JSON from LLM response using multiple methods"""
-    
-    # Method 1: Direct JSON parsing
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        pass
-    
-    # Method 2: Extract JSON between curly braces
-    try:
-        # Find the first { and last }
-        start = content.find('{')
-        end = content.rfind('}') + 1
-        
-        if start >= 0 and end > start:
-            json_str = content[start:end]
-            # Clean up common issues
-            json_str = re.sub(r',\s*}', '}', json_str)  # Remove trailing commas
-            json_str = re.sub(r',\s*]', ']', json_str)  # Remove trailing commas in arrays
-            return json.loads(json_str)
-    except (json.JSONDecodeError, ValueError):
-        pass
-    
-    # Method 3: Look for code blocks
-    try:
-        json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', content, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group(1))
-    except (json.JSONDecodeError, AttributeError):
-        pass
-    
-    # Method 4: Manual parsing as fallback
-    print("⚠️ Could not parse JSON automatically, creating schema manually...")
-    return create_schema_manually(content)
-
-def create_schema_manually(content: str) -> dict:
-    """Create a basic schema structure manually as fallback"""
-    schema = {
-        "tables": [],
-        "semantic_notes": ["Schema generated manually due to parsing issues"]
-    }
-    
-    # Simple table detection from CREATE TABLE statements
-    create_table_pattern = r'CREATE TABLE\s+(\w+)\s*\('
-    tables = re.findall(create_table_pattern, content, re.IGNORECASE)
-    
-    for table_name in tables:
-        schema["tables"].append({
-            "name": table_name,
-            "columns": []
-        })
-    
-    print(f"🛠️  Manually created schema with {len(tables)} tables")
-    return schema
-
-def validate_schema_structure(schema: dict) -> bool:
-    """Validate that the schema has the expected structure"""
-    if not isinstance(schema, dict):
-        return False
-    if "tables" not in schema:
-        return False
-    if not isinstance(schema["tables"], list):
-        return False
-    
-    # Check if tables have proper structure
-    for table in schema["tables"]:
-        if not isinstance(table, dict):
-            return False
-        if "name" not in table:
-            return False
-        if "columns" not in table or not isinstance(table["columns"], list):
-            return False
-    
-    return True
 
 # === FUNCTION: COMPLETE SCHEMA UPDATE WORKFLOW ===
 def update_schema_with_vector_store(new_text: str) -> dict:
@@ -480,39 +486,3 @@ if __name__ == "__main__":
     else:
         print("\n❌ Schema validation failed. Schema has invalid structure.")
         schema = None
-
-
-# def update_schema(raw_text: str) -> dict:
-#     """
-#     Reusable function: updates schema_canonico.json based on the provided text.
-#     """
-#     if not raw_text.strip():
-#         raise ValueError("No text provided for schema update.")
-
-#     if os.path.exists(SCHEMA_FILE):
-#         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
-#             current_schema = json.load(f)
-#     else:
-#         current_schema = None
-
-#     update_type = classify_update(raw_text)
-
-#     if update_type == "semantic":
-#         if current_schema is None:
-#             current_schema = {"tables": [], "semantic_notes": []}
-#         current_schema.setdefault("semantic_notes", []).append(raw_text)
-#         schema = current_schema
-
-#     elif update_type == "structural":
-#         schema = generate_schema_canonical(raw_text)
-
-#     else:
-#         schema = current_schema or {"tables": [], "semantic_notes": []}
-
-#     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
-#         json.dump(schema, f, indent=2, ensure_ascii=False)
-
-#     # Show preview even when using the function
-#     print_schema_preview(schema)
-
-#     return schema

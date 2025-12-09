@@ -160,27 +160,3 @@ if __name__ == "__main__":
     print("\n💡 Generated SQL query:\n")
     print(sql)
     print("\n" + "="*60)
-
-
-def generate_query(user_request: str, model_name: str = "codellama:13b") -> str:
-    """
-    Wrapper for API usage: loads schema, updates RAG and generates SQL query.
-    
-    Args:
-        user_request: The natural language request
-        model_name: The Ollama model to use (default: "codellama:13b")
-    """
-    global model
-    model = OllamaLLM(model=model_name)
-    
-    if os.path.exists(SCHEMA_FILE) and os.path.getsize(SCHEMA_FILE) > 0:
-        with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
-            schema = json.load(f)
-    else:
-        schema = None
-
-    if schema and validate_schema_structure(schema):
-        build_vector_store(schema)
-
-    sql = generate_sql_query(user_request, schema)
-    return sql
