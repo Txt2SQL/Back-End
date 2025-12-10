@@ -1,0 +1,35 @@
+import json
+import os
+from schema_generator import (
+    SCHEMA_FILE,
+    generate_schema_canonical,
+    update_schema_with_existing,
+    build_vector_store
+)
+
+def load_current_schema():
+    if not os.path.exists(SCHEMA_FILE):
+        return None
+    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_schema(schema: dict):
+    with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
+        json.dump(schema, f, indent=2, ensure_ascii=False)
+
+def generate_schema(text: str) -> dict:
+    schema = generate_schema_canonical(text)
+    save_schema(schema)
+    return schema
+
+def update_schema(text: str) -> dict:
+    current = load_current_schema()
+    if current is None:
+        raise ValueError("No schema exists. Call /schema/generate first.")
+    
+    schema = update_schema_with_existing(text, current)
+    save_schema(schema)
+    return schema
+
+def rebuild_vector_store(schema: dict):
+    build_vector_store(schema)
