@@ -1,15 +1,15 @@
-import os
-import json
-import sys
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
+from utils_pkg  import (
+    print_schema_context
+)
 
 # === CONFIG ===
 COLLECTION_NAME = "schema_canonico"
-DB_DIR = "./chroma_langchain_db"
+DB_DIR = "./vector_store"
 
 # === AVAILABLE MODELS ===
 AVAILABLE_MODELS = {
@@ -62,13 +62,7 @@ def generate_sql_query(user_request: str) -> str:
         [f"Table: {d.metadata.get('table')}\n{d.page_content}" for d in relevant_docs]
     )
 
-    # 🆕 Display the schema context content
-    print("\n==================== 📘 SCHEMA CONTEXT ====================")
-    if schema_context.strip():
-        print(schema_context)
-    else:
-        print("(No schema context found — retriever returned empty results)")
-    print("===========================================================\n")
+    print_schema_context(schema_context)
 
     template = f"""
 You are an expert SQL database assistant.
@@ -119,28 +113,6 @@ SQL QUERY:
     sql_query = sql_query.strip()
 
     return sql_query
-
-
-# === FUNCTION: VALIDATE SCHEMA ===
-def validate_schema_structure(schema: dict) -> bool:
-    """Validate that the schema has the expected structure"""
-    if not isinstance(schema, dict):
-        return False
-    if "tables" not in schema:
-        return False
-    if not isinstance(schema["tables"], list):
-        return False
-    
-    # Check if tables have proper structure
-    for table in schema["tables"]:
-        if not isinstance(table, dict):
-            return False
-        if "name" not in table:
-            return False
-        if "columns" not in table or not isinstance(table["columns"], list):
-            return False
-    
-    return True
 
 
 # === MAIN ===

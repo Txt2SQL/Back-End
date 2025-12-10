@@ -1,16 +1,16 @@
 import json
 import os
 import re
-from utils.schema_utils import (
-    print_schema_preview,
-    extract_json_from_response,
-    create_schema_manually,
-    validate_schema_structure,
-)
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
+from utils_pkg  import (
+    print_schema_preview,
+    extract_json_from_response,
+    create_schema_manually,
+    validate_schema_structure
+)
 
 # === CONFIG ===
 SCHEMA_FILE = "schema_canonico.json"
