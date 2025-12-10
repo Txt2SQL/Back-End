@@ -2,3 +2,4 @@ venv/
 .vscode/
 schema_canonico.json
 vector_store/
+__pycache__/
