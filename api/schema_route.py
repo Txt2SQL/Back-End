@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from services.schema_service import generate_schema, update_schema
+from services.schema_services import generate_schema, update_schema
 
 router = APIRouter()
 
