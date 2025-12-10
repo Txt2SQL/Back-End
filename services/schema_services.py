@@ -20,6 +20,7 @@ def save_schema(schema: dict):
 def generate_schema(text: str) -> dict:
     schema = generate_schema_canonical(text)
     save_schema(schema)
+    build_vector_store(schema)
     return schema
 
 def update_schema(text: str) -> dict:
@@ -29,7 +30,5 @@ def update_schema(text: str) -> dict:
     
     schema = update_schema_with_existing(text, current)
     save_schema(schema)
-    return schema
-
-def rebuild_vector_store(schema: dict):
     build_vector_store(schema)
+    return schema
