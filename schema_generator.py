@@ -20,42 +20,6 @@ MODEL_NAME = "gemma3:12b"
 
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
-
-# === Function for schema preview ===
-def print_schema_preview(schema: dict):
-    """Prints a readable preview of the canonical schema"""
-    print("\n🔎 Canonical schema preview:")
-    print("=" * 60)
-    
-    # Print tables
-    if "tables" in schema and schema["tables"]:
-        print(f"\n📊 FOUND {len(schema['tables'])} TABLES:")
-        for i, table in enumerate(schema["tables"], 1):
-            print(f"\n  🏷️  Table #{i}: {table.get('name', 'N/A')}")
-            
-            # Print columns
-            if "columns" in table and table["columns"]:
-                print("  📋 Columns:")
-                for col in table["columns"]:
-                    constraints = col.get("constraints", [])
-                    constraints_str = ", ".join(constraints) if constraints else "no constraints"
-                    print(f"    • {col.get('name', 'N/A')} ({col.get('type', 'N/A')}) - {constraints_str}")
-            else:
-                print("  📋 No columns defined")
-    else:
-        print("\n📊 No tables defined")
-    
-    # Print semantic notes
-    if "semantic_notes" in schema and schema["semantic_notes"]:
-        print(f"\n📝 FOUND {len(schema['semantic_notes'])} SEMANTIC NOTES:")
-        for i, note in enumerate(schema["semantic_notes"], 1):
-            # Show only first 100 characters for brevity
-            preview = note[:100] + "..." if len(note) > 100 else note
-            print(f"  {i}. {preview}")
-    else:
-        print("\n📝 No semantic notes")
-    
-    print("=" * 60)
     
 def extract_json_from_response(content: str) -> dict:
     """Extract JSON from LLM response using multiple methods"""
@@ -234,6 +198,8 @@ Return the UPDATED schema JSON:
     # Try to extract JSON with multiple methods
     schema = extract_json_from_response(content)
     
+    print("✅ Structural schema generated.")
+
     return schema
 
 # === 2️⃣ Function to generate/update canonical schema ===
@@ -396,6 +362,42 @@ def build_vector_store(schema_data: dict):
 
     return vector_store
 
+def update_schema(raw_text: str, current_schema: dict) :
+    print("\n✅ Existing schema and vector store detected!")
+    print(f"📂 Found: {SCHEMA_FILE}")
+    print(f"📂 Found: {DB_DIR}\n")
+
+    # Load current schema
+    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+        current_schema = json.load(f)
+
+    print("📘 Current schema:")
+    print_schema_preview(current_schema)
+
+    # === CLASSIFY THE UPDATE ===
+    print("\n🔍 Classifying the update...")
+    update_type = classify_update(raw_text)
+    print(f"📊 Update type classified as: {update_type}\n")
+
+    if update_type == "semantic":
+        # === SEMANTIC UPDATE: Add notes to existing schema ===
+        print("📝 Processing SEMANTIC update (adding notes to existing schema)...")
+        
+        # Add new semantic notes to the existing schema
+        if "semantic_notes" not in current_schema:
+            current_schema["semantic_notes"] = []
+        
+        current_schema["semantic_notes"].append(raw_text)
+        
+        print("✅ Semantic notes added to schema.")
+        return current_schema
+
+    else:  # structural update
+        # === STRUCTURAL UPDATE: Generate new schema ===
+        print("🔧 Processing STRUCTURAL update (generating new schema)...")
+        
+        return update_schema_with_existing(raw_text, current_schema)    
+
 # === MAIN ===
 if __name__ == "__main__":
     print("🤖 Interactive canonical schema management (phase 1)")
@@ -423,41 +425,9 @@ if __name__ == "__main__":
     vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
 
     if schema_exists and vector_store_exists:
-        print("\n✅ Existing schema and vector store detected!")
-        print(f"📂 Found: {SCHEMA_FILE}")
-        print(f"📂 Found: {DB_DIR}\n")
-
-        # Load current schema
         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
             current_schema = json.load(f)
-
-        print("📘 Current schema:")
-        print_schema_preview(current_schema)
-
-        # === CLASSIFY THE UPDATE ===
-        print("\n🔍 Classifying the update...")
-        update_type = classify_update(raw_text)
-        print(f"📊 Update type classified as: {update_type}\n")
-
-        if update_type == "semantic":
-            # === SEMANTIC UPDATE: Add notes to existing schema ===
-            print("📝 Processing SEMANTIC update (adding notes to existing schema)...")
-            
-            # Add new semantic notes to the existing schema
-            if "semantic_notes" not in current_schema:
-                current_schema["semantic_notes"] = []
-            
-            current_schema["semantic_notes"].append(raw_text)
-            
-            schema = current_schema
-            print("✅ Semantic notes added to schema.")
-
-        else:  # structural update
-            # === STRUCTURAL UPDATE: Generate new schema ===
-            print("🔧 Processing STRUCTURAL update (generating new schema)...")
-            
-            schema = update_schema_with_existing(raw_text, current_schema)
-            print("✅ Structural schema generated.")
+        schema = update_schema(raw_text, current_schema)
 
     else:
         # === NO EXISTING SCHEMA/VECTOR STORE: Generate from scratch ===

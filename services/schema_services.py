@@ -3,8 +3,9 @@ import os
 from schema_generator import (
     SCHEMA_FILE,
     generate_schema_canonical,
-    update_schema_with_existing,
-    build_vector_store
+    update_schema as _update_schema_internal,
+    build_vector_store,
+    validate_schema_structure
 )
 
 def load_current_schema():
@@ -16,11 +17,18 @@ def load_current_schema():
 def save_schema(schema: dict):
     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
         json.dump(schema, f, indent=2, ensure_ascii=False)
+        
+def build_vector_store_internal(schema: dict):
+    if validate_schema_structure(schema):
+        build_vector_store(schema)
+        return schema
+    else:
+        raise ValueError("Updated schema is invalid.")
 
 def generate_schema(text: str) -> dict:
     schema = generate_schema_canonical(text)
     save_schema(schema)
-    build_vector_store(schema)
+    build_vector_store_internal(schema)
     return schema
 
 def update_schema(text: str) -> dict:
@@ -28,7 +36,7 @@ def update_schema(text: str) -> dict:
     if current is None:
         raise ValueError("No schema exists. Call /schema/generate first.")
     
-    schema = update_schema_with_existing(text, current)
+    schema = _update_schema_internal(text, current)
     save_schema(schema)
-    build_vector_store(schema)
+    build_vector_store_internal(schema)
     return schema
