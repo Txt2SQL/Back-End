@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from api.schema_routes import router as schema_router
-from api.query_routes import router as query_router
+from api.schema_route import router as schema_router
+from api.query_route import router as query_router
 
 app = FastAPI(
     title="Canonical Schema + SQL Generator API",
