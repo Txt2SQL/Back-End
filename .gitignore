@@ -3,3 +3,4 @@ venv/
 schema_canonico.json
 vector_store/
 __pycache__/
+.vscode/settings.json
