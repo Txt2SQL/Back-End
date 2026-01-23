@@ -21,6 +21,18 @@ MODEL_NAME = "gemma3:12b"
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
 
+def print_vector_store(vector_store: Chroma):
+
+    print("\n🔎 Current content of the vector store:")
+    all_docs = vector_store.get(include=["metadatas", "documents"])
+
+    for i, (doc_text, meta) in enumerate(zip(all_docs["documents"], all_docs["metadatas"])):  # type: ignore
+        print(f"\n🧱 Document #{i+1}")
+        print("📘 Table:", meta.get("table", "N/A"))
+        print("📄 Content:")
+        print(doc_text)
+        print("-" * 50)
+
 def classify_update(text: str) -> str:
     """Recognizes if the text describes a structural or semantic modification."""
 
@@ -155,8 +167,6 @@ Rules:
 - Map SQL types directly (VARCHAR2 → VARCHAR2, NUMBER → NUMBER, etc.)
 - Include constraints like PRIMARY KEY, NOT NULL, UNIQUE, DEFAULT, REFERENCES
 - For foreign keys, use "REFERENCES" constraint
-- If no current schema, create new one
-- If current schema exists, update it with new tables/columns
 
 SQL DDL to process:
 \"\"\"{raw_schema_text}\"\"\"
@@ -244,16 +254,6 @@ def build_vector_store(schema_data: dict):
     
     print("✅ Vector store updated and saved in:", DB_DIR)
 
-    print("\n🔎 Current content of the vector store:")
-    all_docs = vector_store.get(include=["metadatas", "documents"])
-
-    for i, (doc_text, meta) in enumerate(zip(all_docs["documents"], all_docs["metadatas"])):  # type: ignore
-        print(f"\n🧱 Document #{i+1}")
-        print("📘 Table:", meta.get("table", "N/A"))
-        print("📄 Content:")
-        print(doc_text)
-        print("-" * 50)
-
     return vector_store
 
 def update_schema(raw_text: str, current_schema: dict) :
@@ -338,7 +338,8 @@ if __name__ == "__main__":
         print(f"📊 Found {len(schema.get('tables', []))} tables in schema.")
         
         print("\n🔨 Building/recreating vector store...")
-        build_vector_store(schema)
+        vector_store = build_vector_store(schema)
+        print_vector_store(vector_store)
         print("\n✅ Workflow completed successfully!")
     else:
         print("\n❌ Schema validation failed. Schema has invalid structure.")

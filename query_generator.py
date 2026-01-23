@@ -1,3 +1,4 @@
+import sys, sqlglot, json, hashlib
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
@@ -13,9 +14,9 @@ from query_feedback_store import (
 from utils_pkg  import (
     print_schema_context
 )
-import sqlglot
 
 # === CONFIG ===
+SCHEMA_FILE = "schema_canonico.json"
 SCHEMA_COLLECTION_NAME = "schema_canonico"
 QUERY_COLLECTION_NAME = "query_feedback"
 DBS_DIR = "./vector_store/schema"
@@ -28,6 +29,12 @@ AVAILABLE_MODELS = {
     "3": "sqlcoder:15b",
     "4": "deepseek-coder-v2:16b"
 }
+
+def compute_schema_id() -> str:
+    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+        schema_dict = json.load(f)
+    normalized = json.dumps(schema_dict, sort_keys=True)
+    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
 def validate_sql_syntax(sql_query: str) -> str:
     """
@@ -42,6 +49,18 @@ def validate_sql_syntax(sql_query: str) -> str:
         return "OK"
     except Exception:
         return "SYNTAX_ERROR"
+
+
+def print_llm_prompt(prompt_text: str) -> None:
+    """
+    Prints the final prompt that will be sent to the LLM.
+    Useful for debugging and understanding what context the model receives.
+    """
+    print("\n" + "=" * 80)
+    print("📋 FINAL PROMPT SENT TO LLM")
+    print("=" * 80)
+    print(prompt_text)
+    print("=" * 80 + "\n")
 
 
 def select_model() -> str:
@@ -65,7 +84,7 @@ def select_model() -> str:
 model = None
 
 
-def generate_sql_query(user_request: str) -> str:
+def generate_sql_query(user_request: str, schema_id: str) -> str:
     """
     Generates a SQL query using:
     - canonical schema RAG
@@ -96,7 +115,11 @@ def generate_sql_query(user_request: str) -> str:
     # 2. QUERY FEEDBACK RETRIEVAL
     # ------------------------------------------------------------------
     # Positive examples
-    similar_queries = retrieve_successful_queries(user_request, k=3)
+    similar_queries = retrieve_successful_queries(
+        user_request,
+        schema_id=schema_id,
+        k=3
+    )
     past_examples = "\n\n".join(d.page_content for d in similar_queries)
 
     examples_section = ""
@@ -141,11 +164,14 @@ CRITICAL RULES:
 
 {examples_section}
 
-SQL QUERY:
+SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
 
+    # Print the final prompt
+    print_llm_prompt(template)
+
     prompt = ChatPromptTemplate.from_template(template)
-    chain = prompt | model
+    chain = prompt | model  # pyright: ignore[reportOperatorIssue]
 
     response = chain.invoke({
         "schema_context": schema_context,
@@ -196,9 +222,10 @@ if __name__ == "__main__":
 
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
+            schema_id = compute_schema_id()
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request)
+            sql = generate_sql_query(user_request, schema_id)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
@@ -214,7 +241,8 @@ if __name__ == "__main__":
                 sql_query=sql,
                 status=status,
                 model_name=selected_model_name,
-                error_message=error_message
+                error_message=error_message,
+                schema_id=schema_id
             )
 
             print(f"\n📌 Query stored with status: {status}")

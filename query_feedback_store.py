@@ -1,7 +1,9 @@
+
+import math, time, re
+from pydoc import doc
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
-import re
 
 # === CONFIG ===
 QUERY_COLLECTION_NAME = "query_feedback"
@@ -39,7 +41,8 @@ def print_query_vector_store():
         print(doc)
         print("\nMetadata:")
         for k, v in metadata.items():
-            print(f"  {k}: {v}")
+            if k != "sql_query":
+                print(f"  {k}: {v}")
         print("---------------------------------------------\n")
 
 def get_query_store() -> Chroma:
@@ -53,17 +56,55 @@ def get_query_store() -> Chroma:
         embedding_function=_embeddings,
     )
 
+def apply_time_decay(
+    docs,
+    half_life_days: int = 30
+):
+    """
+    Applies exponential time decay to documents.
+    Newer docs are preferred.
+
+    half_life_days: after how many days relevance halves
+    """
+    now = time.time()
+    half_life_seconds = half_life_days * 86400
+
+    scored = []
+
+    for doc in docs:
+        ts = doc.metadata.get("timestamp", now)
+        age = now - ts
+
+        # exponential decay
+        decay = math.exp(-age / half_life_seconds)
+
+        scored.append((decay, doc))
+
+    # sort by decay (descending)
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    return [doc for _, doc in scored]
+
 
 # ------------------------------------------------------------------
 # STORE FEEDBACK
 # ------------------------------------------------------------------
+
+def detect_structural_issue(sql: str) -> bool:
+    sql_upper = sql.upper()
+    return (
+        "SELECT *" in sql_upper
+        or ("JOIN" in sql_upper and " ON " not in sql_upper)
+        or ("SUM(" in sql_upper and "GROUP BY" not in sql_upper)
+    )
 
 def store_query_feedback(
     user_request: str,
     sql_query: str,
     status: str,
     model_name: str,
-    error_message: str | None = None
+    error_message: str | None = None,
+    schema_id: str | None = None
 ) -> None:
     """
     Stores a (request, sql, outcome) tuple into the query feedback vector store.
@@ -80,11 +121,27 @@ User request:
 
 Generated SQL query:
 {sql_query}
+
+Outcome:
+{status}
 """.strip()
 
+    
+    if status == "SYNTAX_ERROR":
+        knowledge_scope = "SYNTAX"
+    elif detect_structural_issue(sql_query):
+        knowledge_scope = "STRUCTURAL"
+    else:
+        knowledge_scope = "SCHEMA_SPECIFIC"
+
+        
     metadata = {
+        "schema_id": schema_id if knowledge_scope == "SCHEMA_SPECIFIC" else None,
+        "knowledge_scope": knowledge_scope,
         "status": status,
         "model": model_name,
+        "timestamp": time.time(),
+        "sql_query": sql_query,
     }
 
     if error_message:
@@ -121,7 +178,7 @@ def build_penalty_section(failed_docs):
     forbidden = set()
 
     for doc in failed_docs:
-        sql = doc.page_content.split("SQL generata:")[-1]
+        sql = doc.metadata.get("sql_query", "")
         patterns = extract_sql_patterns(sql)
         forbidden.update(patterns)
 
@@ -133,7 +190,7 @@ def build_penalty_section(failed_docs):
     return f"""
 AVOID THESE PATTERNS:
 The following SQL patterns caused errors or incorrect results in similar past requests.
-DO NOT use them.
+DO NOT use them, unless explicitly required by the user request.
 
 {rules}
 """
@@ -143,32 +200,61 @@ DO NOT use them.
 # RETRIEVAL
 # ------------------------------------------------------------------
 
-def retrieve_successful_queries(user_request: str, k: int = 3):
-    """
-    Retrieves past successful (OK) SQL queries similar to the user request.
-    """
+def retrieve_successful_queries(
+    user_request: str,
+    schema_id: str,
+    k: int = 3,
+    half_life_days: int = 30
+):
     store = get_query_store()
-    return store.similarity_search(
+
+    docs = store.similarity_search(
         user_request,
-        k=k,
-        filter={"status": "OK"}
+        k=10,  # recupera più del necessario
+        filter={
+            "$and": [
+                {"status": "OK"},
+                {"schema_id": schema_id},
+                {"knowledge_scope": "SCHEMA_SPECIFIC"}
+            ]
+        } # pyright: ignore[reportArgumentType]
     )
 
+    docs = apply_time_decay(docs, half_life_days)
 
-def retrieve_failed_queries(user_request: str, k: int = 3):
-    """
-    Retrieves past failed SQL queries (syntax or semantic errors)
-    similar to the user request.
-    """
+    return docs[:k]
+
+
+def retrieve_failed_queries(
+    user_request: str,
+    k: int = 3,
+    half_life_days: int = 60
+):
     store = get_query_store()
+
     syntax_errors = store.similarity_search(
         user_request,
-        k=k,
-        filter={"status": "SYNTAX_ERROR"}
+        k=10,
+        filter={
+            "$and": [
+                {"status": "SYNTAX_ERROR"},
+                {"knowledge_scope": "SYNTAX"}
+            ]
+        } # pyright: ignore[reportArgumentType]
     )
-    wrong_results = store.similarity_search(
+
+    structural_errors = store.similarity_search(
         user_request,
-        k=k,
-        filter={"status": "WRONG_RESULT"}
+        k=10,
+        filter={
+            "$and": [
+                {"status": {"$ne": "OK"}},
+                {"knowledge_scope": "STRUCTURAL"}
+            ]
+        } # pyright: ignore[reportArgumentType]
     )
-    return syntax_errors + wrong_results
+
+    docs = syntax_errors + structural_errors
+    docs = apply_time_decay(docs, half_life_days)
+
+    return docs[:k]
