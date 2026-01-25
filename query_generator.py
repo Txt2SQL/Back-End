@@ -11,6 +11,7 @@ from query_feedback_store import (
     build_penalty_section,
     print_query_vector_store
 )
+from mysql_executor import execute_sql_query
 from utils_pkg  import (
     print_schema_context
 )
@@ -84,12 +85,45 @@ def select_model() -> str:
 model = None
 
 
-def generate_sql_query(user_request: str, schema_id: str) -> str:
+def response_cleaning(response) -> str:
     """
-    Generates a SQL query using:
-    - canonical schema RAG
-    - past successful queries (positive examples)
-    - past failed queries (negative / penalized patterns)
+    Cleans the LLM response to extract only the SQL query.
+    - Removes text before the first SELECT
+    - Removes text after the first semicolon
+    - Removes markdown fences
+    Returns only the SQL code.
+    """
+    if isinstance(response, str):
+        sql_query = response.strip()
+    elif hasattr(response, "content"):
+        sql_query = response.content.strip()
+    else:
+        sql_query = str(response).strip()
+
+    # Remove markdown fences if present
+    if sql_query.startswith("```"):
+        sql_query = sql_query.split("```")[1]
+    sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+
+    # Remove everything before the first SELECT (case-insensitive)
+    select_index = sql_query.upper().find("SELECT")
+    if select_index > 0:
+        sql_query = sql_query[select_index:]
+    
+    # Remove everything after the first semicolon (inclusive)
+    semicolon_index = sql_query.find(";")
+    if semicolon_index >= 0:
+        sql_query = sql_query[:semicolon_index + 1]
+    
+    sql_query = sql_query.strip()
+    
+    return sql_query
+
+def get_context(user_request: str) -> str:
+    """
+    Retrieves the schema context and past successful queries
+    for a given user request and schema ID.
+    Returns the combined context as a string.
     """
 
     # ------------------------------------------------------------------
@@ -102,7 +136,11 @@ def generate_sql_query(user_request: str, schema_id: str) -> str:
         embedding_function=embeddings,
     )
 
-    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+    retriever = vector_store.as_retriever(search_kwargs={
+        "k": 5 if any(w in user_request.lower() 
+                      for w in ["average", "per", "by", "total", "sum", "count"]) 
+                else 3
+        })
     relevant_docs = retriever.invoke(user_request)
 
     schema_context = "\n\n".join(
@@ -111,8 +149,21 @@ def generate_sql_query(user_request: str, schema_id: str) -> str:
 
     print_schema_context(schema_context)
 
+    return schema_context
+
+
+def generate_sql_query(user_request: str, schema_id: str) -> str:
+    """
+    Generates a SQL query using:
+    - canonical schema RAG
+    - past successful queries (positive examples)
+    - past failed queries (negative / penalized patterns)
+    """
+
+    schema_context = get_context(user_request)
+
     # ------------------------------------------------------------------
-    # 2. QUERY FEEDBACK RETRIEVAL
+    # QUERY FEEDBACK RETRIEVAL
     # ------------------------------------------------------------------
     # Positive examples
     similar_queries = retrieve_successful_queries(
@@ -122,7 +173,7 @@ def generate_sql_query(user_request: str, schema_id: str) -> str:
     )
     past_examples = "\n\n".join(d.page_content for d in similar_queries)
 
-    examples_section = ""
+    examples_section = "" # REMOVED TEMPORARILY
     if past_examples.strip():
         examples_section = f"""
 === PAST SUCCESSFUL EXAMPLES ===
@@ -130,7 +181,7 @@ def generate_sql_query(user_request: str, schema_id: str) -> str:
 """
 
     # Negative examples → pattern penalization
-    failed_queries = retrieve_failed_queries(user_request, k=3)
+    failed_queries = retrieve_failed_queries(user_request, schema_id, k=3)
     penalty_section = build_penalty_section(failed_queries)
 
     # ------------------------------------------------------------------
@@ -162,7 +213,6 @@ CRITICAL RULES:
 === REQUEST ===
 {user_request}
 
-{examples_section}
 
 SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
@@ -181,17 +231,7 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
     # ------------------------------------------------------------------
     # 4. OUTPUT CLEANUP
     # ------------------------------------------------------------------
-    if isinstance(response, str):
-        sql_query = response.strip()
-    elif hasattr(response, "content"):
-        sql_query = response.content.strip()
-    else:
-        sql_query = str(response).strip()
-
-    # Remove markdown fences if present
-    if sql_query.startswith("```"):
-        sql_query = sql_query.split("```")[1]
-    sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+    sql_query = response_cleaning(response)
 
     return sql_query
 
@@ -232,7 +272,33 @@ if __name__ == "__main__":
             print("\n" + "=" * 60)
 
             # Syntax validation
-            status = validate_sql_syntax(sql)
+            syntax_status = validate_sql_syntax(sql)
+
+            execution_status = None
+            execution_error = None
+            execution_result = None
+
+            if syntax_status == "OK":
+                # 2️⃣ Runtime execution
+                execution_status, execution_output = execute_sql_query(sql)
+
+                if execution_status == "OK":
+                    status = "OK"
+                    execution_result = execution_output
+                else:
+                    status = "RUNTIME_ERROR"
+                    execution_error = execution_output
+            else:
+                status = "SYNTAX_ERROR"
+                execution_error = "Query failed syntactic check"
+                
+            if execution_result:
+                print("\n📊 Query result preview:")
+                for row in execution_result[:5]:
+                    print(row)
+            elif execution_error:
+                print(f"\n⚠️  Error: {execution_error}")
+
             error_message = None if status == "OK" else "Query failed syntactic check"
 
             # Store feedback
