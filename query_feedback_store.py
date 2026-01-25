@@ -85,6 +85,25 @@ def apply_time_decay(
 
     return [doc for _, doc in scored]
 
+def classify_error(error_message: str | None) -> str | None:
+    if not error_message:
+        return None
+
+    msg = error_message.lower()
+
+    if "unknown column" in msg:
+        return "UNKNOWN_COLUMN"
+    if "unknown table" in msg:
+        return "UNKNOWN_TABLE"
+    if "ambiguous" in msg:
+        return "AMBIGUOUS_COLUMN"
+    if "syntax" in msg:
+        return "SYNTAX_ERROR"
+    if "join" in msg:
+        return "BAD_JOIN"
+
+    return "GENERIC_RUNTIME_ERROR"
+
 
 # ------------------------------------------------------------------
 # STORE FEEDBACK
@@ -114,6 +133,8 @@ def store_query_feedback(
       - "SYNTAX_ERROR"
       - "WRONG_RESULT"
     """
+    error_type = classify_error(error_message)
+
 
     page_content = f"""
 User request:
@@ -145,7 +166,7 @@ Outcome:
     }
 
     if error_message:
-        metadata["error_message"] = error_message
+        metadata["error_type"] = error_type
 
     doc = Document(
         page_content=page_content,
@@ -174,26 +195,38 @@ def extract_sql_patterns(sql: str) -> list[str]:
     return patterns
 
 
-def build_penalty_section(failed_docs):
-    forbidden = set()
-
-    for doc in failed_docs:
-        sql = doc.metadata.get("sql_query", "")
-        patterns = extract_sql_patterns(sql)
-        forbidden.update(patterns)
-
-    if not forbidden:
+def build_penalty_section(failed_queries: list[Document]) -> str:
+    if not failed_queries:
         return ""
 
-    rules = "\n".join(f"- {p}" for p in forbidden)
+    lines = []
+    lines.append("=== PREVIOUS FAILURES (DO NOT REPEAT THESE PATTERNS) ===")
 
-    return f"""
-AVOID THESE PATTERNS:
-The following SQL patterns caused errors or incorrect results in similar past requests.
-DO NOT use them, unless explicitly required by the user request.
+    for d in failed_queries:
+        error_type = d.metadata.get("error_type")
+        content = d.page_content
 
-{rules}
-"""
+        lines.append(f"""
+--- FAILURE ---
+{content}
+
+ERROR TYPE: {error_type}
+""")
+
+        # 🔥 Explicit natural language penalties
+        if error_type == "UNKNOWN_COLUMN":
+            lines.append("RULE: Do NOT use columns that are not present in the schema.")
+        elif error_type == "UNKNOWN_TABLE":
+            lines.append("RULE: Do NOT reference tables not present in the schema.")
+        elif error_type == "AMBIGUOUS_COLUMN":
+            lines.append("RULE: Always qualify column names with table aliases.")
+        elif error_type == "BAD_JOIN":
+            lines.append("RULE: Avoid unnecessary joins.")
+        else:
+            lines.append("RULE: Avoid repeating this query structure.")
+
+    return "\n".join(lines)
+
 
 
 # ------------------------------------------------------------------
@@ -227,6 +260,7 @@ def retrieve_successful_queries(
 
 def retrieve_failed_queries(
     user_request: str,
+    schema_id: str,
     k: int = 3,
     half_life_days: int = 60
 ):
