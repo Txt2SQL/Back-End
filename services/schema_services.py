@@ -20,8 +20,8 @@ def save_schema(schema: dict):
         
 def build_vector_store_internal(schema: dict):
     if validate_schema_structure(schema):
-        build_vector_store(schema)
-        return schema
+        vector_store = build_vector_store(schema)
+        return vector_store
     else:
         raise ValueError("Updated schema is invalid.")
 
