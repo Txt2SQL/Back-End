@@ -86,8 +86,6 @@ def apply_time_decay(
     return [doc for _, doc in scored]
 
 def classify_error(error_message: str | None) -> str | None:
-    if not error_message:
-        return None
 
     msg = error_message.lower()
 
@@ -133,7 +131,10 @@ def store_query_feedback(
       - "SYNTAX_ERROR"
       - "WRONG_RESULT"
     """
-    error_type = classify_error(error_message)
+    if not error_message:
+        error_type = classify_error(error_message)
+    else:
+        error_type = None
 
 
     page_content = f"""
