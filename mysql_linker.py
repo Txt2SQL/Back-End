@@ -7,7 +7,7 @@ load_dotenv()
 
 
 def get_db_connection():
-    print("🔧 Creating DB connection object...")
+    print("\n🔧 Creating DB connection object...")
     conn = mysql.connector.connect(
         host=os.getenv("DB_HOST"),
         port=int(os.getenv("DB_PORT", 3306)),
@@ -15,7 +15,7 @@ def get_db_connection():
         password=os.getenv("DB_PASSWORD"),
         database=os.getenv("DB_NAME")
     )
-    print("🔧 DB connection object created")
+    print("\n🔧 DB connection object created")
     return conn
 
 
@@ -27,38 +27,38 @@ def execute_sql_query(sql_query: str) -> Tuple[str, Any]:
         status: "OK" | "RUNTIME_ERROR"
         result: fetched rows or error message
     """
-    print(f"📌 Received SQL query:\n{sql_query}")
+    print(f"\n📌 Received SQL query:\n{sql_query}")
 
     try:
-        print("🔌 Connecting to MySQL database...")
+        print("\n🔌 Connecting to MySQL database...")
         conn = get_db_connection()
 
         if conn.is_connected():
-            print("✅ Connection established")
+            print("\n✅ Connection established")
         else:
-            print("❌ Connection failed (conn.is_connected() returned False)")
+            print("\n❌ Connection failed (conn.is_connected() returned False)")
 
         cursor = conn.cursor()
-        print("📝 Executing SQL query...")
+        print("\n📝 Executing SQL query...")
 
         cursor.execute(sql_query)
-        print("📝 Query executed successfully")
+        print("\n📝 Query executed successfully")
 
         # Try fetching results (SELECT)
         try:
-            print("📥 Attempting to fetch results...")
+            print("\n📥 Attempting to fetch results...")
             result = cursor.fetchall()
             print(f"📥 Rows fetched: {len(result)}")
         except Exception as fetch_err:
             print(f"⚠️ No fetchable results (likely non-SELECT). Error: {fetch_err}")
             result = None
 
-        print("💾 Committing transaction...")
+        print("\n💾 Committing transaction...")
         conn.commit()
 
         cursor.close()
         conn.close()
-        print("🔒 Connection closed")
+        print("\n🔒 Connection closed")
 
         return "OK", result
 
@@ -75,7 +75,7 @@ def extract_schema(database_name: str | None = None) -> dict:
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    print("🔍 Querying information_schema.COLUMNS...")
+    print("\n🔍 Querying information_schema.COLUMNS...")
     cursor.execute("""
         SELECT
             c.TABLE_NAME,
@@ -116,7 +116,7 @@ def extract_schema(database_name: str | None = None) -> dict:
         "semantic_notes": []
     }
 
-    print("🧱 Building schema structure...")
+    print("\n🧱 Building schema structure...")
     for table_name, columns in tables.items():
         print(f"📦 Adding table: {table_name} ({len(columns)} columns)")
         schema["tables"].append({
@@ -126,6 +126,6 @@ def extract_schema(database_name: str | None = None) -> dict:
 
     cursor.close()
     conn.close()
-    print("🏁 Schema extraction completed")
+    print("\n🏁 Schema extraction completed")
 
     return schema

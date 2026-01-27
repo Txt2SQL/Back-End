@@ -24,7 +24,7 @@ def print_query_vector_store(store: Chroma):
     data = store.get()
 
     if not data or not data.get("documents"):
-        print("⚠️ Query vector store is empty.")
+        print("\n⚠️ Query vector store is empty.")
         return
 
     # Crea lista di tuple (doc, metadata) e ordina per timestamp decrescente
