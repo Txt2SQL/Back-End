@@ -118,12 +118,13 @@ def detect_structural_issue(sql: str) -> bool:
     )
 
 def store_query_feedback(
+    schema_id: str,
+    model_name: str,
     user_request: str,
     sql_query: str,
     status: str,
-    model_name: str,
-    error_message: str | None = None,
-    schema_id: str | None = None
+    rows_fetched: int | None = None,
+    error_message: str | None = None
 ) -> None:
     """
     Stores a (request, sql, outcome) tuple into the query feedback vector store.
@@ -170,6 +171,8 @@ Outcome:
 
     if error_message:
         metadata["error_type"] = error_type
+    else:
+        metadata["rows_fetched"] = rows_fetched
 
     doc = Document(
         page_content=page_content,
