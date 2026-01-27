@@ -11,7 +11,7 @@ from query_feedback_store import (
     build_penalty_section,
     print_query_vector_store
 )
-from mysql_executor import execute_sql_query
+from mysql_linker import execute_sql_query
 from utils_pkg  import (
     print_schema_context
 )
@@ -82,6 +82,28 @@ def select_model() -> str:
         else:
             print("❌ Invalid choice. Please enter 1, 2, or 3.")
 
+
+def get_schema_source() -> str:
+    """
+    Prompts user to select the schema source.
+    Returns either "text_input" or "mysql_extraction".
+    """
+    print("\n📚 Select schema source:")
+    print("   1. text_input")
+    print("   2. mysql_extraction")
+    
+    while True:
+        choice = input("\n👉 Select a source (1-2): ").strip()
+        if choice == "1":
+            print("✅ Selected: text_input\n")
+            return "text_input"
+        elif choice == "2":
+            print("✅ Selected: mysql_extraction\n")
+            return "mysql_extraction"
+        else:
+            print("❌ Invalid choice. Please enter 1 or 2.")
+
+
 model = None
 
 
@@ -119,7 +141,7 @@ def response_cleaning(response) -> str:
     
     return sql_query
 
-def get_context(user_request: str) -> str:
+def get_context(user_request: str, vector_store: Chroma) -> str:
     """
     Retrieves the schema context and past successful queries
     for a given user request and schema ID.
@@ -129,12 +151,6 @@ def get_context(user_request: str) -> str:
     # ------------------------------------------------------------------
     # 1. SCHEMA RETRIEVAL (RAG)
     # ------------------------------------------------------------------
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
-    vector_store = Chroma(
-        collection_name=SCHEMA_COLLECTION_NAME,
-        persist_directory=DBS_DIR,
-        embedding_function=embeddings,
-    )
 
     retriever = vector_store.as_retriever(search_kwargs={
         "k": 5 if any(w in user_request.lower() 
@@ -151,17 +167,35 @@ def get_context(user_request: str) -> str:
 
     return schema_context
 
+def create_base_prompt(schema_context: str, user_request: str) -> str:
+    return f"""
+You are an expert SQL database assistant.
+You will be provided with:
+1. The partial description of the database schema (only the relevant tables)
+2. The user's request in natural language.
+3. Examples of previous successful SQL queries
 
-def generate_sql_query(user_request: str, schema_id: str) -> str:
-    """
-    Generates a SQL query using:
-    - canonical schema RAG
-    - past successful queries (positive examples)
-    - past failed queries (negative / penalized patterns)
-    """
+Your task is to return a **single SQL query** that satisfies the request,
+using the provided tables and columns.
 
-    schema_context = get_context(user_request)
+CRITICAL RULES:
+- Use ONLY the tables and columns present in the schema provided.
+- Do NOT invent field or table names that don't exist.
+- Do NOT add WHERE clauses or conditions unless explicitly requested.
+- Do NOT join tables unless necessary for the request.
+- Return **only the SQL query**, without comments or additional text.
+- Make the query as simple as possible to satisfy the request.
 
+=== SCHEMA ===
+{schema_context}
+
+=== REQUEST ===
+{user_request}
+
+SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
+"""
+
+def create_complete_prompt(schema_context: str, user_request: str, schema_id: str, model: str) -> str:
     # ------------------------------------------------------------------
     # QUERY FEEDBACK RETRIEVAL
     # ------------------------------------------------------------------
@@ -169,7 +203,7 @@ def generate_sql_query(user_request: str, schema_id: str) -> str:
     similar_queries = retrieve_successful_queries(
         user_request,
         schema_id=schema_id,
-        k=3
+        model=model,
     )
     past_examples = "\n\n".join(d.page_content for d in similar_queries)
 
@@ -207,6 +241,8 @@ CRITICAL RULES:
 
 {penalty_section}
 
+{examples_section}
+
 === SCHEMA ===
 {schema_context}
 
@@ -216,6 +252,31 @@ CRITICAL RULES:
 
 SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
+    return template
+
+def generate_sql_query(user_request: str, schema_id: str) -> str:
+    """
+    Generates a SQL query using:
+    - canonical schema RAG
+    - past successful queries (positive examples)
+    - past failed queries (negative / penalized patterns)
+    """
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+    vector_store = Chroma(
+        collection_name=SCHEMA_COLLECTION_NAME,
+        persist_directory=DBS_DIR,
+        embedding_function=embeddings,
+    )
+
+    schema_context = get_context(user_request, vector_store)
+
+
+    template = f""" """
+    
+    if source == "text_input":
+        template = create_base_prompt(schema_context, user_request)
+    else:
+        template = create_complete_prompt(schema_context, user_request, schema_id, model)
 
     # Print the final prompt
     print_llm_prompt(template)
@@ -263,9 +324,10 @@ if __name__ == "__main__":
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
             schema_id = compute_schema_id()
+            source = get_schema_source()
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, schema_id)
+            sql = generate_sql_query(user_request, schema_id, source)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
@@ -274,32 +336,28 @@ if __name__ == "__main__":
             # Syntax validation
             syntax_status = validate_sql_syntax(sql)
 
-            execution_status = None
-            execution_error = None
-            execution_result = None
+            error_message = None
 
             if syntax_status == "OK":
-                # 2️⃣ Runtime execution
-                execution_status, execution_output = execute_sql_query(sql)
+                if source == "mysql_extraction":
+                    # Runtime execution
+                    execution_status, execution_output = execute_sql_query(sql)
 
-                if execution_status == "OK":
-                    status = "OK"
-                    execution_result = execution_output
+                    if execution_status == "OK":
+                        status = "OK"
+                        print("\n📊 Query result preview:")
+                        for row in execution_output[:5]:
+                            print(row)
+                    else:
+                        status = "RUNTIME_ERROR"
+                        error_message = execution_output
+                        print(f"\n⚠️  Error: {error_message}")
                 else:
-                    status = "RUNTIME_ERROR"
-                    execution_error = execution_output
+                    status = "OK"
             else:
                 status = "SYNTAX_ERROR"
-                execution_error = "Query failed syntactic check"
-                
-            if execution_result:
-                print("\n📊 Query result preview:")
-                for row in execution_result[:5]:
-                    print(row)
-            elif execution_error:
-                print(f"\n⚠️  Error: {execution_error}")
-
-            error_message = None if status == "OK" else "Query failed syntactic check"
+                error_message = "Query failed syntactic check"
+                print(f"\n⚠️  Error: {error_message}")
 
             # Store feedback
             store_query_feedback(
