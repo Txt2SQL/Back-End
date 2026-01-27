@@ -103,10 +103,6 @@ def get_schema_source() -> str:
         else:
             print("❌ Invalid choice. Please enter 1 or 2.")
 
-
-model = None
-
-
 def response_cleaning(response) -> str:
     """
     Cleans the LLM response to extract only the SQL query.
@@ -254,7 +250,7 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
     return template
 
-def generate_sql_query(user_request: str, schema_id: str) -> str:
+def generate_sql_query(user_request: str, schema_id: str, source: str, selected_model: str) -> str:
     """
     Generates a SQL query using:
     - canonical schema RAG
@@ -276,7 +272,7 @@ def generate_sql_query(user_request: str, schema_id: str) -> str:
     if source == "text_input":
         template = create_base_prompt(schema_context, user_request)
     else:
-        template = create_complete_prompt(schema_context, user_request, schema_id, model)
+        template = create_complete_prompt(schema_context, user_request, schema_id, selected_model)
 
     # Print the final prompt
     print_llm_prompt(template)
@@ -327,7 +323,7 @@ if __name__ == "__main__":
             source = get_schema_source()
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, schema_id, source)
+            sql = generate_sql_query(user_request, schema_id, source, selected_model_name)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)

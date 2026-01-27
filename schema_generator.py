@@ -284,23 +284,7 @@ def update_schema(raw_text: str, current_schema: dict) :
         
         return update_schema_with_existing(raw_text, current_schema)    
 
-def acquire_schema_from_text():
-    print("👉 Paste below the text that describes or updates the schema (press ENTER twice to finish):\n")
-
-    lines = []
-    while True:
-        try:
-            line = input()
-            if line.strip() == "":
-                break
-            lines.append(line)
-        except EOFError:
-            break
-
-    raw_text = "\n".join(lines).strip()
-    if not raw_text:
-        print("❌ No text provided.")
-        return None
+def acquire_schema_from_text(raw_text: str):
 
     schema_exists = os.path.exists(SCHEMA_FILE) and os.path.getsize(SCHEMA_FILE) > 0
     vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
@@ -369,7 +353,25 @@ if __name__ == "__main__":
 
     while True:
         if method == "1":
-            schema = acquire_schema_from_text()
+            print("👉 Paste below the text that describes or updates the schema (press ENTER twice to finish):\n")
+
+            lines = []
+            while True:
+                try:
+                    line = input()
+                    if line.strip() == "":
+                        break
+                    lines.append(line)
+                except EOFError:
+                    break
+
+            raw_text = "\n".join(lines).strip()
+            
+            if not raw_text:
+                print("❌ No text provided.")
+                break
+            else:
+                schema = acquire_schema_from_text(raw_text)
         else:
             print("👉 Please provide the database name to extract the schema from:")
             db_name = input("👉 Database name: ").strip()
