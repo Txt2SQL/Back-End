@@ -320,6 +320,7 @@ if __name__ == "__main__":
             syntax_status = validate_sql_syntax(sql)
 
             error_message = None
+            rows_fetched = 0
 
             if syntax_status == "OK":
                 if source == "mysql_extraction":
@@ -329,6 +330,7 @@ if __name__ == "__main__":
 
                     if execution_status == "OK":
                         status = "OK"
+                        rows_fetched = len(execution_output) if execution_output else 0
                         print("\n📊 Query result preview:\n")
                         for row in execution_output[:5]:
                             print(row)
@@ -350,7 +352,8 @@ if __name__ == "__main__":
                 status=status,
                 model_name=selected_model_name,
                 error_message=error_message,
-                schema_id=schema_id
+                schema_id=schema_id,
+                rows_fetched=rows_fetched
             )
 
             print(f"\n📌 Query stored with status: {status}")
