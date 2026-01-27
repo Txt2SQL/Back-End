@@ -8,10 +8,13 @@ from query_feedback_store import (
     retrieve_failed_queries,
     retrieve_successful_queries,
     build_penalty_section,
-    print_query_vector_store
+)
+from utils_pkg import (
+    get_context,
+    print_query_vector_store,
+    print_schema_context
 )
 from mysql_linker import execute_sql_query
-from utils_pkg import get_context
 
 # === CONFIG ===
 SCHEMA_FILE = "schema_canonico.json"
@@ -85,20 +88,15 @@ def get_schema_source() -> str:
     Prompts user to select the schema source.
     Returns either "text_input" or "mysql_extraction".
     """
-    print("\n📚 Select schema source:")
-    print("   1. text_input")
-    print("   2. mysql_extraction")
+    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+        schema_dict = json.load(f)
     
-    while True:
-        choice = input("\n👉 Select a source (1-2): ").strip()
-        if choice == "1":
-            print("✅ Selected: text_input\n")
-            return "text_input"
-        elif choice == "2":
-            print("✅ Selected: mysql_extraction\n")
-            return "mysql_extraction"
-        else:
-            print("❌ Invalid choice. Please enter 1 or 2.")
+    if "source" in schema_dict and schema_dict["source"] == "mysql_extraction":
+        print("ℹ️  Schema source detected: MySQL extraction.\n")
+        return "mysql_extraction"
+    else:
+        print("ℹ️  Schema source detected: Text input.\n")
+        return "text_input"
 
 def response_cleaning(response) -> str:
     """
@@ -236,7 +234,7 @@ def generate_sql_query(user_request: str, schema_id: str, source: str, selected_
     )
 
     schema_context = get_context(user_request, vector_store)
-
+    print_schema_context(schema_context)
 
     template = f""" """
     
@@ -281,7 +279,13 @@ if __name__ == "__main__":
             break
 
         elif choice == "2":
-            print_query_vector_store()
+            embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+            store = Chroma(
+                collection_name=QUERY_COLLECTION_NAME,
+                persist_directory=DBQ_DIR,
+                embedding_function=embeddings,
+            )
+            print_query_vector_store(store)
 
         elif choice == "1":
             # Select model at runtime
@@ -308,6 +312,7 @@ if __name__ == "__main__":
             if syntax_status == "OK":
                 if source == "mysql_extraction":
                     # Runtime execution
+                    print("\n🚀 Executing query against the database...")
                     execution_status, execution_output = execute_sql_query(sql)
 
                     if execution_status == "OK":

@@ -8,7 +8,9 @@ from langchain_chroma import Chroma
 from utils_pkg  import (
     print_schema_preview,
     extract_json_from_response,
-    validate_schema_structure
+    validate_schema_structure,
+    print_vector_store
+    
 )
 from mysql_linker import extract_schema
 
@@ -20,18 +22,6 @@ MODEL_NAME = "gemma3:12b"
 
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
-
-def print_vector_store(vector_store: Chroma):
-
-    print("\n🔎 Current content of the vector store:")
-    all_docs = vector_store.get(include=["metadatas", "documents"])
-
-    for i, (doc_text, meta) in enumerate(zip(all_docs["documents"], all_docs["metadatas"])):  # type: ignore
-        print(f"\n🧱 Document #{i+1}")
-        print("📘 Table:", meta.get("table", "N/A"))
-        print("📄 Content:")
-        print(doc_text)
-        print("-" * 50)
 
 def classify_update(text: str) -> str:
     """Recognizes if the text describes a structural or semantic modification."""
@@ -307,9 +297,9 @@ def acquire_schema_from_text(raw_text: str):
     return schema
 
 
-def acquire_schema_from_mysql(db_name: str):
+def acquire_schema_from_mysql():
     print("\n🔌 Connecting to MySQL database to retrieve schema...")
-    schema = extract_schema(db_name)
+    schema = extract_schema()
     schema["source"] = "mysql_extraction"
     print("\n🆕 Generating schema from database schema...\n")
     print("✅ New schema generated.")
@@ -333,7 +323,7 @@ def save_validate_and_build(schema):
 
     print("\n🔨 Building/recreating vector store...")
     vector_store = build_vector_store(schema)
-    print_vector_store(vector_store)
+    print_vector_store(vector_store) # pyright: ignore[reportArgumentType]
 
     print("\n🍾 Vector store built successfully!")
     print("\n✅ Workflow completed successfully!")
@@ -373,9 +363,7 @@ if __name__ == "__main__":
             else:
                 schema = acquire_schema_from_text(raw_text)
         else:
-            print("👉 Please provide the database name to extract the schema from:")
-            db_name = input("👉 Database name: ").strip()
-            schema = acquire_schema_from_mysql(db_name)
+            schema = acquire_schema_from_mysql()
 
         if schema:
             save_validate_and_build(schema)

@@ -13,19 +13,12 @@ EMBEDDING_MODEL = "mxbai-embed-large"
 # === EMBEDDINGS ===
 _embeddings = OllamaEmbeddings(model=EMBEDDING_MODEL)
 
-def print_query_vector_store():
+def print_query_vector_store(store: Chroma):
     """
-    Prints all documents stored in the query feedback vector store.
+    Prints the 15 most recent documents stored in the query feedback vector store.
     Useful for debugging and inspection.
     """
-    print("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT\n")
-
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
-    store = Chroma(
-        collection_name=QUERY_COLLECTION_NAME,
-        persist_directory=QUERY_DB_DIR,
-        embedding_function=embeddings,
-    )
+    print("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n")
 
     # Recupera TUTTI i documenti
     data = store.get()
@@ -34,9 +27,17 @@ def print_query_vector_store():
         print("⚠️ Query vector store is empty.")
         return
 
-    for idx, (doc, metadata) in enumerate(
-        zip(data["documents"], data["metadatas"]), start=1
-    ):
+    # Crea lista di tuple (doc, metadata) e ordina per timestamp decrescente
+    docs_with_metadata = list(zip(data["documents"], data["metadatas"]))
+    docs_with_metadata.sort(
+        key=lambda x: x[1].get("timestamp", 0),
+        reverse=True
+    )
+    
+    # Prendi solo i 15 più recenti
+    docs_with_metadata = docs_with_metadata[:15]
+
+    for idx, (doc, metadata) in enumerate(docs_with_metadata, start=1):
         print(f"--- Entry #{idx} ------------------------------")
         print(doc)
         print("\nMetadata:")
@@ -86,6 +87,8 @@ def apply_time_decay(
     return [doc for _, doc in scored]
 
 def classify_error(error_message: str | None) -> str | None:
+    if not error_message:
+        return None  # niente da classificare
 
     msg = error_message.lower()
 
@@ -101,7 +104,6 @@ def classify_error(error_message: str | None) -> str | None:
         return "BAD_JOIN"
 
     return "GENERIC_RUNTIME_ERROR"
-
 
 # ------------------------------------------------------------------
 # STORE FEEDBACK
