@@ -86,6 +86,26 @@ def apply_time_decay(
 
     return [doc for _, doc in scored]
 
+def query_already_exists(store: Chroma, sql_query: str) -> bool:
+    """
+    Checks if a SQL query already exists in the vector store.
+    Comparison is done on metadata["sql_query"].
+    """
+    data = store.get(include=["metadatas"])
+
+    if not data or not data.get("metadatas"):
+        return False
+
+    for metadata in data["metadatas"]:
+        if metadata.get("sql_query") == sql_query:
+            return True
+
+    return False
+
+# ------------------------------------------------------------------
+# STORE FEEDBACK
+# ------------------------------------------------------------------
+
 def classify_error(error_message: str | None) -> str | None:
     if not error_message:
         return None  # niente da classificare
@@ -104,10 +124,6 @@ def classify_error(error_message: str | None) -> str | None:
         return "BAD_JOIN"
 
     return "GENERIC_RUNTIME_ERROR"
-
-# ------------------------------------------------------------------
-# STORE FEEDBACK
-# ------------------------------------------------------------------
 
 def detect_structural_issue(sql: str) -> bool:
     sql_upper = sql.upper()
@@ -180,7 +196,13 @@ Outcome:
     )
 
     store = get_query_store()
+
+    if query_already_exists(store, sql_query):
+        print("ℹ️  Query already present in feedback store. Skipping insert.")
+        return
+
     store.add_documents([doc])
+    print(f"\n📌 Query stored with status: {status}")
     
 
 def extract_sql_patterns(sql: str) -> list[str]:
