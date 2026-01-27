@@ -1,10 +1,9 @@
-import json
-import os
-import re
+import json, os
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
+from mysql_linker import extract_schema
 from utils_pkg  import (
     print_schema_preview,
     extract_json_from_response,
@@ -12,7 +11,6 @@ from utils_pkg  import (
     print_vector_store
     
 )
-from mysql_linker import extract_schema
 
 # === CONFIG ===
 SCHEMA_FILE = "schema_canonico.json"
@@ -55,7 +53,6 @@ Answer only with "A" or "B".
     elif "B" in content:
         return "semantic"
     return "unknown"
-
 
 def update_schema_with_existing(raw_schema_text: str, current_schema: dict | None = None) -> dict:
     """
@@ -122,7 +119,6 @@ Return the UPDATED schema JSON:
 
     return schema
 
-# === 2️⃣ Function to generate/update canonical schema ===
 def generate_schema_canonical(raw_schema_text: str) -> dict:
 
     print("\n📄 Raw schema text being sent to LLM:\n")
@@ -296,7 +292,6 @@ def acquire_schema_from_text(raw_text: str):
     print("✅ New schema generated.")
     return schema
 
-
 def acquire_schema_from_mysql():
     print("\n🔌 Connecting to MySQL database to retrieve schema...")
     schema = extract_schema()
@@ -304,7 +299,6 @@ def acquire_schema_from_mysql():
     print("\n🆕 Generating schema from database schema...\n")
     print("✅ New schema generated.")
     return schema
-
 
 def save_validate_and_build(schema):
     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:

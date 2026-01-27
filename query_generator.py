@@ -51,7 +51,6 @@ def validate_sql_syntax(sql_query: str) -> str:
     except Exception:
         return "SYNTAX_ERROR"
 
-
 def print_llm_prompt(prompt_text: str) -> None:
     """
     Prints the final prompt that will be sent to the LLM.
@@ -62,7 +61,6 @@ def print_llm_prompt(prompt_text: str) -> None:
     print("=" * 80)
     print(prompt_text)
     print("=" * 80 + "\n")
-
 
 def select_model() -> str:
     """
@@ -81,7 +79,6 @@ def select_model() -> str:
             return selected
         else:
             print("❌ Invalid choice. Please enter 1, 2, or 3.")
-
 
 def get_schema_source() -> str:
     """
@@ -234,7 +231,7 @@ def generate_sql_query(user_request: str, schema_id: str, source: str, selected_
     )
 
     schema_context = get_context(user_request, vector_store)
-    print_schema_context(schema_context)
+    #print_schema_context(schema_context)
 
     template = f""" """
     
