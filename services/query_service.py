@@ -1,11 +1,13 @@
 from query_generator import generate_sql_query, OllamaLLM
-from mysql_executor import execute_sql_query
+from mysql_linker import execute_sql_query
 from query_feedback_store import store_query_feedback
 
 def generate_sql(request: str, model_name: str):
     # override model inside the query_generator file
     import query_generator
     query_generator.model = OllamaLLM(model=model_name)
+    
+    
     
     return generate_sql_query(request)
 

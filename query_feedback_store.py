@@ -237,6 +237,7 @@ ERROR TYPE: {error_type}
 def retrieve_successful_queries(
     user_request: str,
     schema_id: str,
+    model: str,
     k: int = 3,
     half_life_days: int = 30
 ):
@@ -249,7 +250,8 @@ def retrieve_successful_queries(
             "$and": [
                 {"status": "OK"},
                 {"schema_id": schema_id},
-                {"knowledge_scope": "SCHEMA_SPECIFIC"}
+                {"knowledge_scope": "SCHEMA_SPECIFIC"},
+                {"model": {"$ne": model}}  # esclude modelli troppo vecchi
             ]
         } # pyright: ignore[reportArgumentType]
     )

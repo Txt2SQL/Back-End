@@ -8,9 +8,9 @@ from langchain_chroma import Chroma
 from utils_pkg  import (
     print_schema_preview,
     extract_json_from_response,
-    create_schema_manually,
     validate_schema_structure
 )
+from mysql_linker import extract_schema
 
 # === CONFIG ===
 SCHEMA_FILE = "schema_canonico.json"
@@ -257,9 +257,6 @@ def build_vector_store(schema_data: dict):
     return vector_store
 
 def update_schema(raw_text: str, current_schema: dict) :
-    print("\n✅ Existing schema and vector store detected!")
-    print(f"📂 Found: {SCHEMA_FILE}")
-    print(f"📂 Found: {DB_DIR}\n")
 
     with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
         current_schema = json.load(f)
@@ -287,12 +284,9 @@ def update_schema(raw_text: str, current_schema: dict) :
         
         return update_schema_with_existing(raw_text, current_schema)    
 
-# === MAIN ===
-if __name__ == "__main__":
-    print("🤖 Interactive canonical schema management (phase 1)")
+def acquire_schema_from_text():
     print("👉 Paste below the text that describes or updates the schema (press ENTER twice to finish):\n")
 
-    # Reads multiline input
     lines = []
     while True:
         try:
@@ -303,44 +297,95 @@ if __name__ == "__main__":
         except EOFError:
             break
 
-    raw_text = "\n".join(lines)
+    raw_text = "\n".join(lines).strip()
+    if not raw_text:
+        print("❌ No text provided.")
+        return None
 
-    if not raw_text.strip():
-        print("❌ No text provided. Exiting.")
-        exit()
-
-    # === CHECK IF SCHEMA FILE AND VECTOR STORE EXIST ===
     schema_exists = os.path.exists(SCHEMA_FILE) and os.path.getsize(SCHEMA_FILE) > 0
     vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
 
     if schema_exists and vector_store_exists:
+        print("\n✅ Existing schema and vector store detected!")
+        print(f"📂 Found: {SCHEMA_FILE}")
+        print(f"📂 Found: {DB_DIR}\n")
+
         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
             current_schema = json.load(f)
-        schema = update_schema(raw_text, current_schema)
 
-    else:
-        print("\n❌ No existing schema or vector store found.")
-        print("🆕 Generating schema from scratch...\n")
-        
-        schema = generate_schema_canonical(raw_text)
-        print("✅ New schema generated.")
+        return update_schema(raw_text, current_schema)
 
-    # === SAVE AND VALIDATE SCHEMA ===
+    print("\n🆕 No existing schema found. Generating from scratch...\n")
+    schema = generate_schema_canonical(raw_text)
+    schema["source"] = "text_input"
+    
+    print("✅ New schema generated.")
+    return schema
+
+
+def acquire_schema_from_mysql(db_name: str):
+    print("\n🔌 Connecting to MySQL database to retrieve schema...")
+    schema = extract_schema(db_name)
+    schema["source"] = "mysql_extraction"
+    print("\n🆕 Generating schema from database schema...\n")
+    print("✅ New schema generated.")
+    return schema
+
+
+def save_validate_and_build(schema):
     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
         json.dump(schema, f, indent=2, ensure_ascii=False)
-    print(f"\n✅ Schema saved to '{SCHEMA_FILE}'")
 
+    print(f"\n✅ Schema saved to '{SCHEMA_FILE}'")
     print("\n📘 Final schema preview:")
     print_schema_preview(schema)
-    
-    if validate_schema_structure(schema):
-        print("\n✅ Schema validation passed.")
-        print(f"📊 Found {len(schema.get('tables', []))} tables in schema.")
-        
-        print("\n🔨 Building/recreating vector store...")
-        vector_store = build_vector_store(schema)
-        print_vector_store(vector_store)
-        print("\n✅ Workflow completed successfully!")
-    else:
-        print("\n❌ Schema validation failed. Schema has invalid structure.")
-        schema = None
+
+    if not validate_schema_structure(schema):
+        print("\n❌ Schema validation failed. Invalid structure.")
+        return
+
+    print("\n✅ Schema validation passed.")
+    print(f"📊 Found {len(schema.get('tables', []))} tables in schema.")
+
+    print("\n🔨 Building/recreating vector store...")
+    vector_store = build_vector_store(schema)
+    print_vector_store(vector_store)
+
+    print("\n🍾 Vector store built successfully!")
+    print("\n✅ Workflow completed successfully!")
+
+# === MAIN ===
+if __name__ == "__main__":
+    print("🤖 Interactive canonical schema management (phase 1)")
+    print("\nChoose how to acquire the database schema:")
+    print("1️⃣  via text input (DDL statements or descriptions)")
+    print("2️⃣  via MySQL database connection")
+
+    method = input("\n👉 Your choice: ").strip()
+
+    if method not in {"1", "2"}:
+        print("❌ Invalid method choice. Exiting.")
+        exit(1)
+
+    while True:
+        if method == "1":
+            schema = acquire_schema_from_text()
+        else:
+            print("👉 Please provide the database name to extract the schema from:")
+            db_name = input("👉 Database name: ").strip()
+            schema = acquire_schema_from_mysql(db_name)
+
+        if schema:
+            save_validate_and_build(schema)
+
+        if method != "1":
+            break
+
+        print("\nChoose an option:")
+        print("0️⃣  Exit")
+        print("1️⃣  Provide more text to update the schema")
+
+        choice = input("\n👉 Your choice: ").strip()
+        if choice == "0":
+            print("👋 Exiting. Goodbye!")
+            break
