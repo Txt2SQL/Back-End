@@ -253,7 +253,7 @@ def retrieve_successful_queries(
                 {"status": "OK"},
                 {"schema_id": schema_id},
                 {"knowledge_scope": "SCHEMA_SPECIFIC"},
-                {"model": {"$ne": model}}  # esclude modelli troppo vecchi
+                {"model": {"$eq": model}}  # esclude modelli troppo vecchi
             ]
         } # pyright: ignore[reportArgumentType]
     )
