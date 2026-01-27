@@ -67,7 +67,9 @@ def execute_sql_query(sql_query: str) -> Tuple[str, Any]:
         return "RUNTIME_ERROR", str(e)
 
 
-def extract_schema(database_name: str) -> dict:
+def extract_schema(database_name: str | None = None) -> dict:
+    if database_name is None:
+        database_name = os.getenv("DB_NAME", "")
     print(f"📚 Extracting schema for database: {database_name}")
 
     conn = get_db_connection()
