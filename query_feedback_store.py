@@ -133,7 +133,7 @@ def store_query_feedback(
       - "SYNTAX_ERROR"
       - "WRONG_RESULT"
     """
-    if not error_message:
+    if error_message:
         error_type = classify_error(error_message)
     else:
         error_type = None
@@ -160,7 +160,7 @@ Outcome:
 
         
     metadata = {
-        "schema_id": schema_id if knowledge_scope == "SCHEMA_SPECIFIC" else None,
+        "schema_id": schema_id,
         "knowledge_scope": knowledge_scope,
         "status": status,
         "model": model_name,
