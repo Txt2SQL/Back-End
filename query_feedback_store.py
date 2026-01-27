@@ -263,7 +263,6 @@ def retrieve_successful_queries(
 
 def retrieve_failed_queries(
     user_request: str,
-    schema_id: str,
     k: int = 3,
     half_life_days: int = 60
 ):

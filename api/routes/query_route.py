@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from query_generator import generate_sql_query, select_model, compute_schema_id, get_schema_source, validate_sql_syntax
+from query_generator import generate_sql_query, compute_schema_id, validate_sql_syntax
 from mysql_linker import execute_sql_query
 
 router = APIRouter()

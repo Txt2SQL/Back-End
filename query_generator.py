@@ -1,9 +1,8 @@
-import sys, sqlglot, json, hashlib
+import sqlglot, json, hashlib
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_core.documents import Document
 from query_feedback_store import (
     store_query_feedback,
     retrieve_failed_queries,
@@ -12,9 +11,7 @@ from query_feedback_store import (
     print_query_vector_store
 )
 from mysql_linker import execute_sql_query
-from utils_pkg  import (
-    print_schema_context
-)
+from utils_pkg import get_context
 
 # === CONFIG ===
 SCHEMA_FILE = "schema_canonico.json"
@@ -137,32 +134,6 @@ def response_cleaning(response) -> str:
     
     return sql_query
 
-def get_context(user_request: str, vector_store: Chroma) -> str:
-    """
-    Retrieves the schema context and past successful queries
-    for a given user request and schema ID.
-    Returns the combined context as a string.
-    """
-
-    # ------------------------------------------------------------------
-    # 1. SCHEMA RETRIEVAL (RAG)
-    # ------------------------------------------------------------------
-
-    retriever = vector_store.as_retriever(search_kwargs={
-        "k": 5 if any(w in user_request.lower() 
-                      for w in ["average", "per", "by", "total", "sum", "count"]) 
-                else 3
-        })
-    relevant_docs = retriever.invoke(user_request)
-
-    schema_context = "\n\n".join(
-        [f"Table: {d.metadata.get('table')}\n{d.page_content}" for d in relevant_docs]
-    )
-
-    print_schema_context(schema_context)
-
-    return schema_context
-
 def create_base_prompt(schema_context: str, user_request: str) -> str:
     return f"""
 You are an expert SQL database assistant.
@@ -211,11 +182,11 @@ def create_complete_prompt(schema_context: str, user_request: str, schema_id: st
 """
 
     # Negative examples → pattern penalization
-    failed_queries = retrieve_failed_queries(user_request, schema_id, k=3)
+    failed_queries = retrieve_failed_queries(user_request)
     penalty_section = build_penalty_section(failed_queries)
 
     # ------------------------------------------------------------------
-    # 3. PROMPT
+    # PROMPT
     # ------------------------------------------------------------------
     template = f"""
 You are an expert SQL database assistant.
