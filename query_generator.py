@@ -8,10 +8,10 @@ from query_feedback_store import (
     retrieve_failed_queries,
     retrieve_successful_queries,
     build_penalty_section,
+    print_query_vector_store
 )
 from utils_pkg import (
     get_context,
-    print_query_vector_store,
     print_schema_context
 )
 from mysql_linker import execute_sql_query
@@ -267,6 +267,7 @@ if __name__ == "__main__":
         print("\nChoose an option:")
         print("1️⃣  Generate SQL query")
         print("2️⃣  Show query feedback vector store")
+        print("3️⃣  Empty query feedback vector store")
         print("0️⃣  Exit")
 
         choice = input("\n👉 Your choice: ").strip()
@@ -283,6 +284,20 @@ if __name__ == "__main__":
                 embedding_function=embeddings,
             )
             print_query_vector_store(store)
+        
+        elif choice == "3":
+            confirm = input("⚠️  Are you sure you want to empty the query feedback vector store? (y/n): ").strip().lower()
+            if confirm == "y":
+                embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+                store = Chroma(
+                    collection_name=QUERY_COLLECTION_NAME,
+                    persist_directory=DBQ_DIR,
+                    embedding_function=embeddings,
+                )
+                store.delete_collection()
+                print("✅ Query feedback vector store emptied.")
+            else:
+                print("❌ Operation cancelled.")
 
         elif choice == "1":
             # Select model at runtime
@@ -309,12 +324,12 @@ if __name__ == "__main__":
             if syntax_status == "OK":
                 if source == "mysql_extraction":
                     # Runtime execution
-                    print("\n🚀 Executing query against the database...")
+                    print("\n🚀 Executing query against the database...\n")
                     execution_status, execution_output = execute_sql_query(sql)
 
                     if execution_status == "OK":
                         status = "OK"
-                        print("\n📊 Query result preview:")
+                        print("\n📊 Query result preview:\n")
                         for row in execution_output[:5]:
                             print(row)
                     else:
