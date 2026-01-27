@@ -91,15 +91,19 @@ def query_already_exists(store: Chroma, sql_query: str) -> bool:
     Checks if a SQL query already exists in the vector store.
     Comparison is done on metadata["sql_query"].
     """
+    print(f"🔍 Checking if query exists: {sql_query}\n")
     data = store.get(include=["metadatas"])
 
     if not data or not data.get("metadatas"):
+        print("ℹ️ No metadata found in store.\n")
         return False
 
     for metadata in data["metadatas"]:
         if metadata.get("sql_query") == sql_query:
+            print("✅ Query already exists in store.\n")
             return True
 
+    print("❌ Query does not exist in store.\n")
     return False
 
 # ------------------------------------------------------------------
@@ -108,30 +112,40 @@ def query_already_exists(store: Chroma, sql_query: str) -> bool:
 
 def classify_error(error_message: str | None) -> str | None:
     if not error_message:
-        return None  # niente da classificare
+        print("ℹ️ No error message to classify.\n")
+        return None
 
     msg = error_message.lower()
+    print(f"🔍 Classifying error: {error_message}\n")
 
     if "unknown column" in msg:
+        print("➡️ Classified as UNKNOWN_COLUMN\n")
         return "UNKNOWN_COLUMN"
     if "unknown table" in msg:
+        print("➡️ Classified as UNKNOWN_TABLE\n")
         return "UNKNOWN_TABLE"
     if "ambiguous" in msg:
+        print("➡️ Classified as AMBIGUOUS_COLUMN\n")
         return "AMBIGUOUS_COLUMN"
     if "syntax" in msg:
+        print("➡️ Classified as SYNTAX_ERROR\n")
         return "SYNTAX_ERROR"
     if "join" in msg:
+        print("➡️ Classified as BAD_JOIN\n")
         return "BAD_JOIN"
 
+    print("➡️ Classified as GENERIC_RUNTIME_ERROR\n")
     return "GENERIC_RUNTIME_ERROR"
 
 def detect_structural_issue(sql: str) -> bool:
     sql_upper = sql.upper()
-    return (
+    issue_detected = (
         "SELECT *" in sql_upper
         or ("JOIN" in sql_upper and " ON " not in sql_upper)
         or ("SUM(" in sql_upper and "GROUP BY" not in sql_upper)
     )
+    print(f"🔍 Detecting structural issues in SQL: {issue_detected}\n")
+    return issue_detected
 
 def store_query_feedback(
     schema_id: str,
@@ -144,17 +158,10 @@ def store_query_feedback(
 ) -> None:
     """
     Stores a (request, sql, outcome) tuple into the query feedback vector store.
-
-    status values:
-      - "OK"
-      - "SYNTAX_ERROR"
-      - "WRONG_RESULT"
     """
-    if error_message:
-        error_type = classify_error(error_message)
-    else:
-        error_type = None
+    print(f"💾 Storing feedback for query: {sql_query}\n")
 
+    error_type = classify_error(error_message) if error_message else None
 
     page_content = f"""
 User request:
@@ -167,7 +174,6 @@ Outcome:
 {status}
 """.strip()
 
-    
     if status == "SYNTAX_ERROR":
         knowledge_scope = "SYNTAX"
     elif detect_structural_issue(sql_query):
@@ -175,7 +181,8 @@ Outcome:
     else:
         knowledge_scope = "SCHEMA_SPECIFIC"
 
-        
+    print(f"📌 Knowledge scope determined: {knowledge_scope}\n")
+
     metadata = {
         "schema_id": schema_id,
         "knowledge_scope": knowledge_scope,
@@ -187,8 +194,10 @@ Outcome:
 
     if error_message:
         metadata["error_type"] = error_type
+        print(f"⚠️ Error type recorded: {error_type}\n")
     else:
         metadata["rows_fetched"] = rows_fetched
+        print(f"ℹ️ Rows fetched: {rows_fetched}\n")
 
     doc = Document(
         page_content=page_content,
@@ -198,33 +207,36 @@ Outcome:
     store = get_query_store()
 
     if query_already_exists(store, sql_query):
-        print("ℹ️  Query already present in feedback store. Skipping insert.")
+        print("ℹ️ Query already present. Skipping insert.\n")
         return
 
     store.add_documents([doc])
-    print(f"\n📌 Query stored with status: {status}")
-    
+    print(f"✅ Query stored with status: {status}\n")
 
 def extract_sql_patterns(sql: str) -> list[str]:
     patterns = []
 
     if "SELECT *" in sql.upper():
         patterns.append("SELECT *")
+        print("🔍 Pattern detected: SELECT *\n")
 
     if re.search(r"JOIN\s+\w+\s+ON\s+1\s*=\s*1", sql, re.I):
         patterns.append("cartesian join (ON 1=1)")
+        print("🔍 Pattern detected: Cartesian join\n")
 
     if "GROUP BY" not in sql.upper() and "SUM(" in sql.upper():
         patterns.append("aggregate without GROUP BY")
+        print("🔍 Pattern detected: Aggregate without GROUP BY\n")
 
     if re.search(r"WHERE\s+.+\s*=\s*'.*'", sql):
         patterns.append("string literal comparison")
+        print("🔍 Pattern detected: String literal comparison\n")
 
     return patterns
 
-
 def build_penalty_section(failed_queries: list[Document]) -> str:
     if not failed_queries:
+        print("ℹ️ No failed queries to build penalties.\n")
         return ""
 
     lines = []
@@ -241,7 +253,6 @@ def build_penalty_section(failed_queries: list[Document]) -> str:
 ERROR TYPE: {error_type}
 """)
 
-        # 🔥 Explicit natural language penalties
         if error_type == "UNKNOWN_COLUMN":
             lines.append("RULE: Do NOT use columns that are not present in the schema.")
         elif error_type == "UNKNOWN_TABLE":
@@ -253,8 +264,8 @@ ERROR TYPE: {error_type}
         else:
             lines.append("RULE: Avoid repeating this query structure.")
 
+    print(f"📋 Penalty section built for {len(failed_queries)} failures.\n")
     return "\n".join(lines)
-
 
 
 # ------------------------------------------------------------------
@@ -268,22 +279,26 @@ def retrieve_successful_queries(
     k: int = 3,
     half_life_days: int = 30
 ):
+    print(f"🔍 Retrieving successful queries for request: '{user_request}'\n")
     store = get_query_store()
 
     docs = store.similarity_search(
         user_request,
-        k=10,  # recupera più del necessario
+        k=10,  # retrieve more than needed
         filter={
             "$and": [
                 {"status": "OK"},
                 {"schema_id": schema_id},
                 {"knowledge_scope": "SCHEMA_SPECIFIC"},
-                {"model": {"$eq": model}}  # esclude modelli troppo vecchi
+                {"model": {"$eq": model}}  # exclude old models
             ]
         } # pyright: ignore[reportArgumentType]
     )
+    print(f"ℹ️ Found {len(docs)} candidate successful queries before decay.\n")
 
     docs = apply_time_decay(docs, half_life_days)
+    print(f"⏳ Applied time decay with half-life {half_life_days} days.\n")
+    print(f"✅ Returning top {k} successful queries.\n")
 
     return docs[:k]
 
@@ -293,6 +308,7 @@ def retrieve_failed_queries(
     k: int = 3,
     half_life_days: int = 60
 ):
+    print(f"🔍 Retrieving failed queries for request: '{user_request}'\n")
     store = get_query_store()
 
     syntax_errors = store.similarity_search(
@@ -305,6 +321,7 @@ def retrieve_failed_queries(
             ]
         } # pyright: ignore[reportArgumentType]
     )
+    print(f"ℹ️ Found {len(syntax_errors)} syntax error queries.\n")
 
     structural_errors = store.similarity_search(
         user_request,
@@ -316,8 +333,13 @@ def retrieve_failed_queries(
             ]
         } # pyright: ignore[reportArgumentType]
     )
+    print(f"ℹ️ Found {len(structural_errors)} structural error queries.\n")
 
     docs = syntax_errors + structural_errors
+    print(f"ℹ️ Total failed queries before decay: {len(docs)}\n")
+
     docs = apply_time_decay(docs, half_life_days)
+    print(f"⏳ Applied time decay with half-life {half_life_days} days.\n")
+    print(f"✅ Returning top {k} failed queries.\n")
 
     return docs[:k]

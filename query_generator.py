@@ -332,7 +332,7 @@ if __name__ == "__main__":
                         status = "OK"
                         rows_fetched = len(execution_output) if execution_output else 0
                         print("\n📊 Query result preview:\n")
-                        for row in execution_output[:5]:
+                        for row in execution_output[:10]:
                             print(row)
                     else:
                         status = "RUNTIME_ERROR"
