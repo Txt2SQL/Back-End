@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api.routes import schema_routes, query_routes
+from api.routes import schema_route, query_route
 
 app = FastAPI(
     title="SQL RAG API",
@@ -8,5 +8,5 @@ app = FastAPI(
 )
 
 # Include routes
-app.include_router(schema_routes.router, prefix="/schema", tags=["Schema"])
-app.include_router(query_routes.router, prefix="/query", tags=["Query"])
+app.include_router(schema_route.router, prefix="/schema", tags=["Schema"])
+app.include_router(query_route.router, prefix="/query", tags=["Query"])
