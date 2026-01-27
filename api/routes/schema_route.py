@@ -10,7 +10,7 @@ def create_schema_from_text(raw_text: str):
     return {"status": "ok", "schema": schema}
 
 @router.post("/mysql")
-def create_schema_from_mysql(db_name: str):
-    schema = acquire_schema_from_mysql(db_name)
+def create_schema_from_mysql():
+    schema = acquire_schema_from_mysql()
     save_validate_and_build(schema)
     return {"status": "ok", "schema": schema}
