@@ -356,7 +356,5 @@ if __name__ == "__main__":
                 rows_fetched=rows_fetched
             )
 
-            print(f"\n📌 Query stored with status: {status}")
-
         else:
             print("❌ Invalid option. Try again.")
