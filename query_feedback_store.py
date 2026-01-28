@@ -276,40 +276,40 @@ Error type: {error_type}
 # RETRIEVAL
 # ------------------------------------------------------------------
 
-def retrieve_successful_queries(
-    user_request: str,
-    schema_id: str,
-    model: str,
-    k: int = 3,
-    half_life_days: int = 30
-):
-    print(f"🔍 Retrieving successful queries for request: '{user_request}'\n")
-    store = get_query_store()
+# def retrieve_successful_queries(
+#     user_request: str,
+#     schema_id: str,
+#     model: str,
+#     k: int = 3,
+#     half_life_days: int = 30
+# ):
+#     print(f"🔍 Retrieving successful queries for request: '{user_request}'\n")
+#     store = get_query_store()
 
-    docs = store.similarity_search(
-        user_request,
-        k=10,  # retrieve more than needed
-        filter={
-            "$and": [
-                {"status": "OK"},
-                {"schema_id": schema_id},
-                {"knowledge_scope": "SCHEMA_SPECIFIC"},
-                {"model": {"$eq": model}}  # exclude old models
-            ]
-        } # pyright: ignore[reportArgumentType]
-    )
-    print(f"ℹ️ Found {len(docs)} candidate successful queries before decay.\n")
+#     docs = store.similarity_search(
+#         user_request,
+#         k=10,  # retrieve more than needed
+#         filter={
+#             "$and": [
+#                 {"status": "OK"},
+#                 {"schema_id": schema_id},
+#                 {"knowledge_scope": "SCHEMA_SPECIFIC"},
+#                 {"model": {"$eq": model}}  # exclude old models
+#             ]
+#         } # pyright: ignore[reportArgumentType]
+#     )
+#     print(f"ℹ️ Found {len(docs)} candidate successful queries before decay.\n")
 
-    docs = apply_time_decay(docs, half_life_days)
-    print(f"⏳ Applied time decay with half-life {half_life_days} days.\n")
-    print(f"✅ Returning top {k} successful queries.\n")
+#     docs = apply_time_decay(docs, half_life_days)
+#     print(f"⏳ Applied time decay with half-life {half_life_days} days.\n")
+#     print(f"✅ Returning top {k} successful queries.\n")
 
-    return docs[:k]
+#     return docs[:k]
 
 
 def retrieve_failed_queries(
     user_request: str,
-    k: int = 3,
+    k: int = 1,
     half_life_days: int = 60
 ):
     print(f"🔍 Retrieving failed queries for request: '{user_request}'\n")
