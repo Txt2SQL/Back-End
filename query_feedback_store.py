@@ -255,7 +255,6 @@ Error type: {error_type}
     logger.info(f"📋 Penalty section built for {len(failed_queries)} failures.")
     return "\n".join(lines)
 
-
 # ------------------------------------------------------------------
 # RETRIEVAL
 # ------------------------------------------------------------------

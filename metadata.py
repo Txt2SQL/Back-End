@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 import time
 
@@ -8,7 +8,7 @@ class UIMetadata:
     schema_id: Optional[str]
     user_request: str
     model_name: str
-    status: str  # OK | SYNTAX_ERROR | RUNTIME_ERROR | WRONG_RESULT
+    status: str  # OK | SYNTAX_ERROR | RUNTIME_ERROR
 
     # --- Execution info ---
     rows_fetched: int = 0
