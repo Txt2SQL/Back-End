@@ -6,7 +6,6 @@ from langchain_community.vectorstores import Chroma
 from query_feedback_store import (
     store_query_feedback,
     retrieve_failed_queries,
-    retrieve_successful_queries,
     build_penalty_section,
     print_query_vector_store
 )
@@ -31,11 +30,51 @@ AVAILABLE_MODELS = {
     "4": "deepseek-coder-v2:16b"
 }
 
-def compute_schema_id() -> str:
-    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
-        schema_dict = json.load(f)
-    normalized = json.dumps(schema_dict, sort_keys=True)
+def compute_schema_id(full_schema: dict) -> str:
+    normalized = json.dumps(full_schema, sort_keys=True)
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+
+def infer_relationships(schema: dict) -> list[str]:
+    """
+    Infer join relationships from *_id column naming conventions.
+    Returns human-readable join hints.
+    """
+    tables = schema.get("tables", [])
+    
+    # Map: column_name -> [(table, column)]
+    column_index = {}
+
+    for table in tables:
+        table_name = table["name"]
+        for col in table["columns"]:
+            col_name = col["name"]
+            column_index.setdefault(col_name, []).append(table_name)
+
+    relationships = []
+
+    for col_name, table_list in column_index.items():
+        # Typical FK pattern: xxx_id appears in more than one table
+        if col_name.endswith("_id") and len(table_list) >= 2:
+            base = col_name.replace("_id", "")
+            for t in table_list:
+                if t != base and base in table_list:
+                    relationships.append(
+                        f"{t}.{col_name} → {base}.{col_name}"
+                    )
+
+    return sorted(set(relationships))
+
+def build_join_hints(schema: dict) -> str:
+    relations = infer_relationships(schema)
+
+    if not relations:
+        return ""
+
+    lines = ["=== JOIN PATH HINTS ==="]
+    for r in relations:
+        lines.append(f"- {r}")
+
+    return "\n".join(lines)
 
 def validate_sql_syntax(sql_query: str) -> str:
     """
@@ -80,15 +119,13 @@ def select_model() -> str:
         else:
             print("❌ Invalid choice. Please enter 1, 2, or 3.")
 
-def get_schema_source() -> str:
+def get_schema_source(full_schema: dict) -> str:
     """
     Prompts user to select the schema source.
     Returns either "text_input" or "mysql_extraction".
     """
-    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
-        schema_dict = json.load(f)
-    
-    if "source" in schema_dict and schema_dict["source"] == "mysql_extraction":
+        
+    if "source" in full_schema and full_schema["source"] == "mysql_extraction":
         print("ℹ️  Schema source detected: MySQL extraction.\n")
         return "mysql_extraction"
     else:
@@ -129,52 +166,10 @@ def response_cleaning(response) -> str:
     
     return sql_query
 
-def create_base_prompt(schema_context: str, user_request: str) -> str:
-    return f"""
-You are an expert SQL database assistant.
-You will be provided with:
-1. The partial description of the database schema (only the relevant tables)
-2. The user's request in natural language.
-3. Examples of previous successful SQL queries
-
-Your task is to return a **single SQL query** that satisfies the request,
-using the provided tables and columns.
-
-CRITICAL RULES:
-- Use ONLY the tables and columns present in the schema provided.
-- Do NOT invent field or table names that don't exist.
-- Do NOT add WHERE clauses or conditions unless explicitly requested.
-- Do NOT join tables unless necessary for the request.
-- Return **only the SQL query**, without comments or additional text.
-- Make the query as simple as possible to satisfy the request.
-
-=== SCHEMA ===
-{schema_context}
-
-=== REQUEST ===
-{user_request}
-
-SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
-"""
-
-def create_complete_prompt(schema_context: str, user_request: str, schema_id: str, model: str) -> str:
+def add_penalties(template: str, user_request: str) -> str:
     # ------------------------------------------------------------------
     # QUERY FEEDBACK RETRIEVAL
     # ------------------------------------------------------------------
-    # Positive examples
-    similar_queries = retrieve_successful_queries(
-        user_request,
-        schema_id=schema_id,
-        model=model,
-    )
-    past_examples = "\n\n".join(d.page_content for d in similar_queries)
-
-    examples_section = "" # REMOVED TEMPORARILY
-    if past_examples.strip():
-        examples_section = f"""
-=== PAST SUCCESSFUL EXAMPLES ===
-{past_examples}
-"""
 
     # Negative examples → pattern penalization
     failed_queries = retrieve_failed_queries(user_request)
@@ -183,40 +178,14 @@ def create_complete_prompt(schema_context: str, user_request: str, schema_id: st
     # ------------------------------------------------------------------
     # PROMPT
     # ------------------------------------------------------------------
-    template = f"""
-You are an expert SQL database assistant.
-You will be provided with:
-1. The partial description of the database schema (only the relevant tables)
-2. The user's request in natural language.
-3. Examples of previous successful SQL queries
-
-Your task is to return a **single SQL query** that satisfies the request,
-using the provided tables and columns.
-
-CRITICAL RULES:
-- Use ONLY the tables and columns present in the schema provided.
-- Do NOT invent field or table names that don't exist.
-- Do NOT add WHERE clauses or conditions unless explicitly requested.
-- Do NOT join tables unless necessary for the request.
-- Return **only the SQL query**, without comments or additional text.
-- Make the query as simple as possible to satisfy the request.
+    template = template + f"""
 
 {penalty_section}
 
-{examples_section}
-
-=== SCHEMA ===
-{schema_context}
-
-=== REQUEST ===
-{user_request}
-
-
-SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
     return template
 
-def generate_sql_query(user_request: str, schema_id: str, source: str, selected_model: str) -> str:
+def generate_sql_query(user_request: str, source: str, full_schema: dict) -> str:
     """
     Generates a SQL query using:
     - canonical schema RAG
@@ -232,13 +201,52 @@ def generate_sql_query(user_request: str, schema_id: str, source: str, selected_
 
     schema_context = get_context(user_request, vector_store)
     #print_schema_context(schema_context)
-
-    template = f""" """
     
-    if source == "text_input":
-        template = create_base_prompt(schema_context, user_request)
-    else:
-        template = create_complete_prompt(schema_context, user_request, schema_id, selected_model)
+    join_hints = build_join_hints(full_schema)
+
+    template = f""" 
+You are an expert SQL database assistant.
+You will be provided with:
+1. The partial description of the database schema (only the relevant tables)
+2. The user's request in natural language.
+3. Examples of previous successful SQL queries
+
+Your task is to return a **single SQL query** that satisfies the request,
+using the provided tables and columns.
+
+=== SCHEMA ===
+{schema_context}
+
+{join_hints}
+
+=== REQUEST ===
+{user_request}
+
+IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
+- Do NOT use columns outside the schema
+- Do NOT invent field or table names that don't exist.
+- Always qualify columns when joining
+- Do NOT use SELECT *
+- Do NOT add WHERE clauses or conditions unless explicitly requested.
+- Do NOT join tables unless necessary for the request.
+- If using aggregates, include GROUP BY    
+"""
+    
+    if source == "mysql_extraction":
+        template = add_penalties(template, user_request)
+
+    template = template + """
+Before writing the SQL query, internally determine:
+- Which tables are required
+- How they are joined
+- Whether aggregation or grouping is required
+- Which columns are selected
+
+Do NOT output this reasoning.
+Only output the final SQL query.
+
+SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
+"""
 
     # Print the final prompt
     print_llm_prompt(template)
@@ -304,13 +312,18 @@ if __name__ == "__main__":
             selected_model_name = select_model()
             model = OllamaLLM(model=selected_model_name)
 
+            # Load schema
+            full_schema = None
+            with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+                full_schema = json.load(f)
+            
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
-            schema_id = compute_schema_id()
-            source = get_schema_source()
+            schema_id = compute_schema_id(full_schema)
+            source = get_schema_source(full_schema)
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, schema_id, source, selected_model_name)
+            sql = generate_sql_query(user_request, source, full_schema)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
