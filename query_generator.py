@@ -21,8 +21,8 @@ from mysql_linker import execute_sql_query
 SCHEMA_FILE = "schema_canonico.json"
 SCHEMA_COLLECTION_NAME = "schema_canonico"
 QUERY_COLLECTION_NAME = "query_feedback"
-DBS_DIR = "./vector_store/schema"
-DBQ_DIR = "./vector_store/queries"
+VSS_DIR = "./vector_store/schema"
+VSQ_DIR = "./vector_store/queries"
 
 # === AVAILABLE MODELS ===
 AVAILABLE_MODELS = {
@@ -269,18 +269,12 @@ def response_cleaning(response) -> str:
     
     return sql_query
 
-def add_penalties(template: str, user_request: str) -> str:
-    # ------------------------------------------------------------------
-    # QUERY FEEDBACK RETRIEVAL
-    # ------------------------------------------------------------------
+def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
 
     # Negative examples → pattern penalization
-    failed_queries = retrieve_failed_queries(user_request)
+    failed_queries = retrieve_failed_queries(user_request, query_vs)
     penalty_section = build_penalty_section(failed_queries)
-
-    # ------------------------------------------------------------------
-    # PROMPT
-    # ------------------------------------------------------------------
+    
     template = template + f"""
 
 {penalty_section}
@@ -288,7 +282,14 @@ def add_penalties(template: str, user_request: str) -> str:
 """
     return template
 
-def generate_sql_query(user_request: str, source: str, full_schema: dict, model_name: str) -> str:
+def generate_sql_query(
+    user_request: str, 
+    source: str, 
+    full_schema: dict, 
+    model_name: str, 
+    query_vs: Chroma, 
+    schema_vs: Chroma
+) -> str:
     """
     Generates a SQL query using:
     - canonical schema RAG
@@ -296,16 +297,8 @@ def generate_sql_query(user_request: str, source: str, full_schema: dict, model_
     - past failed queries (negative / penalized patterns)
     """
     logger.info(f"🚀 Starting SQL generation with model: {model_name}")
-    
-    model = OllamaLLM(model=model_name)
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
-    vector_store = Chroma(
-        collection_name=SCHEMA_COLLECTION_NAME,
-        persist_directory=DBS_DIR,
-        embedding_function=embeddings,
-    )
 
-    schema_context = get_context(user_request, vector_store)
+    schema_context = get_context(user_request, schema_vs)
     logger.debug(f"Schema context retrieved: {len(schema_context)} characters")
     
     join_hints = build_join_hints(full_schema)
@@ -339,7 +332,7 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 """
     
     if source == "mysql_extraction":
-        template = add_penalties(template, user_request)
+        template = add_penalties(template, user_request, query_vs)
         logger.info("Added penalty section for MySQL extraction schema")
 
     template = template + """
@@ -359,7 +352,8 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
     print_llm_prompt(template)
 
     prompt = ChatPromptTemplate.from_template(template)
-    chain = prompt | model  # pyright: ignore[reportOperatorIssue]
+    model = OllamaLLM(model=model_name)
+    chain = prompt | model
 
     logger.info("Sending request to LLM...")
     response = chain.invoke({
@@ -396,7 +390,7 @@ def main():
             embeddings = OllamaEmbeddings(model="mxbai-embed-large")
             store = Chroma(
                 collection_name=QUERY_COLLECTION_NAME,
-                persist_directory=DBQ_DIR,
+                persist_directory=VSQ_DIR,
                 embedding_function=embeddings,
             )
             print_query_vector_store(store)
@@ -407,7 +401,7 @@ def main():
                 embeddings = OllamaEmbeddings(model="mxbai-embed-large")
                 store = Chroma(
                     collection_name=QUERY_COLLECTION_NAME,
-                    persist_directory=DBQ_DIR,
+                    persist_directory=VSQ_DIR,
                     embedding_function=embeddings,
                 )
                 store.delete_collection()
@@ -424,13 +418,26 @@ def main():
             with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
                 full_schema = json.load(f)
             
+            embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+
+            query_vs = Chroma(
+                collection_name=QUERY_COLLECTION_NAME,
+                persist_directory=VSQ_DIR,
+                embedding_function=embeddings,
+            )
+
+            schema_vs = Chroma(
+                collection_name=SCHEMA_COLLECTION_NAME,
+                persist_directory=VSS_DIR,
+                embedding_function=embeddings,
+            )            
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
             schema_id = compute_schema_id(full_schema)
             source = get_schema_source(full_schema)
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, source, full_schema, selected_model_name)
+            sql = generate_sql_query(user_request, source, full_schema, selected_model_name, query_vs, schema_vs)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
@@ -467,6 +474,7 @@ def main():
 
             # Store feedback
             store_query_feedback(
+                store=query_vs,
                 user_request=user_request,
                 sql_query=sql,
                 status=status,

@@ -1,11 +1,11 @@
 import sys, os, pytest, json, time
-
 # Add parent directory to Python path for development
-#sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from datetime import datetime
+from langchain_chroma import Chroma
 from typing import Dict, List, Tuple
-# IMPORTANT: Setup single logger FIRST
+from langchain_ollama import OllamaEmbeddings
 from logging_utils import (
     setup_single_project_logger, 
     setup_logger
@@ -15,17 +15,22 @@ from query_generator import (
     generate_sql_query,
     validate_sql_syntax,
     execute_sql_query,
-    SCHEMA_FILE
+    AVAILABLE_MODELS,
+    SCHEMA_FILE,
+    SCHEMA_COLLECTION_NAME,
+    QUERY_COLLECTION_NAME,
+    VSS_DIR,
+    VSQ_DIR
 )
 
 # ==================== CONFIGURATION ====================
-INPUT_FILE = "./test/test_requests.txt"
-OUTPUT_FILE = f"./test/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+SCHEMA_FILE = "../" + SCHEMA_FILE  # Adjust path to schema file
+VSS_DIR = "../vector_store/schema"      # Adjust path to schema vector store
+VSQ_DIR = "../vector_store/queries"      # Adjust path to query vector store
+INPUT_FILE = "test_requests.txt"
+OUTPUT_FILE = f"./test_result/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
-AVAILABLE_MODELS = {
-    "1": "codellama:13b"
-}
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
@@ -58,8 +63,14 @@ def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
     return request[:max_length] + "..."
 
 
-def run_single_test(request: str, model_name: str, full_schema: dict, 
-                    source: str = "mysql_extraction") -> Tuple[str, str, str]:
+def run_single_test(
+    request: str, 
+    model_name: str, 
+    full_schema: dict, 
+    source: str,
+    query_vs: Chroma,
+    schema_vs: Chroma
+) -> Tuple[str, str, str]:
     """
     Run a single test: generate SQL and validate it.
     
@@ -68,7 +79,7 @@ def run_single_test(request: str, model_name: str, full_schema: dict,
     """
     try:
         # Generate SQL query
-        sql_query = generate_sql_query(request, source, full_schema, model_name)
+        sql_query = generate_sql_query(request, source, full_schema, model_name, query_vs, schema_vs)
         
         # Validate syntax
         syntax_status = validate_sql_syntax(sql_query)
@@ -90,8 +101,15 @@ def run_single_test(request: str, model_name: str, full_schema: dict,
         return "", "GENERATION_ERROR", error_msg
 
 
-def run_test_with_timeout(request: str, model_name: str, full_schema: dict, 
-                         timeout: int = TIMEOUT_PER_MODEL) -> Tuple[str, str, str]:
+def run_test_with_timeout(
+    request: str, 
+    model_name: str, 
+    full_schema: dict,
+    source: str,
+    query_vs: Chroma,
+    schema_vs: Chroma,
+    timeout: int = TIMEOUT_PER_MODEL
+) -> Tuple[str, str, str]:
     """
     Run test with timeout to prevent hanging.
     """
@@ -102,7 +120,7 @@ def run_test_with_timeout(request: str, model_name: str, full_schema: dict,
     
     def worker():
         try:
-            result = run_single_test(request, model_name, full_schema)
+            result = run_single_test(request, model_name, full_schema, source, query_vs, schema_vs)
             result_queue.put(result)
         except Exception as e:
             result_queue.put(("", "TIMEOUT_OR_ERROR", str(e)))
@@ -237,8 +255,24 @@ def run_comprehensive_tests():
         print(f"❌ Failed to load schema: {e}")
         return
     
+    # Load vector stores
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+
+    query_vs = Chroma(
+        collection_name=QUERY_COLLECTION_NAME,
+        persist_directory=VSQ_DIR,
+        embedding_function=embeddings,
+    )
+
+    schema_vs = Chroma(
+        collection_name=SCHEMA_COLLECTION_NAME,
+        persist_directory=VSS_DIR,
+        embedding_function=embeddings,
+    ) 
+    print(f"✅ Loaded vector stores from {VSQ_DIR} and {VSS_DIR}")
+    
     # 3. Determine source from schema
-    source = full_schema.get("source", "mysql_extraction")
+    source = full_schema.get("source")
     print(f"📋 Schema source: {source}")
     
     # 4. Run tests for each request
@@ -258,7 +292,7 @@ def run_comprehensive_tests():
             model_start_time = time.time()
             
             sql_query, status, error_message = run_test_with_timeout(
-                request, model_name, full_schema, TIMEOUT_PER_MODEL
+                request, model_name, full_schema, source, query_vs, schema_vs, TIMEOUT_PER_MODEL
             )
             
             model_time = time.time() - model_start_time
@@ -277,7 +311,7 @@ def run_comprehensive_tests():
         all_results.append((request, model_results))
         
         # Save intermediate results after each request (optional)
-        intermediate_file = f"./test/intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
+        intermediate_file = f"./test_result/intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
         write_test_results([(request, model_results)], intermediate_file)
     
     # 5. Write final results
@@ -306,6 +340,35 @@ class TestSQLGeneration:
             print("✅ Schema loaded successfully")
         except Exception as e:
             pytest.skip(f"Cannot load schema: {e}")
+        
+        # Load vector stores with error handling
+        try:
+            embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+
+            cls.query_vs = Chroma(
+                collection_name=QUERY_COLLECTION_NAME,
+                persist_directory=VSQ_DIR,
+                embedding_function=embeddings,
+            )
+
+            cls.schema_vs = Chroma(
+                collection_name=SCHEMA_COLLECTION_NAME,
+                persist_directory=VSS_DIR,
+                embedding_function=embeddings,
+            )  
+            print("✅ Vector stores loaded successfully")
+        except Exception as e:
+            pytest.skip(f"Cannot load vector stores: {e}")
+        
+        # Safely retrieve source from schema
+        if cls.full_schema is not None:
+            cls.source = cls.full_schema.get("source")
+            if cls.source is not None:
+                print(f"📋 Schema source: {cls.source}")
+            else:
+                pytest.skip("Schema source not found in loaded schema")
+        else:
+            pytest.skip("Schema was not loaded successfully")
     
     @pytest.fixture
     def sample_requests(self):
@@ -330,9 +393,11 @@ class TestSQLGeneration:
         try:
             sql = generate_sql_query(
                 request, 
-                "mysql_extraction", 
+                self.source, 
                 self.full_schema, 
-                model_name
+                model_name,
+                self.query_vs,
+                self.schema_vs
             )
             
             # Basic validation
@@ -366,10 +431,12 @@ class TestSQLGeneration:
             for model_name in AVAILABLE_MODELS.values():
                 try:
                     sql = generate_sql_query(
-                        request,
-                        "mysql_extraction",
-                        self.full_schema,
-                        model_name
+                        request, 
+                        self.source, 
+                        self.full_schema, 
+                        model_name,
+                        self.query_vs,
+                        self.schema_vs
                     )
                     
                     # Validate syntax
