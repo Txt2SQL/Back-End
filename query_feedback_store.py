@@ -1,9 +1,8 @@
-import math, time, re, logging
-from datetime import datetime
-from pydoc import doc
+import math, time, re
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from logging_utils import setup_logger
 
 # === CONFIG ===
 QUERY_COLLECTION_NAME = "query_feedback"
@@ -11,17 +10,7 @@ QUERY_DB_DIR = "./vector_store/queries"
 EMBEDDING_MODEL = "mxbai-embed-large"
 
 # === LOGGING SETUP ===
-LOG_FILE = f"./logs/query_feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 # === EMBEDDINGS ===
 _embeddings = OllamaEmbeddings(model=EMBEDDING_MODEL)

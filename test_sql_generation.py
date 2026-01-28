@@ -1,15 +1,16 @@
-import sys
-import os
+import sys, os, pytest, json, time
 
 # Add parent directory to Python path for development
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+#sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import pytest
-import json
-import time
 from datetime import datetime
 from typing import Dict, List, Tuple
-
+# IMPORTANT: Setup single logger FIRST
+from logging_utils import (
+    setup_single_project_logger, 
+    setup_logger
+)
+setup_single_project_logger()
 from query_generator import (
     generate_sql_query,
     validate_sql_syntax,
@@ -18,14 +19,16 @@ from query_generator import (
 )
 
 # ==================== CONFIGURATION ====================
-INPUT_FILE = "test_requests.txt"
-OUTPUT_FILE = f"test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+INPUT_FILE = "./test/test_requests.txt"
+OUTPUT_FILE = f"./test/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
-TIMEOUT_PER_MODEL = 600   # 2 minutes timeout per model per request
+TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
 AVAILABLE_MODELS = {
-    "1": "codellama:13b",
-    "2": "deepseek-coder-v2:16b"
+    "1": "codellama:13b"
 }
+
+# === LOGGING SETUP ===
+logger = setup_logger(__name__)
 
 # ==================== TEST FUNCTIONS ====================
 
@@ -138,7 +141,7 @@ def format_result_line(model_name: str, sql_query: str, status: str,
         clean_error = error_message.replace('\n', ' ').strip()
         if len(clean_error) > MAX_OUTPUT_LENGTH/4:  # Truncate long error messages
             clean_error = clean_error[:MAX_OUTPUT_LENGTH/4] + "..."
-        return f"{model_name}\nQuery: {clean_sql}\n Outcome: {clean_error}"
+        return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {clean_error}\n\n"
 
 
 def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
@@ -150,7 +153,7 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
         for request, model_results in results:
             # Write request
             truncated_request = truncate_request(request)
-            f.write(f"{n}. {truncated_request}\n")
+            f.write(f"{n}. {truncated_request}\n\n")
             
             # Write results for each model
             for model_name in AVAILABLE_MODELS.values():
@@ -162,7 +165,7 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
                     f.write(f"{model_name} [TEST NOT RUN] MODEL_NOT_AVAILABLE\n")
             
             # Add blank line between requests for readability
-            f.write("\n")
+            f.write("\n\n\n\n")
             n += 1
     
     print(f"✅ Results written to {output_file}")
@@ -274,7 +277,7 @@ def run_comprehensive_tests():
         all_results.append((request, model_results))
         
         # Save intermediate results after each request (optional)
-        intermediate_file = f"intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
+        intermediate_file = f"./test/intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
         write_test_results([(request, model_results)], intermediate_file)
     
     # 5. Write final results

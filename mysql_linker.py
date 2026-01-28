@@ -1,24 +1,14 @@
 import mysql.connector, os
-import logging
 from datetime import datetime
 from typing import Tuple, Any
 from collections import defaultdict
 from dotenv import load_dotenv
+from logging_utils import setup_logger
 
 load_dotenv()
 
 # === LOGGING SETUP ===
-LOG_FILE = f"./logs/mysql_linker_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 def get_db_connection():
     logger.info("🔧 Creating DB connection object...")
