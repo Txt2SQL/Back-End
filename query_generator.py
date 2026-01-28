@@ -39,11 +39,17 @@ def infer_relationships(schema: dict) -> list[str]:
     Infer join relationships from *_id column naming conventions.
     Returns human-readable join hints.
     """
+    print("🔍 Starting relationship inference...")
     tables = schema.get("tables", [])
     
+    if not tables:
+        print("⚠️  No tables found in schema")
+        return []
+        
     # Map: column_name -> [(table, column)]
     column_index = {}
 
+    print("\n📋 Building column index...")
     for table in tables:
         table_name = table["name"]
         for col in table["columns"]:
@@ -51,7 +57,8 @@ def infer_relationships(schema: dict) -> list[str]:
             column_index.setdefault(col_name, []).append(table_name)
 
     relationships = []
-
+        
+    print("\n🔄 Analyzing foreign key patterns...")
     for col_name, table_list in column_index.items():
         # Typical FK pattern: xxx_id appears in more than one table
         if col_name.endswith("_id") and len(table_list) >= 2:
@@ -65,16 +72,28 @@ def infer_relationships(schema: dict) -> list[str]:
     return sorted(set(relationships))
 
 def build_join_hints(schema: dict) -> str:
+    print("=" * 50)
+    print("🧠 Building join hints from schema...")
+    
     relations = infer_relationships(schema)
 
     if not relations:
+        print("\n📭 No join relationships found")
         return ""
 
+    print(f"\n✨ Found {len(relations)} join relationship(s)")
+    
     lines = ["=== JOIN PATH HINTS ==="]
     for r in relations:
         lines.append(f"- {r}")
 
-    return "\n".join(lines)
+    result = "\n".join(lines)
+    
+    print("\n" + "=" * 50)
+    print("✅ Join hints generated successfully!")
+    print("=" * 50)
+    
+    return result
 
 def validate_sql_syntax(sql_query: str) -> str:
     """
