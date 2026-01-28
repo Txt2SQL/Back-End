@@ -1,10 +1,10 @@
 import sqlglot, json, hashlib
-import logging
 from datetime import datetime
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
+from logging_utils import setup_logger
 from query_feedback_store import (
     store_query_feedback,
     retrieve_failed_queries,
@@ -33,17 +33,7 @@ AVAILABLE_MODELS = {
 }
 
 # === LOGGING SETUP ===
-LOG_FILE = f"./logs/query_generator_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 def compute_schema_id(full_schema: dict) -> str:
     normalized = json.dumps(full_schema, sort_keys=True)
@@ -492,5 +482,4 @@ def main():
 
 # === ENTRY POINT ===
 if __name__ == "__main__":
-    print(f"Log file: {LOG_FILE}")
     main()

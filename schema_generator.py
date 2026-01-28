@@ -6,6 +6,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from mysql_linker import extract_schema
+from logging_utils import setup_logger
 from utils_pkg  import (
     print_schema_preview,
     extract_json_from_response,
@@ -20,18 +21,7 @@ COLLECTION_NAME = "schema_canonico"
 MODEL_NAME = "gemma3:12b"
 
 # === LOGGING SETUP ===
-LOG_FILE = f"./logs/schema_generation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-        logging.StreamHandler()  # Also print to console
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
@@ -391,5 +381,4 @@ def main():
 
 # === ENTRY POINT ===
 if __name__ == "__main__":
-    print(f"Log file: {LOG_FILE}")
     main()

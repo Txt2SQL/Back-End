@@ -1,0 +1,12 @@
+1. Customers who spent more than average. Find customers whose total spending is above the average customer spending
+codellama:13b
+
+Query: SELECT customers.first_name, customers.last_name, customers.email, orders.total_amount, order_details.quantity * order_details.unit_price AS total_spending FROM customers JOIN orders ON customers.customer_id = orders.customer_id JOIN order_details ON orders.order_id = order_details.order_id WHERE orders.total_amount > (SELECT AVG(orders.total_amount) FROM orders);
+
+Outcome: 
+
+
+
+
+
+
