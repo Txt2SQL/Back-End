@@ -1,8 +1,10 @@
 import sqlglot, json, hashlib
+import logging
+from datetime import datetime
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from query_feedback_store import (
     store_query_feedback,
     retrieve_failed_queries,
@@ -30,6 +32,19 @@ AVAILABLE_MODELS = {
     "4": "deepseek-coder-v2:16b"
 }
 
+# === LOGGING SETUP ===
+LOG_FILE = f"./logs/query_generator_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding='utf-8'),
+    ]
+)
+logger = logging.getLogger(__name__)
+
 def compute_schema_id(full_schema: dict) -> str:
     normalized = json.dumps(full_schema, sort_keys=True)
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
@@ -39,52 +54,52 @@ def infer_relationships(schema: dict) -> list[str]:
     Infer join relationships from *_id column naming conventions.
     Returns human-readable join hints.
     """
-    print("🔍 Starting relationship inference...")
+    logger.info("🔍 Starting relationship inference...")
     tables = schema.get("tables", [])
     
     if not tables:
-        print("⚠️  No tables found in schema")
+        logger.warning("⚠️  No tables found in schema")
         return []
     
     # Extract table names for easier checking
     table_names = [t["name"] for t in tables]
-    print(f"📊 Found {len(tables)} tables: {table_names}")
+    logger.info(f"📊 Found {len(tables)} tables: {table_names}")
     
     # Map: column_name -> list of table names where column appears
     column_index = {}
     total_columns = 0
 
-    print("\n📋 Building column index...")
+    logger.info("📋 Building column index...")
     for table in tables:
         table_name = table["name"]
         columns = table.get("columns", [])
-        print(f"  Table '{table_name}': {len(columns)} columns")
+        logger.info(f"  Table '{table_name}': {len(columns)} columns")
         
         for col in columns:
             col_name = col["name"]
             column_index.setdefault(col_name, []).append(table_name)
             total_columns += 1
     
-    print(f"📈 Indexed {total_columns} columns across all tables")
-    print(f"📌 Unique column names: {len(column_index)}")
+    logger.info(f"📈 Indexed {total_columns} columns across all tables")
+    logger.info(f"📌 Unique column names: {len(column_index)}")
     
     # Show columns that appear in multiple tables
     multi_table_cols = {col: tables for col, tables in column_index.items() 
                        if len(tables) > 1}
     if multi_table_cols:
-        print(f"\n🔗 Columns appearing in multiple tables:")
+        logger.info("🔗 Columns appearing in multiple tables:")
         for col, tables_list in multi_table_cols.items():
-            print(f"  '{col}': {tables_list}")
+            logger.info(f"  '{col}': {tables_list}")
     
     relationships = []
     candidate_fks = []
     
-    print("\n🔄 Analyzing foreign key patterns...")
+    logger.info("🔄 Analyzing foreign key patterns...")
     for col_name, table_list in column_index.items():
         # Typical FK pattern: xxx_id appears in more than one table
         if col_name.endswith("_id") and len(table_list) >= 2:
             candidate_fks.append(col_name)
-            print(f"  ✓ '{col_name}' is a potential FK (appears in {len(table_list)} tables: {table_list})")
+            logger.info(f"  ✓ '{col_name}' is a potential FK (appears in {len(table_list)} tables: {table_list})")
             
             # Derive the referenced table name from the column name
             # e.g., "category_id" -> "category" (singular)
@@ -118,7 +133,7 @@ def infer_relationships(schema: dict) -> list[str]:
                 match_type = "column name as table"
             
             if referenced_table:
-                print(f"    → Found referenced table '{referenced_table}' for FK '{col_name}' ({match_type})")
+                logger.info(f"    → Found referenced table '{referenced_table}' for FK '{col_name}' ({match_type})")
                 
                 # For each table containing this FK column (except the referenced table itself)
                 for source_table in table_list:
@@ -126,41 +141,40 @@ def infer_relationships(schema: dict) -> list[str]:
                         # Format: source_table.fk_column → referenced_table.fk_column
                         relationship = f"{source_table}.{col_name} → {referenced_table}.{col_name}"
                         relationships.append(relationship)
-                        print(f"    ✓ Discovered join: {relationship}")
+                        logger.info(f"    ✓ Discovered join: {relationship}")
             else:
-                print(f"    ⚠️  Could not find matching table for '{referenced_table_singular}'")
-                print(f"      Tried: '{referenced_table_singular}', '{referenced_table_singular}s'")
+                logger.warning(f"    ⚠️  Could not find matching table for '{referenced_table_singular}'")
+                logger.info(f"      Tried: '{referenced_table_singular}', '{referenced_table_singular}s'")
                 if referenced_table_singular.endswith('y'):
-                    print(f"      Also tried: '{referenced_table_singular[:-1]}ies'")
+                    logger.info(f"      Also tried: '{referenced_table_singular[:-1]}ies'")
                 
         elif col_name.endswith("_id"):
-            print(f"  - '{col_name}' is *_id but only in 1 table ({table_list[0]}) - likely a PK")
+            logger.info(f"  - '{col_name}' is *_id but only in 1 table ({table_list[0]}) - likely a PK")
     
-    print(f"\n📊 Summary:")
-    print(f"  Candidate foreign keys: {len(candidate_fks)}")
-    print(f"  Inferred relationships: {len(relationships)}")
+    logger.info("📊 Summary:")
+    logger.info(f"  Candidate foreign keys: {len(candidate_fks)}")
+    logger.info(f"  Inferred relationships: {len(relationships)}")
     
     if relationships:
         unique_relationships = sorted(set(relationships))
-        print(f"  Unique relationships: {len(unique_relationships)}")
+        logger.info(f"  Unique relationships: {len(unique_relationships)}")
         return unique_relationships
     else:
-        print("  No relationships inferred")
+        logger.info("  No relationships inferred")
         return []
 
-
 def build_join_hints(schema: dict) -> str:
-    print("=" * 50)
-    print("🧠 Building join hints from schema...")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("🧠 Building join hints from schema...")
+    logger.info("=" * 50)
     
     relations = infer_relationships(schema)
 
     if not relations:
-        print("\n📭 No join relationships found")
+        logger.info("📭 No join relationships found")
         return ""
 
-    print(f"\n✨ Found {len(relations)} join relationship(s)")
+    logger.info(f"✨ Found {len(relations)} join relationship(s)")
     
     lines = ["=== JOIN PATH HINTS ==="]
     for i, r in enumerate(relations, 1):
@@ -168,9 +182,9 @@ def build_join_hints(schema: dict) -> str:
 
     result = "\n".join(lines)
     
-    print("\n" + "=" * 50)
-    print("✅ Join hints generated successfully!")
-    print("=" * 50)
+    logger.info("\n" + "=" * 50)
+    logger.info("✅ Join hints generated successfully!")
+    logger.info("=" * 50)
     
     return result
 
@@ -185,19 +199,20 @@ def validate_sql_syntax(sql_query: str) -> str:
         # Parse only, no DB execution
         sqlglot.parse_one(sql_query)
         return "OK"
-    except Exception:
+    except Exception as e:
+        logger.error(f"Syntax validation failed: {e}")
         return "SYNTAX_ERROR"
 
 def print_llm_prompt(prompt_text: str) -> None:
     """
-    Prints the final prompt that will be sent to the LLM.
+    Logs the final prompt that will be sent to the LLM.
     Useful for debugging and understanding what context the model receives.
     """
-    print("\n" + "=" * 80)
-    print("📋 FINAL PROMPT SENT TO LLM")
-    print("=" * 80)
-    print(prompt_text)
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info("📋 FINAL PROMPT SENT TO LLM")
+    logger.info("=" * 80)
+    logger.info(prompt_text)
+    logger.info("=" * 80 + "\n")
 
 def select_model() -> str:
     """
@@ -215,19 +230,19 @@ def select_model() -> str:
             print(f"✅ Selected model: {selected}\n")
             return selected
         else:
-            print("❌ Invalid choice. Please enter 1, 2, or 3.")
+            logger.error("❌ Invalid choice. Please enter 1, 2, or 3.")
 
 def get_schema_source(full_schema: dict) -> str:
     """
-    Prompts user to select the schema source.
+    Returns the schema source.
     Returns either "text_input" or "mysql_extraction".
     """
         
     if "source" in full_schema and full_schema["source"] == "mysql_extraction":
-        print("ℹ️  Schema source detected: MySQL extraction.\n")
+        logger.info("ℹ️  Schema source detected: MySQL extraction.\n")
         return "mysql_extraction"
     else:
-        print("ℹ️  Schema source detected: Text input.\n")
+        logger.info("ℹ️  Schema source detected: Text input.\n")
         return "text_input"
 
 def response_cleaning(response) -> str:
@@ -283,13 +298,16 @@ def add_penalties(template: str, user_request: str) -> str:
 """
     return template
 
-def generate_sql_query(user_request: str, source: str, full_schema: dict) -> str:
+def generate_sql_query(user_request: str, source: str, full_schema: dict, model_name: str) -> str:
     """
     Generates a SQL query using:
     - canonical schema RAG
     - past successful queries (positive examples)
     - past failed queries (negative / penalized patterns)
     """
+    logger.info(f"🚀 Starting SQL generation with model: {model_name}")
+    
+    model = OllamaLLM(model=model_name)
     embeddings = OllamaEmbeddings(model="mxbai-embed-large")
     vector_store = Chroma(
         collection_name=SCHEMA_COLLECTION_NAME,
@@ -298,7 +316,7 @@ def generate_sql_query(user_request: str, source: str, full_schema: dict) -> str
     )
 
     schema_context = get_context(user_request, vector_store)
-    #print_schema_context(schema_context)
+    logger.debug(f"Schema context retrieved: {len(schema_context)} characters")
     
     join_hints = build_join_hints(full_schema)
 
@@ -332,6 +350,7 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
     
     if source == "mysql_extraction":
         template = add_penalties(template, user_request)
+        logger.info("Added penalty section for MySQL extraction schema")
 
     template = template + """
 Before writing the SQL query, internally determine:
@@ -346,12 +365,13 @@ Only output the final SQL query.
 SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
 
-    # Print the final prompt
+    # Log the final prompt
     print_llm_prompt(template)
 
     prompt = ChatPromptTemplate.from_template(template)
     chain = prompt | model  # pyright: ignore[reportOperatorIssue]
 
+    logger.info("Sending request to LLM...")
     response = chain.invoke({
         "schema_context": schema_context,
         "user_request": user_request
@@ -361,12 +381,12 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
     # 4. OUTPUT CLEANUP
     # ------------------------------------------------------------------
     sql_query = response_cleaning(response)
+    logger.info(f"Generated SQL query length: {len(sql_query)} characters")
 
     return sql_query
 
-
-# === MAIN ===
-if __name__ == "__main__":
+def main():
+    """Main function to handle the interactive workflow."""
     print("🤖 SQL query generator based on RAG and LLM\n")
 
     while True:
@@ -408,7 +428,6 @@ if __name__ == "__main__":
         elif choice == "1":
             # Select model at runtime
             selected_model_name = select_model()
-            model = OllamaLLM(model=selected_model_name)
 
             # Load schema
             full_schema = None
@@ -421,7 +440,7 @@ if __name__ == "__main__":
             source = get_schema_source(full_schema)
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, source, full_schema)
+            sql = generate_sql_query(user_request, source, full_schema, selected_model_name)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
@@ -466,6 +485,12 @@ if __name__ == "__main__":
                 schema_id=schema_id,
                 rows_fetched=rows_fetched
             )
+            print(f"Feedback stored with status: {status}")
 
         else:
             print("❌ Invalid option. Try again.")
+
+# === ENTRY POINT ===
+if __name__ == "__main__":
+    print(f"Log file: {LOG_FILE}")
+    main()
