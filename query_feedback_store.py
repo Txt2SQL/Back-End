@@ -1,14 +1,27 @@
-
-import math, time, re
+import math, time, re, logging
+from datetime import datetime
 from pydoc import doc
 from langchain_ollama import OllamaEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 # === CONFIG ===
 QUERY_COLLECTION_NAME = "query_feedback"
 QUERY_DB_DIR = "./vector_store/queries"
 EMBEDDING_MODEL = "mxbai-embed-large"
+
+# === LOGGING SETUP ===
+LOG_FILE = f"./logs/query_feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding='utf-8'),
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # === EMBEDDINGS ===
 _embeddings = OllamaEmbeddings(model=EMBEDDING_MODEL)
@@ -18,13 +31,13 @@ def print_query_vector_store(store: Chroma):
     Prints the 15 most recent documents stored in the query feedback vector store.
     Useful for debugging and inspection.
     """
-    print("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n")
+    logger.info("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n")
 
     # Recupera TUTTI i documenti
     data = store.get()
 
     if not data or not data.get("documents"):
-        print("\n⚠️ Query vector store is empty.")
+        logger.info("\n⚠️ Query vector store is empty.")
         return
 
     # Crea lista di tuple (doc, metadata) e ordina per timestamp decrescente
@@ -38,13 +51,13 @@ def print_query_vector_store(store: Chroma):
     docs_with_metadata = docs_with_metadata[:15]
 
     for idx, (doc, metadata) in enumerate(docs_with_metadata, start=1):
-        print(f"--- Entry #{idx} ------------------------------")
-        print(doc)
-        print("\nMetadata:")
+        logger.info(f"--- Entry #{idx} ------------------------------")
+        logger.info(doc)
+        logger.info("\nMetadata:")
         for k, v in metadata.items():
             if k != "sql_query":
-                print(f"  {k}: {v}")
-        print("---------------------------------------------\n")
+                logger.info(f"  {k}: {v}")
+        logger.info("---------------------------------------------\n")
 
 def get_query_store() -> Chroma:
     """
@@ -91,19 +104,20 @@ def query_already_exists(store: Chroma, sql_query: str) -> bool:
     Checks if a SQL query already exists in the vector store.
     Comparison is done on metadata["sql_query"].
     """
-    print(f"🔍 Checking if query exists: {sql_query}\n")
+    logger.info(f"🔍 Checking if query exists: {sql_query}")
+    
     data = store.get(include=["metadatas"])
 
     if not data or not data.get("metadatas"):
-        print("ℹ️ No metadata found in store.\n")
+        logger.info("ℹ️ No metadata found in store.")
         return False
 
     for metadata in data["metadatas"]:
         if metadata.get("sql_query") == sql_query:
-            print("✅ Query already exists in store.\n")
+            logger.info("✅ Query already exists in store.")
             return True
 
-    print("❌ Query does not exist in store.\n")
+    logger.info("❌ Query does not exist in store.")
     return False
 
 # ------------------------------------------------------------------
@@ -112,29 +126,29 @@ def query_already_exists(store: Chroma, sql_query: str) -> bool:
 
 def classify_error(error_message: str | None) -> str | None:
     if not error_message:
-        print("ℹ️ No error message to classify.\n")
+        logger.info("ℹ️ No error message to classify.")
         return None
 
     msg = error_message.lower()
-    print(f"🔍 Classifying error: {error_message}\n")
+    logger.info(f"🔍 Classifying error: {error_message}")
 
     if "unknown column" in msg:
-        print("➡️ Classified as UNKNOWN_COLUMN\n")
+        logger.info("➡️ Classified as UNKNOWN_COLUMN")
         return "UNKNOWN_COLUMN"
     if "unknown table" in msg:
-        print("➡️ Classified as UNKNOWN_TABLE\n")
+        logger.info("➡️ Classified as UNKNOWN_TABLE")
         return "UNKNOWN_TABLE"
     if "ambiguous" in msg:
-        print("➡️ Classified as AMBIGUOUS_COLUMN\n")
+        logger.info("➡️ Classified as AMBIGUOUS_COLUMN")
         return "AMBIGUOUS_COLUMN"
     if "syntax" in msg:
-        print("➡️ Classified as SYNTAX_ERROR\n")
+        logger.info("➡️ Classified as SYNTAX_ERROR")
         return "SYNTAX_ERROR"
     if "join" in msg:
-        print("➡️ Classified as BAD_JOIN\n")
+        logger.info("➡️ Classified as BAD_JOIN")
         return "BAD_JOIN"
 
-    print("➡️ Classified as GENERIC_RUNTIME_ERROR\n")
+    logger.info("➡️ Classified as GENERIC_RUNTIME_ERROR")
     return "GENERIC_RUNTIME_ERROR"
 
 def detect_structural_issue(sql: str) -> bool:
@@ -144,7 +158,7 @@ def detect_structural_issue(sql: str) -> bool:
         or ("JOIN" in sql_upper and " ON " not in sql_upper)
         or ("SUM(" in sql_upper and "GROUP BY" not in sql_upper)
     )
-    print(f"🔍 Detecting structural issues in SQL: {issue_detected}\n")
+    logger.info(f"🔍 Detecting structural issues in SQL: {issue_detected}")
     return issue_detected
 
 def store_query_feedback(
@@ -159,7 +173,7 @@ def store_query_feedback(
     """
     Stores a (request, sql, outcome) tuple into the query feedback vector store.
     """
-    print(f"💾 Storing feedback for query: {sql_query}\n")
+    logger.info(f"💾 Storing feedback for query: {sql_query}")
     
     if error_message == "Query failed syntactic check":
         error_type = "SYNTAX"
@@ -185,7 +199,7 @@ Outcome: {status}
     else:
         knowledge_scope = "SCHEMA_SPECIFIC"
 
-    print(f"📌 Knowledge scope determined: {knowledge_scope}\n")
+    logger.info(f"📌 Knowledge scope determined: {knowledge_scope}")
 
     metadata = {
         "schema_id": schema_id,
@@ -198,10 +212,10 @@ Outcome: {status}
 
     if error_message:
         metadata["error_type"] = error_type
-        print(f"⚠️ Error type recorded: {error_type}\n")
+        logger.info(f"⚠️ Error type recorded: {error_type}")
     else:
         metadata["rows_fetched"] = rows_fetched
-        print(f"ℹ️ Rows fetched: {rows_fetched}\n")
+        logger.info(f"ℹ️ Rows fetched: {rows_fetched}")
 
     doc = Document(
         page_content=page_content,
@@ -211,36 +225,36 @@ Outcome: {status}
     store = get_query_store()
 
     if query_already_exists(store, sql_query):
-        print("ℹ️ Query already present. Skipping insert.\n")
+        logger.info("ℹ️ Query already present. Skipping insert.")
         return
 
     store.add_documents([doc])
-    print(f"✅ Query stored with status: {status}\n")
+    logger.info(f"✅ Query stored with status: {status}")
 
 def extract_sql_patterns(sql: str) -> list[str]:
     patterns = []
 
     if "SELECT *" in sql.upper():
         patterns.append("SELECT *")
-        print("🔍 Pattern detected: SELECT *\n")
+        logger.info("🔍 Pattern detected: SELECT *")
 
     if re.search(r"JOIN\s+\w+\s+ON\s+1\s*=\s*1", sql, re.I):
         patterns.append("cartesian join (ON 1=1)")
-        print("🔍 Pattern detected: Cartesian join\n")
+        logger.info("🔍 Pattern detected: Cartesian join")
 
     if "GROUP BY" not in sql.upper() and "SUM(" in sql.upper():
         patterns.append("aggregate without GROUP BY")
-        print("🔍 Pattern detected: Aggregate without GROUP BY\n")
+        logger.info("🔍 Pattern detected: Aggregate without GROUP BY")
 
     if re.search(r"WHERE\s+.+\s*=\s*'.*'", sql):
         patterns.append("string literal comparison")
-        print("🔍 Pattern detected: String literal comparison\n")
+        logger.info("🔍 Pattern detected: String literal comparison")
 
     return patterns
 
 def build_penalty_section(failed_queries: list[Document]) -> str:
     if not failed_queries:
-        print("ℹ️ No failed queries to build penalties.\n")
+        logger.info("ℹ️ No failed queries to build penalties.")
         return ""
 
     lines = []
@@ -268,7 +282,7 @@ Error type: {error_type}
         else:
             lines.append("RULE: Avoid repeating this query structure.")
 
-    print(f"📋 Penalty section built for {len(failed_queries)} failures.\n")
+    logger.info(f"📋 Penalty section built for {len(failed_queries)} failures.")
     return "\n".join(lines)
 
 
@@ -276,43 +290,12 @@ Error type: {error_type}
 # RETRIEVAL
 # ------------------------------------------------------------------
 
-# def retrieve_successful_queries(
-#     user_request: str,
-#     schema_id: str,
-#     model: str,
-#     k: int = 3,
-#     half_life_days: int = 30
-# ):
-#     print(f"🔍 Retrieving successful queries for request: '{user_request}'\n")
-#     store = get_query_store()
-
-#     docs = store.similarity_search(
-#         user_request,
-#         k=10,  # retrieve more than needed
-#         filter={
-#             "$and": [
-#                 {"status": "OK"},
-#                 {"schema_id": schema_id},
-#                 {"knowledge_scope": "SCHEMA_SPECIFIC"},
-#                 {"model": {"$eq": model}}  # exclude old models
-#             ]
-#         } # pyright: ignore[reportArgumentType]
-#     )
-#     print(f"ℹ️ Found {len(docs)} candidate successful queries before decay.\n")
-
-#     docs = apply_time_decay(docs, half_life_days)
-#     print(f"⏳ Applied time decay with half-life {half_life_days} days.\n")
-#     print(f"✅ Returning top {k} successful queries.\n")
-
-#     return docs[:k]
-
-
 def retrieve_failed_queries(
     user_request: str,
     k: int = 1,
     half_life_days: int = 60
 ):
-    print(f"🔍 Retrieving failed queries for request: '{user_request}'\n")
+    logger.info(f"🔍 Retrieving failed queries for request: '{user_request}'")
     store = get_query_store()
 
     syntax_errors = store.similarity_search(
@@ -325,7 +308,7 @@ def retrieve_failed_queries(
             ]
         } # pyright: ignore[reportArgumentType]
     )
-    print(f"ℹ️ Found {len(syntax_errors)} syntax error queries.\n")
+    logger.info(f"ℹ️ Found {len(syntax_errors)} syntax error queries.")
 
     structural_errors = store.similarity_search(
         user_request,
@@ -337,13 +320,13 @@ def retrieve_failed_queries(
             ]
         } # pyright: ignore[reportArgumentType]
     )
-    print(f"ℹ️ Found {len(structural_errors)} structural error queries.\n")
+    logger.info(f"ℹ️ Found {len(structural_errors)} structural error queries.")
 
     docs = syntax_errors + structural_errors
-    print(f"ℹ️ Total failed queries before decay: {len(docs)}\n")
+    logger.info(f"ℹ️ Total failed queries before decay: {len(docs)}")
 
     docs = apply_time_decay(docs, half_life_days)
-    print(f"⏳ Applied time decay with half-life {half_life_days} days.\n")
-    print(f"✅ Returning top {k} failed queries.\n")
+    logger.info(f"⏳ Applied time decay with half-life {half_life_days} days.")
+    logger.info(f"✅ Returning top {k} failed queries.")
 
     return docs[:k]

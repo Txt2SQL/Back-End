@@ -1,4 +1,6 @@
 import json, os
+import logging
+from datetime import datetime
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
@@ -16,6 +18,20 @@ SCHEMA_FILE = "schema_canonico.json"
 DB_DIR = "./vector_store/schema"
 COLLECTION_NAME = "schema_canonico"
 MODEL_NAME = "gemma3:12b"
+
+# === LOGGING SETUP ===
+LOG_FILE = f"./logs/schema_generation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler()  # Also print to console
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
@@ -63,9 +79,9 @@ def update_schema_with_existing(raw_schema_text: str, current_schema: dict | Non
     if current_schema:
         current_schema_text = f"Current schema:\n{json.dumps(current_schema, indent=2, ensure_ascii=False)}\n\n"
 
-    print("\n📄 Raw schema text being sent to LLM:\n")
-    print(raw_schema_text)
-    print("\n" + "="*60 + "\n")
+    logger.info("Raw schema text being sent to LLM:")
+    logger.info(f"{raw_schema_text}")
+    logger.info("="*60)
 
     template = """
 You are an expert database schema analyst.
@@ -110,19 +126,19 @@ Return the UPDATED schema JSON:
     else:
         content = str(response).strip()
 
-    print(f"📄 Raw LLM response: {content}")
+    logger.info(f"Raw LLM response: {content}")
 
     schema = extract_json_from_response(content)
     
-    print("✅ Structural schema generated.")
+    logger.info("Structural schema generated.")
 
     return schema
 
 def generate_schema_canonical(raw_schema_text: str) -> dict:
 
-    print("\n📄 Raw schema text being sent to LLM:\n")
-    print(raw_schema_text)
-    print("\n" + "="*60 + "\n")
+    logger.info("Raw schema text being sent to LLM:")
+    logger.info(f"{raw_schema_text}")
+    logger.info("="*60)
 
     template = """
 You are an expert database schema analyzer. Your task is to convert SQL DDL statements into a structured JSON schema.
@@ -172,7 +188,7 @@ Return ONLY the JSON object:
     else:
         content = str(response).strip()
 
-    print(f"📄 Raw LLM response: {content}")
+    logger.info(f"Raw LLM response: {content}")
 
     schema = extract_json_from_response(content)
     
@@ -185,10 +201,10 @@ def update_schema_with_vector_store(new_text: str) -> dict:
     with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
         current_schema = json.load(f)
     
-    print("\n📘 Current schema loaded:")
+    logger.info("Current schema loaded:")
     print_schema_preview(current_schema)
     
-    print("\n🔄 Updating schema with new information...")
+    logger.info("Updating schema with new information...")
     updated_schema = update_schema_with_existing(new_text, current_schema)
     
     return updated_schema
@@ -216,7 +232,7 @@ def build_vector_store(schema_data: dict):
         documents.append(doc)
         ids.append(table_name)
 
-    print(f"\n📄 Created {len(documents)} documents to embed...")
+    logger.info(f"Created {len(documents)} documents to embed...")
 
     add_schema = not os.path.exists(DB_DIR)
 
@@ -227,47 +243,47 @@ def build_vector_store(schema_data: dict):
     )
 
     if add_schema:
-        print("🧠 Creating a new vector store...")
+        logger.info("Creating a new vector store...")
         vector_store.add_documents(documents=documents, ids=ids)
     else:
-        print("🔄 Updating existing vector store...")
+        logger.info("Updating existing vector store...")
         # For updates, we need to handle existing documents
         existing_ids = vector_store.get()["ids"]
         if existing_ids:
             vector_store.delete(ids=existing_ids)
         vector_store.add_documents(documents=documents, ids=ids)
     
-    print("✅ Vector store updated and saved in:", DB_DIR)
+    logger.info(f"Vector store updated and saved in: {DB_DIR}")
 
     return vector_store
 
-def update_schema(raw_text: str, current_schema: dict) :
+def update_schema(raw_text: str, current_schema: dict):
 
     with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
         current_schema = json.load(f)
 
-    print("📘 Current schema:")
+    logger.info("Current schema:")
     print_schema_preview(current_schema)
 
-    print("\n🔍 Classifying the update...")
+    logger.info("Classifying the update...")
     update_type = classify_update(raw_text)
-    print(f"📊 Update type classified as: {update_type}\n")
+    logger.info(f"Update type classified as: {update_type}")
 
     if update_type == "semantic":
-        print("📝 Processing SEMANTIC update (adding notes to existing schema)...")
+        logger.info("Processing SEMANTIC update (adding notes to existing schema)...")
         
         if "semantic_notes" not in current_schema:
             current_schema["semantic_notes"] = []
         
         current_schema["semantic_notes"].append(raw_text)
         
-        print("✅ Semantic notes added to schema.")
+        logger.info("Semantic notes added to schema.")
         return current_schema
 
     else:
-        print("🔧 Processing STRUCTURAL update (generating new schema)...")
+        logger.info("Processing STRUCTURAL update (generating new schema)...")
         
-        return update_schema_with_existing(raw_text, current_schema)    
+        return update_schema_with_existing(raw_text, current_schema)
 
 def acquire_schema_from_text(raw_text: str):
 
@@ -275,54 +291,54 @@ def acquire_schema_from_text(raw_text: str):
     vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
 
     if schema_exists and vector_store_exists:
-        print("\n✅ Existing schema and vector store detected!")
-        print(f"📂 Found: {SCHEMA_FILE}")
-        print(f"📂 Found: {DB_DIR}\n")
+        logger.info("Existing schema and vector store detected!")
+        logger.info(f"Found: {SCHEMA_FILE}")
+        logger.info(f"Found: {DB_DIR}")
 
         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
             current_schema = json.load(f)
 
         return update_schema(raw_text, current_schema)
 
-    print("\n🆕 No existing schema found. Generating from scratch...\n")
+    logger.info("No existing schema found. Generating from scratch...")
     schema = generate_schema_canonical(raw_text)
     schema["source"] = "text_input"
     
-    print("✅ New schema generated.")
+    logger.info("New schema generated.")
     return schema
 
 def acquire_schema_from_mysql():
-    print("\n🔌 Connecting to MySQL database to retrieve schema...")
+    logger.info("Connecting to MySQL database to retrieve schema...")
     schema = extract_schema()
     schema["source"] = "mysql_extraction"
-    print("\n🆕 Generating schema from database schema...\n")
-    print("✅ New schema generated.")
+    logger.info("Generating schema from database schema...")
+    logger.info("New schema generated.")
     return schema
 
 def save_validate_and_build(schema):
     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
         json.dump(schema, f, indent=2, ensure_ascii=False)
 
-    print(f"\n✅ Schema saved to '{SCHEMA_FILE}'")
-    print("\n📘 Final schema preview:")
+    logger.info(f"Schema saved to '{SCHEMA_FILE}'")
+    logger.info("Final schema preview:")
     print_schema_preview(schema)
 
     if not validate_schema_structure(schema):
-        print("\n❌ Schema validation failed. Invalid structure.")
+        logger.error("Schema validation failed. Invalid structure.")
         return
 
-    print("\n✅ Schema validation passed.")
-    print(f"📊 Found {len(schema.get('tables', []))} tables in schema.")
+    logger.info("Schema validation passed.")
+    logger.info(f"Found {len(schema.get('tables', []))} tables in schema.")
 
-    print("\n🔨 Building/recreating vector store...")
+    logger.info("Building/recreating vector store...")
     vector_store = build_vector_store(schema)
     print_vector_store(vector_store) # pyright: ignore[reportArgumentType]
 
-    print("\n🍾 Vector store built successfully!")
-    print("\n✅ Workflow completed successfully!")
+    logger.info("Vector store built successfully!")
+    logger.info("Workflow completed successfully!")
 
-# === MAIN ===
-if __name__ == "__main__":
+def main():
+    """Main function to handle the interactive workflow."""
     print("🤖 Interactive canonical schema management (phase 1)")
     print("\nChoose how to acquire the database schema:")
     print("1️⃣  via text input (DDL statements or descriptions)")
@@ -331,7 +347,7 @@ if __name__ == "__main__":
     method = input("\n👉 Your choice: ").strip()
 
     if method not in {"1", "2"}:
-        print("❌ Invalid method choice. Exiting.")
+        logger.error("Invalid method choice. Exiting.")
         exit(1)
 
     while True:
@@ -351,7 +367,7 @@ if __name__ == "__main__":
             raw_text = "\n".join(lines).strip()
             
             if not raw_text:
-                print("❌ No text provided.")
+                logger.error("No text provided.")
                 break
             else:
                 schema = acquire_schema_from_text(raw_text)
@@ -372,3 +388,8 @@ if __name__ == "__main__":
         if choice == "0":
             print("👋 Exiting. Goodbye!")
             break
+
+# === ENTRY POINT ===
+if __name__ == "__main__":
+    print(f"Log file: {LOG_FILE}")
+    main()
