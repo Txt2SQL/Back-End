@@ -160,8 +160,13 @@ def store_query_feedback(
     Stores a (request, sql, outcome) tuple into the query feedback vector store.
     """
     print(f"💾 Storing feedback for query: {sql_query}\n")
-
-    error_type = classify_error(error_message) if error_message else None
+    
+    if error_message == "Query failed syntactic check":
+        error_type = "SYNTAX"
+    elif error_message:
+        error_type = classify_error(error_message)
+    else:
+        error_type = None
 
     page_content = f"""
 User request:
@@ -170,8 +175,7 @@ User request:
 Generated SQL query:
 {sql_query}
 
-Outcome:
-{status}
+Outcome: {status}
 """.strip()
 
     if status == "SYNTAX_ERROR":
@@ -250,7 +254,7 @@ def build_penalty_section(failed_queries: list[Document]) -> str:
 --- FAILURE ---
 {content}
 
-ERROR TYPE: {error_type}
+Error type: {error_type}
 """)
 
         if error_type == "UNKNOWN_COLUMN":
