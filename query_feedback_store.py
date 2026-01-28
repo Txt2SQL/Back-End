@@ -48,17 +48,6 @@ def print_query_vector_store(store: Chroma):
                 logger.info(f"  {k}: {v}")
         logger.info("---------------------------------------------\n")
 
-def get_query_store() -> Chroma:
-    """
-    Returns (and creates if not exists) the Chroma vector store
-    used to persist query feedback history.
-    """
-    return Chroma(
-        collection_name=QUERY_COLLECTION_NAME,
-        persist_directory=QUERY_DB_DIR,
-        embedding_function=_embeddings,
-    )
-
 def apply_time_decay(
     docs,
     half_life_days: int = 30
@@ -151,6 +140,7 @@ def detect_structural_issue(sql: str) -> bool:
     return issue_detected
 
 def store_query_feedback(
+    store: Chroma,
     schema_id: str,
     model_name: str,
     user_request: str,
@@ -210,8 +200,6 @@ Outcome: {status}
         page_content=page_content,
         metadata=metadata
     )
-
-    store = get_query_store()
 
     if query_already_exists(store, sql_query):
         logger.info("ℹ️ Query already present. Skipping insert.")
@@ -281,11 +269,11 @@ Error type: {error_type}
 
 def retrieve_failed_queries(
     user_request: str,
+    store: Chroma,
     k: int = 1,
     half_life_days: int = 60
 ):
     logger.info(f"🔍 Retrieving failed queries for request: '{user_request}'")
-    store = get_query_store()
 
     syntax_errors = store.similarity_search(
         user_request,
