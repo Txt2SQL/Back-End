@@ -1,0 +1,1 @@
+Customers who spent more than average. Find customers whose total spending is above the average customer spending

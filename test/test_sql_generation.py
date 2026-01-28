@@ -1,0 +1,422 @@
+import sys
+import os
+
+# Add parent directory to Python path for development
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import pytest
+import json
+import time
+from datetime import datetime
+from typing import Dict, List, Tuple
+
+from query_generator import (
+    generate_sql_query,
+    validate_sql_syntax,
+    execute_sql_query,
+    SCHEMA_FILE
+)
+
+# ==================== CONFIGURATION ====================
+INPUT_FILE = "test_requests.txt"
+OUTPUT_FILE = f"test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
+TIMEOUT_PER_MODEL = 600   # 2 minutes timeout per model per request
+AVAILABLE_MODELS = {
+    "1": "codellama:13b",
+    "2": "deepseek-coder-v2:16b"
+}
+
+# ==================== TEST FUNCTIONS ====================
+
+def load_test_requests(input_file: str) -> List[str]:
+    """
+    Load test requests from a text file.
+    Each line is a separate request.
+    """
+    requests = []
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):  # Skip empty lines and comments
+                    requests.append(line)
+        print(f"✅ Loaded {len(requests)} requests from {input_file}")
+    except FileNotFoundError:
+        print(f"❌ Input file not found: {input_file}")
+        requests = []
+    return requests
+
+
+def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
+    """Truncate long requests for cleaner output."""
+    if len(request) <= max_length:
+        return request
+    return request[:max_length] + "..."
+
+
+def run_single_test(request: str, model_name: str, full_schema: dict, 
+                    source: str = "mysql_extraction") -> Tuple[str, str, str]:
+    """
+    Run a single test: generate SQL and validate it.
+    
+    Returns:
+        (sql_query, status, error_message)
+    """
+    try:
+        # Generate SQL query
+        sql_query = generate_sql_query(request, source, full_schema, model_name)
+        
+        # Validate syntax
+        syntax_status = validate_sql_syntax(sql_query)
+        
+        if syntax_status == "OK":
+            # Try to execute against database
+            execution_status, execution_output = execute_sql_query(sql_query)
+            
+            if execution_status == "OK":
+                return sql_query, "query eseguita", ""
+            else:
+                return sql_query, "RUNTIME_ERROR", str(execution_output)
+        else:
+            return sql_query, "SYNTAX", "Query failed syntactic check"
+            
+    except Exception as e:
+        # Catch any unexpected errors during generation
+        error_msg = f"GENERATION_ERROR: {str(e)}"
+        return "", "GENERATION_ERROR", error_msg
+
+
+def run_test_with_timeout(request: str, model_name: str, full_schema: dict, 
+                         timeout: int = TIMEOUT_PER_MODEL) -> Tuple[str, str, str]:
+    """
+    Run test with timeout to prevent hanging.
+    """
+    import threading
+    import queue
+    
+    result_queue = queue.Queue()
+    
+    def worker():
+        try:
+            result = run_single_test(request, model_name, full_schema)
+            result_queue.put(result)
+        except Exception as e:
+            result_queue.put(("", "TIMEOUT_OR_ERROR", str(e)))
+    
+    thread = threading.Thread(target=worker)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout)
+    
+    if thread.is_alive():
+        # Thread is still running - timeout occurred
+        return "", "TIMEOUT", f"Test exceeded {timeout}s timeout"
+    else:
+        try:
+            return result_queue.get_nowait()
+        except queue.Empty:
+            return "", "UNKNOWN_ERROR", "No result returned"
+
+
+def format_result_line(model_name: str, sql_query: str, status: str, 
+                       error_message: str = "") -> str:
+    """
+    Format a single result line according to the template.
+    """
+    # Clean up SQL query for output (remove newlines, truncate if too long)
+    clean_sql = sql_query.replace('\n', ' ').strip()
+    if len(clean_sql) > MAX_OUTPUT_LENGTH:  # Truncate very long queries
+        clean_sql = clean_sql[:MAX_OUTPUT_LENGTH] + "..."
+    
+    if status == "OK":
+        return f"{model_name} {clean_sql} query eseguita"
+    elif status == "SYNTAX":
+        return f"{model_name} {clean_sql} SYNTAX"
+    else:
+        # For other errors, include the error message
+        clean_error = error_message.replace('\n', ' ').strip()
+        if len(clean_error) > MAX_OUTPUT_LENGTH/4:  # Truncate long error messages
+            clean_error = clean_error[:MAX_OUTPUT_LENGTH/4] + "..."
+        return f"{model_name}\nQuery: {clean_sql}\n Outcome: {clean_error}"
+
+
+def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
+    """
+    Write all test results to output file following the template.
+    """
+    n = 1
+    with open(output_file, 'w', encoding='utf-8') as f:
+        for request, model_results in results:
+            # Write request
+            truncated_request = truncate_request(request)
+            f.write(f"{n}. {truncated_request}\n")
+            
+            # Write results for each model
+            for model_name in AVAILABLE_MODELS.values():
+                if model_name in model_results:
+                    sql, status, error = model_results[model_name]
+                    line = format_result_line(model_name, sql, status, error)
+                    f.write(f"{line}\n")
+                else:
+                    f.write(f"{model_name} [TEST NOT RUN] MODEL_NOT_AVAILABLE\n")
+            
+            # Add blank line between requests for readability
+            f.write("\n")
+            n += 1
+    
+    print(f"✅ Results written to {output_file}")
+
+
+def print_test_summary(results: List[Tuple[str, Dict]]):
+    """Print a summary of test results."""
+    print("\n" + "="*60)
+    print("📊 TEST SUMMARY")
+    print("="*60)
+    
+    total_tests = 0
+    passed_tests = 0
+    syntax_errors = 0
+    runtime_errors = 0
+    timeouts = 0
+    other_errors = 0
+    
+    for request, model_results in results:
+        for model_name, (sql, status, error) in model_results.items():
+            total_tests += 1
+            if status == "query eseguita":
+                passed_tests += 1
+            elif status == "SYNTAX":
+                syntax_errors += 1
+            elif status == "RUNTIME_ERROR":
+                runtime_errors += 1
+            elif status == "TIMEOUT":
+                timeouts += 1
+            else:
+                other_errors += 1
+    
+    print(f"Total requests tested: {len(results)}")
+    print(f"Total model executions: {total_tests}")
+    print(f"✅ Successful queries: {passed_tests}")
+    print(f"⚠️  Syntax errors: {syntax_errors}")
+    print(f"❌ Runtime errors: {runtime_errors}")
+    print(f"⏰ Timeouts: {timeouts}")
+    print(f"🔧 Other errors: {other_errors}")
+    
+    if total_tests > 0:
+        success_rate = (passed_tests / total_tests) * 100
+        print(f"\n📈 Success rate: {success_rate:.1f}%")
+    
+    print("="*60)
+
+
+# ==================== MAIN TEST FUNCTION ====================
+
+def run_comprehensive_tests():
+    """
+    Main function to run comprehensive tests.
+    """
+    print("🤖 Starting comprehensive SQL generation tests")
+    print("="*60)
+    
+    # 1. Load test requests
+    test_requests = load_test_requests(INPUT_FILE)
+    if not test_requests:
+        print("❌ No test requests found. Exiting.")
+        return
+    
+    # 2. Load schema
+    try:
+        with open(SCHEMA_FILE, 'r', encoding='utf-8') as f:
+            full_schema = json.load(f)
+        print(f"✅ Loaded schema from {SCHEMA_FILE}")
+    except Exception as e:
+        print(f"❌ Failed to load schema: {e}")
+        return
+    
+    # 3. Determine source from schema
+    source = full_schema.get("source", "mysql_extraction")
+    print(f"📋 Schema source: {source}")
+    
+    # 4. Run tests for each request
+    all_results = []
+    
+    for i, request in enumerate(test_requests, 1):
+        print(f"\n{'='*60}")
+        print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
+        print(f"{'='*60}")
+        
+        model_results = {}
+        request_start_time = time.time()
+        
+        # Test each available model
+        for model_name in AVAILABLE_MODELS.values():
+            print(f"\n🔄 Testing with model: {model_name}")
+            model_start_time = time.time()
+            
+            sql_query, status, error_message = run_test_with_timeout(
+                request, model_name, full_schema, TIMEOUT_PER_MODEL
+            )
+            
+            model_time = time.time() - model_start_time
+            print(f"   Status: {status} ({model_time:.1f}s)")
+            
+            if sql_query:
+                print(f"   Generated SQL: {sql_query[:100]}...")
+            if error_message and status not in ["query eseguita", "SYNTAX"]:
+                print(f"   Error: {error_message[:100]}...")
+            
+            model_results[model_name] = (sql_query, status, error_message)
+        
+        request_time = time.time() - request_start_time
+        print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
+        
+        all_results.append((request, model_results))
+        
+        # Save intermediate results after each request (optional)
+        intermediate_file = f"intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
+        write_test_results([(request, model_results)], intermediate_file)
+    
+    # 5. Write final results
+    write_test_results(all_results, OUTPUT_FILE)
+    
+    # 6. Print summary
+    print_test_summary(all_results)
+    
+    print(f"\n🎉 Testing completed!")
+    print(f"📄 Full results saved to: {OUTPUT_FILE}")
+
+
+# ==================== PYTEST TEST CASES ====================
+
+class TestSQLGeneration:
+    """Pytest test class for SQL generation."""
+    
+    @classmethod
+    def setup_class(cls):
+        """Setup before all tests."""
+        print("\n🔧 Setting up test class...")
+        cls.full_schema = None
+        try:
+            with open(SCHEMA_FILE, 'r', encoding='utf-8') as f:
+                cls.full_schema = json.load(f)
+            print("✅ Schema loaded successfully")
+        except Exception as e:
+            pytest.skip(f"Cannot load schema: {e}")
+    
+    @pytest.fixture
+    def sample_requests(self):
+        """Provide sample test requests."""
+        return [
+            "Show all customers",
+            "List all products with their categories",
+            "Count orders per customer",
+            "Find total sales amount",
+            "Show employees hired in 2023"
+        ]
+    
+    @pytest.mark.parametrize("model_name", AVAILABLE_MODELS.values())
+    def test_model_generates_sql(self, model_name, sample_requests):
+        """Test that each model can generate SQL for sample requests."""
+        request = sample_requests[0]  # Use first sample request
+        print(f"\nTesting model {model_name} with request: '{request}'")
+        
+        if self.full_schema is None:
+            pytest.skip("Schema not loaded")
+        
+        try:
+            sql = generate_sql_query(
+                request, 
+                "mysql_extraction", 
+                self.full_schema, 
+                model_name
+            )
+            
+            # Basic validation
+            assert sql is not None, "SQL query should not be None"
+            assert len(sql.strip()) > 0, "SQL query should not be empty"
+            assert "SELECT" in sql.upper(), "SQL query should contain SELECT"
+            
+            print(f"✅ Generated SQL: {sql[:100]}...")
+            
+        except Exception as e:
+            pytest.fail(f"Model {model_name} failed: {e}")
+    
+    def test_syntax_validation(self):
+        """Test SQL syntax validation."""
+        valid_sql = "SELECT * FROM customers WHERE id = 1"
+        invalid_sql = "SELECT FROM WHERE"
+        
+        assert validate_sql_syntax(valid_sql) == "OK"
+        assert validate_sql_syntax(invalid_sql) == "SYNTAX_ERROR"
+    
+    @pytest.mark.slow
+    def test_all_models_all_requests(self, sample_requests):
+        """Comprehensive test of all models with all sample requests."""
+        if self.full_schema is None:
+            pytest.skip("Schema not loaded")
+        
+        results = []
+        
+        for request in sample_requests:
+            request_results = {}
+            for model_name in AVAILABLE_MODELS.values():
+                try:
+                    sql = generate_sql_query(
+                        request,
+                        "mysql_extraction",
+                        self.full_schema,
+                        model_name
+                    )
+                    
+                    # Validate syntax
+                    syntax_ok = validate_sql_syntax(sql) == "OK"
+                    request_results[model_name] = (sql, syntax_ok)
+                    
+                except Exception as e:
+                    request_results[model_name] = (None, False)
+            
+            results.append((request, request_results))
+        
+        # Log results
+        for request, model_results in results:
+            print(f"\nRequest: {request}")
+            for model, (sql, ok) in model_results.items():
+                status = "✅" if ok else "❌"
+                print(f"  {model}: {status}")
+        
+        # At least some models should succeed
+        success_count = sum(1 for _, results in results 
+                           for _, (_, ok) in results.items() if ok)
+        assert success_count > 0, "At least some models should generate valid SQL"
+
+
+# ==================== COMMAND LINE INTERFACE ====================
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Test SQL generation with multiple models")
+    parser.add_argument("--mode", choices=["run", "test"], default="run",
+                       help="Mode: 'run' to execute tests, 'test' to run pytest")
+    parser.add_argument("--input", default=INPUT_FILE,
+                       help="Input file with test requests")
+    parser.add_argument("--output", default=OUTPUT_FILE,
+                       help="Output file for results")
+    parser.add_argument("--timeout", type=int, default=TIMEOUT_PER_MODEL,
+                       help="Timeout per model per request (seconds)")
+    
+    args = parser.parse_args()
+    
+    if args.mode == "run":
+        # Update global variables based on args
+        INPUT_FILE = args.input
+        OUTPUT_FILE = args.output
+        TIMEOUT_PER_MODEL = args.timeout
+        
+        # Run the comprehensive tests
+        run_comprehensive_tests()
+    else:
+        # Run pytest
+        print("Running pytest tests...")
+        pytest.main([__file__, "-v", "--tb=short"])
