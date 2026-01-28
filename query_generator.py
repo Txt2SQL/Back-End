@@ -5,6 +5,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from logging_utils import setup_logger
+from typing import Any
+from metadata import UIMetadata
 from query_feedback_store import (
     store_query_feedback,
     retrieve_failed_queries,
@@ -279,6 +281,14 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
 
 {penalty_section}
 
+Before writing the SQL query, internally determine:
+- Which tables are required
+- How they are joined
+- Whether aggregation or grouping is required
+- Which columns are selected
+
+Do NOT output this reasoning.
+Only output the final SQL query.
 """
     return template
 
@@ -301,8 +311,6 @@ def generate_sql_query(
     schema_context = get_context(user_request, schema_vs)
     logger.debug(f"Schema context retrieved: {len(schema_context)} characters")
     
-    join_hints = build_join_hints(full_schema)
-
     template = f""" 
 You are an expert SQL database assistant.
 You will be provided with:
@@ -315,8 +323,15 @@ using the provided tables and columns.
 
 === SCHEMA ===
 {schema_context}
-
+  
+"""    
+    if source == "mysql_extraction":
+        join_hints = build_join_hints(full_schema)
+        template = template + f"""
 {join_hints}
+"""
+
+    template = template + f"""
 
 === REQUEST ===
 {user_request}
@@ -328,23 +343,15 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - Do NOT use SELECT *
 - Do NOT add WHERE clauses or conditions unless explicitly requested.
 - Do NOT join tables unless necessary for the request.
-- If using aggregates, include GROUP BY    
+- If using aggregates, include GROUP BY  
 """
     
     if source == "mysql_extraction":
         template = add_penalties(template, user_request, query_vs)
         logger.info("Added penalty section for MySQL extraction schema")
 
-    template = template + """
-Before writing the SQL query, internally determine:
-- Which tables are required
-- How they are joined
-- Whether aggregation or grouping is required
-- Which columns are selected
-
-Do NOT output this reasoning.
-Only output the final SQL query.
-
+    template = template + f"""
+    
 SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
 
@@ -368,6 +375,41 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
     logger.info(f"Generated SQL query length: {len(sql_query)} characters")
 
     return sql_query
+
+def create_metadata(
+    syntax_status: str,
+    source: str,
+    schema_id: str,
+    user_request: str,
+    model_name: str,
+    execution_status: str | None = None,
+    execution_output: Any | None = None
+) -> UIMetadata:
+
+    error_message = None
+    rows_fetched = 0
+    status = syntax_status
+
+    if syntax_status == "OK" and source == "mysql_extraction":
+        if execution_status == "OK":
+            status = "OK"
+            rows_fetched = len(execution_output) if execution_output else 0
+        else:
+            status = "RUNTIME_ERROR"
+            error_message = execution_output
+
+    elif syntax_status != "OK":
+        status = "SYNTAX_ERROR"
+        error_message = "Query failed syntactic check"
+
+    return UIMetadata(
+        schema_id=schema_id,
+        user_request=user_request,
+        model_name=model_name,
+        status=status,
+        rows_fetched=rows_fetched,
+        error_message=error_message
+    )
 
 def main():
     """Main function to handle the interactive workflow."""
@@ -433,7 +475,6 @@ def main():
             )            
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
-            schema_id = compute_schema_id(full_schema)
             source = get_schema_source(full_schema)
 
             print("\n🔍 Generating query...")
@@ -443,47 +484,32 @@ def main():
             print(sql)
             print("\n" + "=" * 60)
 
-            # Syntax validation
+            execution_status = None
+            execution_output = None
+            
             syntax_status = validate_sql_syntax(sql)
+            print(f"\n✅ Syntax check: {syntax_status}")
 
-            error_message = None
-            rows_fetched = 0
+            if syntax_status == "OK" and source == "mysql_extraction":
+                print("\n🚀 Executing query against the database...\n")
+                execution_status, execution_output = execute_sql_query(sql)
 
-            if syntax_status == "OK":
-                if source == "mysql_extraction":
-                    # Runtime execution
-                    print("\n🚀 Executing query against the database...\n")
-                    execution_status, execution_output = execute_sql_query(sql)
+            metadata = create_metadata(
+                syntax_status=syntax_status,
+                source=source,
+                schema_id=compute_schema_id(full_schema),
+                user_request=user_request,
+                model_name=selected_model_name,
+                execution_status=execution_status,
+                execution_output=execution_output
+            )
 
-                    if execution_status == "OK":
-                        status = "OK"
-                        rows_fetched = len(execution_output) if execution_output else 0
-                        print("\n📊 Query result preview:\n")
-                        for row in execution_output[:10]:
-                            print(row)
-                    else:
-                        status = "RUNTIME_ERROR"
-                        error_message = execution_output
-                        print(f"\n⚠️  Error: {error_message}")
-                else:
-                    status = "OK"
-            else:
-                status = "SYNTAX_ERROR"
-                error_message = "Query failed syntactic check"
-                print(f"\n⚠️  Error: {error_message}")
-
-            # Store feedback
             store_query_feedback(
                 store=query_vs,
-                user_request=user_request,
                 sql_query=sql,
-                status=status,
-                model_name=selected_model_name,
-                error_message=error_message,
-                schema_id=schema_id,
-                rows_fetched=rows_fetched
+                qm=metadata
             )
-            print(f"Feedback stored with status: {status}")
+            print(f"Feedback stored with status: {metadata.status}")
 
         else:
             print("❌ Invalid option. Try again.")

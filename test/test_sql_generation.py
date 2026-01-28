@@ -10,11 +10,13 @@ from logging_utils import (
     setup_single_project_logger, 
     setup_logger
 )
-setup_single_project_logger()
 from query_generator import (
     generate_sql_query,
     validate_sql_syntax,
     execute_sql_query,
+    store_query_feedback,
+    compute_schema_id,
+    create_metadata,
     AVAILABLE_MODELS,
     SCHEMA_FILE,
     SCHEMA_COLLECTION_NAME,
@@ -25,14 +27,15 @@ from query_generator import (
 
 # ==================== CONFIGURATION ====================
 SCHEMA_FILE = "../" + SCHEMA_FILE  # Adjust path to schema file
-VSS_DIR = "../vector_store/schema"      # Adjust path to schema vector store
-VSQ_DIR = "../vector_store/queries"      # Adjust path to query vector store
+VSS_DIR = "." + VSS_DIR      # Adjust path to schema vector store
+VSQ_DIR = "." + VSQ_DIR      # Adjust path to query vector store
 INPUT_FILE = "test_requests.txt"
 OUTPUT_FILE = f"./test_result/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
 
 # === LOGGING SETUP ===
+setup_single_project_logger()
 logger = setup_logger(__name__)
 
 # ==================== TEST FUNCTIONS ====================
@@ -70,7 +73,7 @@ def run_single_test(
     source: str,
     query_vs: Chroma,
     schema_vs: Chroma
-) -> Tuple[str, str, str]:
+) -> Tuple[str, str, str | None]:
     """
     Run a single test: generate SQL and validate it.
     
@@ -79,21 +82,33 @@ def run_single_test(
     """
     try:
         # Generate SQL query
-        sql_query = generate_sql_query(request, source, full_schema, model_name, query_vs, schema_vs)
+        sql = generate_sql_query(request, source, full_schema, model_name, query_vs, schema_vs)
+
+        execution_status = None
+        execution_output = None
         
-        # Validate syntax
-        syntax_status = validate_sql_syntax(sql_query)
+        syntax_status = validate_sql_syntax(sql)
+
+        if syntax_status == "OK" and source == "mysql_extraction":
+            execution_status, execution_output = execute_sql_query(sql)
+
+        metadata = create_metadata(
+            syntax_status=syntax_status,
+            source=source,
+            schema_id=compute_schema_id(full_schema),
+            user_request=request,
+            model_name=model_name,
+            execution_status=execution_status,
+            execution_output=execution_output
+        )
+
+        store_query_feedback(
+            store=query_vs,
+            sql_query=sql,
+            qm=metadata
+        )
         
-        if syntax_status == "OK":
-            # Try to execute against database
-            execution_status, execution_output = execute_sql_query(sql_query)
-            
-            if execution_status == "OK":
-                return sql_query, "query eseguita", ""
-            else:
-                return sql_query, "RUNTIME_ERROR", str(execution_output)
-        else:
-            return sql_query, "SYNTAX", "Query failed syntactic check"
+        return sql, metadata.status, metadata.error_message
             
     except Exception as e:
         # Catch any unexpected errors during generation
@@ -150,16 +165,14 @@ def format_result_line(model_name: str, sql_query: str, status: str,
     if len(clean_sql) > MAX_OUTPUT_LENGTH:  # Truncate very long queries
         clean_sql = clean_sql[:MAX_OUTPUT_LENGTH] + "..."
     
-    if status == "OK":
-        return f"{model_name} {clean_sql} query eseguita"
-    elif status == "SYNTAX":
-        return f"{model_name} {clean_sql} SYNTAX"
-    else:
+    if status == "RUNTIME_ERROR":
         # For other errors, include the error message
         clean_error = error_message.replace('\n', ' ').strip()
         if len(clean_error) > MAX_OUTPUT_LENGTH/4:  # Truncate long error messages
             clean_error = clean_error[:MAX_OUTPUT_LENGTH/4] + "..."
         return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {clean_error}\n\n"
+    else:
+        return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {error_message}"
 
 
 def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
@@ -205,7 +218,7 @@ def print_test_summary(results: List[Tuple[str, Dict]]):
     for request, model_results in results:
         for model_name, (sql, status, error) in model_results.items():
             total_tests += 1
-            if status == "query eseguita":
+            if status == "OK":
                 passed_tests += 1
             elif status == "SYNTAX":
                 syntax_errors += 1
@@ -300,7 +313,7 @@ def run_comprehensive_tests():
             
             if sql_query:
                 print(f"   Generated SQL: {sql_query[:100]}...")
-            if error_message and status not in ["query eseguita", "SYNTAX"]:
+            if error_message and status not in ["OK", "SYNTAX"]:
                 print(f"   Error: {error_message[:100]}...")
             
             model_results[model_name] = (sql_query, status, error_message)
