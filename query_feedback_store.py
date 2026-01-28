@@ -3,6 +3,7 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from logging_utils import setup_logger
+from metadata import UIMetadata
 
 # === CONFIG ===
 QUERY_COLLECTION_NAME = "query_feedback"
@@ -12,21 +13,18 @@ EMBEDDING_MODEL = "mxbai-embed-large"
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
 
-# === EMBEDDINGS ===
-_embeddings = OllamaEmbeddings(model=EMBEDDING_MODEL)
-
 def print_query_vector_store(store: Chroma):
     """
     Prints the 15 most recent documents stored in the query feedback vector store.
     Useful for debugging and inspection.
     """
-    logger.info("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n")
+    print("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n")
 
     # Recupera TUTTI i documenti
     data = store.get()
 
     if not data or not data.get("documents"):
-        logger.info("\n⚠️ Query vector store is empty.")
+        print("\n⚠️ Query vector store is empty.")
         return
 
     # Crea lista di tuple (doc, metadata) e ordina per timestamp decrescente
@@ -40,13 +38,13 @@ def print_query_vector_store(store: Chroma):
     docs_with_metadata = docs_with_metadata[:15]
 
     for idx, (doc, metadata) in enumerate(docs_with_metadata, start=1):
-        logger.info(f"--- Entry #{idx} ------------------------------")
-        logger.info(doc)
-        logger.info("\nMetadata:")
+        print(f"--- Entry #{idx} ------------------------------")
+        print(doc)
+        print("\nMetadata:")
         for k, v in metadata.items():
             if k != "sql_query":
-                logger.info(f"  {k}: {v}")
-        logger.info("---------------------------------------------\n")
+                print(f"  {k}: {v}")
+        print("---------------------------------------------\n")
 
 def apply_time_decay(
     docs,
@@ -141,37 +139,32 @@ def detect_structural_issue(sql: str) -> bool:
 
 def store_query_feedback(
     store: Chroma,
-    schema_id: str,
-    model_name: str,
-    user_request: str,
     sql_query: str,
-    status: str,
-    rows_fetched: int | None = None,
-    error_message: str | None = None
+    qm: UIMetadata
 ) -> None:
     """
     Stores a (request, sql, outcome) tuple into the query feedback vector store.
     """
     logger.info(f"💾 Storing feedback for query: {sql_query}")
-    
-    if error_message == "Query failed syntactic check":
+
+    if qm.error_message == "Query failed syntactic check":
         error_type = "SYNTAX"
-    elif error_message:
-        error_type = classify_error(error_message)
+    elif qm.error_message:
+        error_type = classify_error(qm.error_message)
     else:
         error_type = None
 
     page_content = f"""
 User request:
-{user_request}
+{qm.user_request}
 
 Generated SQL query:
 {sql_query}
 
-Outcome: {status}
+Outcome: {qm.status}
 """.strip()
 
-    if status == "SYNTAX_ERROR":
+    if qm.status == "SYNTAX_ERROR":
         knowledge_scope = "SYNTAX"
     elif detect_structural_issue(sql_query):
         knowledge_scope = "STRUCTURAL"
@@ -181,20 +174,20 @@ Outcome: {status}
     logger.info(f"📌 Knowledge scope determined: {knowledge_scope}")
 
     metadata = {
-        "schema_id": schema_id,
+        "schema_id": qm.schema_id,
         "knowledge_scope": knowledge_scope,
-        "status": status,
-        "model": model_name,
+        "status": qm.status,
+        "model": qm.model_name,
         "timestamp": time.time(),
         "sql_query": sql_query,
     }
 
-    if error_message:
+    if qm.error_message:
         metadata["error_type"] = error_type
         logger.info(f"⚠️ Error type recorded: {error_type}")
     else:
-        metadata["rows_fetched"] = rows_fetched
-        logger.info(f"ℹ️ Rows fetched: {rows_fetched}")
+        metadata["rows_fetched"] = qm.rows_fetched
+        logger.info(f"ℹ️ Rows fetched: {qm.rows_fetched}")
 
     doc = Document(
         page_content=page_content,
@@ -206,7 +199,7 @@ Outcome: {status}
         return
 
     store.add_documents([doc])
-    logger.info(f"✅ Query stored with status: {status}")
+    logger.info(f"✅ Query stored with status: {qm.status}")
 
 def extract_sql_patterns(sql: str) -> list[str]:
     patterns = []
