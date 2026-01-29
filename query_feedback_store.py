@@ -14,38 +14,9 @@ EMBEDDING_MODEL = "mxbai-embed-large"
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
 
-def print_query_vector_store(store: Chroma):
-    """
-    Prints the 15 most recent documents stored in the query feedback vector store.
-    Useful for debugging and inspection.
-    """
-    print("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n")
-
-    # Recupera TUTTI i documenti
-    data = store.get()
-
-    if not data or not data.get("documents"):
-        print("\n⚠️ Query vector store is empty.")
-        return
-
-    # Crea lista di tuple (doc, metadata) e ordina per timestamp decrescente
-    docs_with_metadata = list(zip(data["documents"], data["metadatas"]))
-    docs_with_metadata.sort(
-        key=lambda x: x[1].get("timestamp", 0),
-        reverse=True
-    )
-    
-    # Prendi solo i 15 più recenti
-    docs_with_metadata = docs_with_metadata[:15]
-
-    for idx, (doc, metadata) in enumerate(docs_with_metadata, start=1):
-        print(f"--- Entry #{idx} ------------------------------")
-        print(doc)
-        print("\nMetadata:")
-        for k, v in metadata.items():
-            if k != "sql_query":
-                print(f"  {k}: {v}")
-        print("---------------------------------------------\n")
+# ------------------------------------------------------------------
+# STORE FEEDBACK
+# ------------------------------------------------------------------
 
 def apply_time_decay(
     docs,
@@ -96,11 +67,6 @@ def query_already_exists(store: Chroma, sql_query: str) -> bool:
 
     logger.info("❌ Query does not exist in store.")
     return False
-
-# ------------------------------------------------------------------
-# STORE FEEDBACK
-# ------------------------------------------------------------------
-from typing import Any
 
 def create_metadata(
     sql_query: str,
@@ -228,6 +194,10 @@ def store_query_feedback(
     store.add_documents([doc])
     logger.info(f"✅ Query stored with status: {qm.status}")
 
+# ------------------------------------------------------------------
+# RETRIEVAL
+# ------------------------------------------------------------------
+
 def extract_sql_patterns(sql: str) -> list[str]:
     patterns = []
 
@@ -281,10 +251,6 @@ Error type: {error_type}
 
     logger.info(f"📋 Penalty section built for {len(failed_queries)} failures.")
     return "\n".join(lines)
-
-# ------------------------------------------------------------------
-# RETRIEVAL
-# ------------------------------------------------------------------
 
 def retrieve_failed_queries(
     user_request: str,
