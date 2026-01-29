@@ -89,8 +89,7 @@ def run_single_test(
         
         syntax_status = validate_sql_syntax(sql)
 
-        if syntax_status == "OK" and source == "mysql_extraction":
-            execution_status, execution_output = execute_sql_query(sql)
+        execution_status, execution_output = execute_sql_query(sql)
 
         metadata = create_metadata(
             sql_query=sql,

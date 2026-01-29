@@ -352,7 +352,6 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
         model = OllamaLLM(model=model_name)
         chain = prompt | model
 
-        logger.info("Sending request to LLM...")
         response = chain.invoke({
             "schema_context": schema_context,
             "user_request": user_request
@@ -435,10 +434,10 @@ def main():
             )            
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
-            mode = get_schema_source(full_schema)
+            source = get_schema_source(full_schema)
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, mode, full_schema, selected_model_name, query_vs, schema_vs)
+            sql = generate_sql_query(user_request, source, full_schema, selected_model_name, query_vs, schema_vs)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
@@ -450,14 +449,14 @@ def main():
             syntax_status = validate_sql_syntax(sql)
             print(f"\n✅ Syntax check: {syntax_status}")
 
-            if syntax_status == "OK" and mode == "mysql_extraction":
+            if syntax_status == "OK" and source == "mysql_extraction":
                 print("\n🚀 Executing query against the database...\n")
                 execution_status, execution_output = execute_sql_query(sql)
 
             metadata = create_metadata(
                 sql_query=sql,
                 syntax_status=syntax_status,
-                source=mode,
+                source=source,
                 schema_id=compute_schema_id(full_schema),
                 user_request=user_request,
                 model_name=selected_model_name,
