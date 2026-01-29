@@ -95,6 +95,8 @@ def create_metadata(
         error_message = "Query failed syntactic check"
     elif status == "RUNTIME_ERROR":
         error_message = execution_output
+    elif status == "OK":
+        error_message = "All good"
 
     # -----------------------------
     # ROWS FETCHED

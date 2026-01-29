@@ -27,12 +27,9 @@ class QueryMetadata:
             "model": self.model_name,
             "timestamp": time.time(),
             "sql_query": sql_query,
+            "rows_fetched": self.rows_fetched,
+            "error_type": self.error_type
         }
-
-        if self.error_message:
-            base["error_type"] = self.error_type
-        else:
-            base["rows_fetched"] = self.rows_fetched
 
         return base
 

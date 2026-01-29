@@ -157,7 +157,7 @@ def run_test_with_timeout(
 
 
 def format_result_line(model_name: str, sql_query: str, status: str, 
-                       error_message: str = "") -> str:
+                       error_message: str) -> str:
     """
     Format a single result line according to the template.
     """
