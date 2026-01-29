@@ -286,7 +286,8 @@ def generate_sql_query(
     full_schema: dict, 
     model_name: str, 
     query_vs: Chroma, 
-    schema_vs: Chroma
+    schema_vs: Chroma,
+    mode: str = "base"
 ) -> str:
     """
     Generates a SQL query using:
