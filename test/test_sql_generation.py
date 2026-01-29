@@ -173,7 +173,7 @@ def format_result_line(model_name: str, sql_query: str, status: str,
             clean_error = clean_error[:MAX_OUTPUT_LENGTH/4] + "..."
         return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {clean_error}\n\n"
     else:
-        return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {outcome}"
+        return f"{model_name}\n\nQuery: {clean_sql}\n\Rows fetched: {outcome}"
 
 
 def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
@@ -190,8 +190,8 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
             # Write results for each model
             for model_name in AVAILABLE_MODELS.values():
                 if model_name in model_results:
-                    sql, status, error = model_results[model_name]
-                    line = format_result_line(model_name, sql, status, error)
+                    sql, status, outcome = model_results[model_name]
+                    line = format_result_line(model_name, sql, status, outcome)
                     f.write(f"{line}\n")
                 else:
                     f.write(f"{model_name} [TEST NOT RUN] MODEL_NOT_AVAILABLE\n")
@@ -305,7 +305,7 @@ def run_comprehensive_tests():
             print(f"\n🔄 Testing with model: {model_name}")
             model_start_time = time.time()
             
-            sql_query, status, error_message = run_test_with_timeout(
+            sql_query, status, outcome = run_test_with_timeout(
                 request, model_name, full_schema, source, query_vs, schema_vs, TIMEOUT_PER_MODEL
             )
             
@@ -314,10 +314,10 @@ def run_comprehensive_tests():
             
             if sql_query:
                 print(f"   Generated SQL: {sql_query[:100]}...")
-            if error_message and status not in ["OK", "SYNTAX"]:
-                print(f"   Error: {error_message[:100]}...")
+            if outcome and status not in ["OK", "SYNTAX"]:
+                print(f"   Error: {outcome[:100]}...")
             
-            model_results[model_name] = (sql_query, status, error_message)
+            model_results[model_name] = (sql_query, status, outcome)
         
         request_time = time.time() - request_start_time
         print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
