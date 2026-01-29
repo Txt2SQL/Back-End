@@ -194,17 +194,6 @@ def validate_sql_syntax(sql_query: str) -> str:
         logger.error(f"Syntax validation failed: {e}")
         return "SYNTAX_ERROR"
 
-def print_llm_prompt(prompt_text: str) -> None:
-    """
-    Logs the final prompt that will be sent to the LLM.
-    Useful for debugging and understanding what context the model receives.
-    """
-    logger.info("\n" + "=" * 80)
-    logger.info("📋 FINAL PROMPT SENT TO LLM")
-    logger.info("=" * 80)
-    logger.info(prompt_text)
-    logger.info("=" * 80 + "\n")
-
 def select_model() -> str:
     """
     Prompts user to select an Ollama model from available options.
