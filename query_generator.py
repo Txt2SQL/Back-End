@@ -5,13 +5,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from logging_utils import setup_logger
-from typing import Any
-from metadata import UIMetadata
 from query_feedback_store import (
     store_query_feedback,
     retrieve_failed_queries,
     build_penalty_section,
-    print_query_vector_store
+    print_query_vector_store,
+    create_metadata
 )
 from utils_pkg import (
     get_context,
@@ -376,41 +375,6 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 
     return sql_query
 
-def create_metadata(
-    syntax_status: str,
-    source: str,
-    schema_id: str,
-    user_request: str,
-    model_name: str,
-    execution_status: str | None = None,
-    execution_output: Any | None = None
-) -> UIMetadata:
-
-    error_message = None
-    rows_fetched = 0
-    status = syntax_status
-
-    if syntax_status == "OK" and source == "mysql_extraction":
-        if execution_status == "OK":
-            status = "OK"
-            rows_fetched = len(execution_output) if execution_output else 0
-        else:
-            status = "RUNTIME_ERROR"
-            error_message = execution_output
-
-    elif syntax_status != "OK":
-        status = "SYNTAX_ERROR"
-        error_message = "Query failed syntactic check"
-
-    return UIMetadata(
-        schema_id=schema_id,
-        user_request=user_request,
-        model_name=model_name,
-        status=status,
-        rows_fetched=rows_fetched,
-        error_message=error_message
-    )
-
 def main():
     """Main function to handle the interactive workflow."""
     print("🤖 SQL query generator based on RAG and LLM\n")
@@ -495,6 +459,7 @@ def main():
                 execution_status, execution_output = execute_sql_query(sql)
 
             metadata = create_metadata(
+                sql_query=sql,
                 syntax_status=syntax_status,
                 source=source,
                 schema_id=compute_schema_id(full_schema),
