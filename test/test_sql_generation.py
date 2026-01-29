@@ -109,7 +109,7 @@ def run_single_test(
             qm=metadata
         )
         
-        return sql, metadata.status, metadata.error_message
+        return sql, metadata.status, metadata.rows_fetched if metadata.status == "OK" else metadata.error_message
             
     except Exception as e:
         # Catch any unexpected errors during generation
@@ -157,7 +157,7 @@ def run_test_with_timeout(
 
 
 def format_result_line(model_name: str, sql_query: str, status: str, 
-                       error_message: str) -> str:
+                       outcome: str) -> str:
     """
     Format a single result line according to the template.
     """
@@ -166,14 +166,14 @@ def format_result_line(model_name: str, sql_query: str, status: str,
     if len(clean_sql) > MAX_OUTPUT_LENGTH:  # Truncate very long queries
         clean_sql = clean_sql[:MAX_OUTPUT_LENGTH] + "..."
     
-    if status == "RUNTIME_ERROR":
+    if status != "OK":
         # For other errors, include the error message
-        clean_error = error_message.replace('\n', ' ').strip()
+        clean_error = outcome.replace('\n', ' ').strip()
         if len(clean_error) > MAX_OUTPUT_LENGTH/4:  # Truncate long error messages
             clean_error = clean_error[:MAX_OUTPUT_LENGTH/4] + "..."
         return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {clean_error}\n\n"
     else:
-        return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {error_message}"
+        return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {outcome}"
 
 
 def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
