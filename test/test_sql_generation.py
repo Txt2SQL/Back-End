@@ -93,6 +93,7 @@ def run_single_test(
             execution_status, execution_output = execute_sql_query(sql)
 
         metadata = create_metadata(
+            sql_query=sql,
             syntax_status=syntax_status,
             source=source,
             schema_id=compute_schema_id(full_schema),
@@ -410,7 +411,7 @@ class TestSQLGeneration:
                 self.full_schema, 
                 model_name,
                 self.query_vs,
-                self.schema_vs
+                self.schema_vs,
             )
             
             # Basic validation
@@ -432,6 +433,72 @@ class TestSQLGeneration:
         assert validate_sql_syntax(invalid_sql) == "SYNTAX_ERROR"
     
     @pytest.mark.slow
+    def test_execute_sql_query(self):
+        """Test executing a valid SQL query."""
+        if self.full_schema is None:
+            pytest.skip("Schema not loaded")
+        
+        sql = "SELECT * FROM customers LIMIT 1"
+        
+        status, output = execute_sql_query(sql)
+        
+        assert status == "OK", f"Execution status should be OK, got {status}"
+        assert isinstance(output, list), "Output should be a list of rows"
+        assert len(output) <= 1, "Output should contain at most 1 row"
+        
+        print(f"✅ Execution output: {output}")
+    
+    @pytest.mark.slow
+    def test_without_llm(self):
+        """Test without LLM."""
+        if self.full_schema is None:
+            pytest.skip("Schema not loaded")
+
+        try:
+            sql = generate_sql_query(
+                "request without LLM",
+                self.source,
+                self.full_schema,
+                "none",
+                self.query_vs,
+                self.schema_vs,
+            )
+
+            execution_status = None
+            execution_output = None
+            
+            syntax_status = validate_sql_syntax(sql)
+
+            if syntax_status == "OK" and self.source == "mysql_extraction":
+                execution_status, execution_output = execute_sql_query(sql)
+
+            metadata = create_metadata(
+                sql_query=sql,
+                syntax_status=syntax_status,
+                source=self.source,
+                schema_id=compute_schema_id(self.full_schema),
+                user_request="none",
+                model_name="none",
+                execution_status=execution_status,
+                execution_output=execution_output
+            )
+
+            store_query_feedback(
+                store=self.query_vs,
+                sql_query=sql,
+                qm=metadata
+            )
+            
+            return sql, metadata.status, metadata.error_message
+
+            assert sql is not None, "SQL query should not be None"
+            assert len(sql.strip()) > 0, "SQL query should not be empty"
+            assert "SELECT" in sql.upper(), "SQL query should contain SELECT"
+            print(f"✅ Generated SQL without LLM: {sql[:100]}...")
+        except Exception as e:
+            pytest.fail(f"Model without LLM failed: {e}")
+
+    @pytest.mark.slow
     def test_all_models_all_requests(self, sample_requests):
         """Comprehensive test of all models with all sample requests."""
         if self.full_schema is None:
@@ -449,7 +516,7 @@ class TestSQLGeneration:
                         self.full_schema, 
                         model_name,
                         self.query_vs,
-                        self.schema_vs
+                        self.schema_vs,
                     )
                     
                     # Validate syntax
