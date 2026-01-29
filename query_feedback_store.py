@@ -1,9 +1,10 @@
 import math, time, re
+from typing import Any
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from logging_utils import setup_logger
-from metadata import UIMetadata
+from metadata import QueryMetadata
 
 # === CONFIG ===
 QUERY_COLLECTION_NAME = "query_feedback"
@@ -99,6 +100,77 @@ def query_already_exists(store: Chroma, sql_query: str) -> bool:
 # ------------------------------------------------------------------
 # STORE FEEDBACK
 # ------------------------------------------------------------------
+from typing import Any
+
+def create_metadata(
+    sql_query: str,
+    syntax_status: str,
+    source: str,
+    schema_id: str,
+    user_request: str,
+    model_name: str,
+    execution_status: str | None = None,
+    execution_output: Any | None = None
+) -> QueryMetadata:
+
+    # -----------------------------
+    # STATUS
+    # -----------------------------
+    if syntax_status != "OK":
+        status = "SYNTAX_ERROR"
+    elif source == "mysql_extraction" and execution_status != "OK":
+        status = "RUNTIME_ERROR"
+    else:
+        status = "OK"
+
+    # -----------------------------
+    # ERROR MESSAGE
+    # -----------------------------
+    error_message = None
+    if status == "SYNTAX_ERROR":
+        error_message = "Query failed syntactic check"
+    elif status == "RUNTIME_ERROR":
+        error_message = execution_output
+
+    # -----------------------------
+    # ROWS FETCHED
+    # -----------------------------
+    rows_fetched = (
+        len(execution_output)
+        if status == "OK" and execution_output
+        else 0
+    )
+
+    # -----------------------------
+    # ERROR TYPE
+    # -----------------------------
+    if error_message is None:
+        error_type = None
+    elif status == "SYNTAX_ERROR":
+        error_type = "SYNTAX"
+    else:
+        error_type = classify_error(error_message)
+
+    # -----------------------------
+    # KNOWLEDGE SCOPE
+    # -----------------------------
+    if status == "SYNTAX_ERROR":
+        knowledge_scope = "SYNTAX"
+    elif detect_structural_issue(sql_query):
+        knowledge_scope = "STRUCTURAL"
+    else:
+        knowledge_scope = "SCHEMA_SPECIFIC"
+
+    return QueryMetadata(
+        schema_id=schema_id,
+        user_request=user_request,
+        model_name=model_name,
+        status=status,
+        rows_fetched=rows_fetched,
+        error_message=error_message,
+        knowledge_scope=knowledge_scope,
+        error_type=error_type
+    )
 
 def classify_error(error_message: str | None) -> str | None:
     if not error_message:
@@ -140,63 +212,18 @@ def detect_structural_issue(sql: str) -> bool:
 def store_query_feedback(
     store: Chroma,
     sql_query: str,
-    qm: UIMetadata
+    qm: QueryMetadata
 ) -> None:
-    """
-    Stores a (request, sql, outcome) tuple into the query feedback vector store.
-    """
-    logger.info(f"💾 Storing feedback for query: {sql_query}")
-
-    if qm.error_message == "Query failed syntactic check":
-        error_type = "SYNTAX"
-    elif qm.error_message:
-        error_type = classify_error(qm.error_message)
-    else:
-        error_type = None
-
-    page_content = f"""
-User request:
-{qm.user_request}
-
-Generated SQL query:
-{sql_query}
-
-Outcome: {qm.status}
-""".strip()
-
-    if qm.status == "SYNTAX_ERROR":
-        knowledge_scope = "SYNTAX"
-    elif detect_structural_issue(sql_query):
-        knowledge_scope = "STRUCTURAL"
-    else:
-        knowledge_scope = "SCHEMA_SPECIFIC"
-
-    logger.info(f"📌 Knowledge scope determined: {knowledge_scope}")
-
-    metadata = {
-        "schema_id": qm.schema_id,
-        "knowledge_scope": knowledge_scope,
-        "status": qm.status,
-        "model": qm.model_name,
-        "timestamp": time.time(),
-        "sql_query": sql_query,
-    }
-
-    if qm.error_message:
-        metadata["error_type"] = error_type
-        logger.info(f"⚠️ Error type recorded: {error_type}")
-    else:
-        metadata["rows_fetched"] = qm.rows_fetched
-        logger.info(f"ℹ️ Rows fetched: {qm.rows_fetched}")
-
-    doc = Document(
-        page_content=page_content,
-        metadata=metadata
-    )
+    logger.info(f"💾 Storing feedback for query")
 
     if query_already_exists(store, sql_query):
         logger.info("ℹ️ Query already present. Skipping insert.")
         return
+
+    doc = Document(
+        page_content=qm.to_page_content(sql_query),
+        metadata=qm.to_document_metadata(sql_query)
+    )
 
     store.add_documents([doc])
     logger.info(f"✅ Query stored with status: {qm.status}")

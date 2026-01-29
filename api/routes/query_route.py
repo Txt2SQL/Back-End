@@ -48,14 +48,13 @@ query_vs = Chroma(
 # =========================
 class QueryRequest(BaseModel):
     user_request: str
-    model_name: str = "sqlcoder:15b"
-    execute: bool = False
+    model_name: str
+    execute: bool
 
 
 class QueryResponse(BaseModel):
     sql: str
-    syntax_status: str
-    execution_status: str | None = None
+    status: str
     rows_fetched: int | None = None
     error_message: str | None = None
 
@@ -127,8 +126,7 @@ def generate_query(req: QueryRequest):
     # -------------------------
     return QueryResponse(
         sql=sql,
-        syntax_status=syntax_status,
-        execution_status=execution_status,
+        status=metadata.status,
         rows_fetched=metadata.rows_fetched,
         error_message=metadata.error_message
     )
