@@ -1,17 +1,17 @@
 import json, os
-import logging
-from datetime import datetime
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from mysql_linker import extract_schema
-from logging_utils import setup_logger
-from utils_pkg  import (
+from logging_utils import (
+    setup_logger,
     print_schema_preview,
-    extract_json_from_response,
-    validate_schema_structure,
     print_vector_store
+)
+from utils_pkg import (
+    extract_json_from_response,
+    validate_schema_structure
 )
 
 # === CONFIG ===

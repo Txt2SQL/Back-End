@@ -1,22 +1,21 @@
 import sqlglot, json, hashlib
-from datetime import datetime
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
+from utils_pkg import get_context
+from mysql_linker import execute_sql_query
 from langchain_chroma import Chroma
-from logging_utils import setup_logger
+from logging_utils import (
+    setup_logger,
+    print_llm_prompt,
+    print_query_vector_store
+)
 from query_feedback_store import (
     store_query_feedback,
     retrieve_failed_queries,
     build_penalty_section,
-    print_query_vector_store,
     create_metadata
 )
-from utils_pkg import (
-    get_context,
-    print_schema_context
-)
-from mysql_linker import execute_sql_query
 
 # === CONFIG ===
 SCHEMA_FILE = "schema_canonico.json"
@@ -24,6 +23,7 @@ SCHEMA_COLLECTION_NAME = "schema_canonico"
 QUERY_COLLECTION_NAME = "query_feedback"
 VSS_DIR = "./vector_store/schema"
 VSQ_DIR = "./vector_store/queries"
+SAMPLE_QUERY_FILE = "./test/sample_query.sql"
 
 # === AVAILABLE MODELS ===
 AVAILABLE_MODELS = {
@@ -220,10 +220,10 @@ def get_schema_source(full_schema: dict) -> str:
         
     if "source" in full_schema and full_schema["source"] == "mysql_extraction":
         logger.info("ℹ️  Schema source detected: MySQL extraction.\n")
-        return "mysql_extraction"
+        return "mysql"
     else:
         logger.info("ℹ️  Schema source detected: Text input.\n")
-        return "text_input"
+        return "base"
 
 def response_cleaning(response) -> str:
     """
@@ -282,12 +282,11 @@ Only output the final SQL query.
 
 def generate_sql_query(
     user_request: str, 
-    source: str, 
+    mode: str, 
     full_schema: dict, 
     model_name: str, 
     query_vs: Chroma, 
-    schema_vs: Chroma,
-    mode: str = "base"
+    schema_vs: Chroma
 ) -> str:
     """
     Generates a SQL query using:
@@ -314,7 +313,7 @@ using the provided tables and columns.
 {schema_context}
   
 """    
-    if source == "mysql_extraction":
+    if mode == "mysql":
         join_hints = build_join_hints(full_schema)
         template = template + f"""
 {join_hints}
@@ -334,8 +333,8 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - Do NOT join tables unless necessary for the request.
 - If using aggregates, include GROUP BY  
 """
-    
-    if source == "mysql_extraction":
+
+    if mode == "mysql":
         template = add_penalties(template, user_request, query_vs)
         logger.info("Added penalty section for MySQL extraction schema")
 
@@ -346,22 +345,29 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 
     # Log the final prompt
     print_llm_prompt(template)
+    
+    if model_name != "none":
+        logger.info("Sending request to LLM...")
+        prompt = ChatPromptTemplate.from_template(template)
+        model = OllamaLLM(model=model_name)
+        chain = prompt | model
 
-    prompt = ChatPromptTemplate.from_template(template)
-    model = OllamaLLM(model=model_name)
-    chain = prompt | model
+        logger.info("Sending request to LLM...")
+        response = chain.invoke({
+            "schema_context": schema_context,
+            "user_request": user_request
+        })
 
-    logger.info("Sending request to LLM...")
-    response = chain.invoke({
-        "schema_context": schema_context,
-        "user_request": user_request
-    })
-
-    # ------------------------------------------------------------------
-    # 4. OUTPUT CLEANUP
-    # ------------------------------------------------------------------
-    sql_query = response_cleaning(response)
-    logger.info(f"Generated SQL query length: {len(sql_query)} characters")
+        # ------------------------------------------------------------------
+        # 4. OUTPUT CLEANUP
+        # ------------------------------------------------------------------
+        sql_query = response_cleaning(response)
+        logger.info(f"Generated SQL query length: {len(sql_query)} characters")
+    else:
+        # open sample query file and read content
+        with open(SAMPLE_QUERY_FILE, "r", encoding="utf-8") as f:
+            sql_query = f.read().strip()
+        logger.info("SQL generation skipped due to 'without_llm' mode")
 
     return sql_query
 
@@ -429,10 +435,10 @@ def main():
             )            
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
-            source = get_schema_source(full_schema)
+            mode = get_schema_source(full_schema)
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, source, full_schema, selected_model_name, query_vs, schema_vs)
+            sql = generate_sql_query(user_request, mode, full_schema, selected_model_name, query_vs, schema_vs)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
@@ -444,14 +450,14 @@ def main():
             syntax_status = validate_sql_syntax(sql)
             print(f"\n✅ Syntax check: {syntax_status}")
 
-            if syntax_status == "OK" and source == "mysql_extraction":
+            if syntax_status == "OK" and mode == "mysql_extraction":
                 print("\n🚀 Executing query against the database...\n")
                 execution_status, execution_output = execute_sql_query(sql)
 
             metadata = create_metadata(
                 sql_query=sql,
                 syntax_status=syntax_status,
-                source=source,
+                source=mode,
                 schema_id=compute_schema_id(full_schema),
                 user_request=user_request,
                 model_name=selected_model_name,

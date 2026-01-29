@@ -1,15 +1,9 @@
 import math, time, re
 from typing import Any
-from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from logging_utils import setup_logger
 from metadata import QueryMetadata
-
-# === CONFIG ===
-QUERY_COLLECTION_NAME = "query_feedback"
-QUERY_DB_DIR = "./vector_store/queries"
-EMBEDDING_MODEL = "mxbai-embed-large"
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
@@ -47,12 +41,16 @@ def apply_time_decay(
 
     return [doc for _, doc in scored]
 
-def query_already_exists(store: Chroma, sql_query: str) -> bool:
+def query_already_exists(store: Chroma, sql_query: str, model_name: str) -> bool:
     """
     Checks if a SQL query already exists in the vector store.
     Comparison is done on metadata["sql_query"].
     """
     logger.info(f"🔍 Checking if query exists: {sql_query}")
+    
+    if model_name == "none":
+        logger.info("ℹ️ Model is 'none': testing run. Skip storing")
+        return False
     
     data = store.get(include=["metadatas"])
 
@@ -182,7 +180,7 @@ def store_query_feedback(
 ) -> None:
     logger.info(f"💾 Storing feedback for query")
 
-    if query_already_exists(store, sql_query):
+    if query_already_exists(store, sql_query, qm.model_name):
         logger.info("ℹ️ Query already present. Skipping insert.")
         return
 
