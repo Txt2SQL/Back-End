@@ -356,7 +356,6 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
         model = OllamaLLM(model=model_name)
         chain = prompt | model
 
-        logger.info("Sending request to LLM...")
         response = chain.invoke({
             "schema_context": schema_context,
             "user_request": user_request
