@@ -89,8 +89,7 @@ def run_single_test(
         
         syntax_status = validate_sql_syntax(sql)
 
-        if syntax_status == "OK" and source == "mysql_extraction":
-            execution_status, execution_output = execute_sql_query(sql)
+        execution_status, execution_output = execute_sql_query(sql)
 
         metadata = create_metadata(
             sql_query=sql,
@@ -109,7 +108,7 @@ def run_single_test(
             qm=metadata
         )
         
-        return sql, metadata.status, metadata.rows_fetched if metadata.status == "OK" else metadata.error_message
+        return sql, metadata.status, str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message
             
     except Exception as e:
         # Catch any unexpected errors during generation
@@ -173,7 +172,7 @@ def format_result_line(model_name: str, sql_query: str, status: str,
             clean_error = clean_error[:MAX_OUTPUT_LENGTH/4] + "..."
         return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {clean_error}\n\n"
     else:
-        return f"{model_name}\n\nQuery: {clean_sql}\n\Rows fetched: {outcome}"
+        return f"{model_name}\n\nQuery: \n{clean_sql}\n\nRows fetched: {outcome}\n\n"
 
 
 def write_test_results(results: List[Tuple[str, Dict]], output_file: str):

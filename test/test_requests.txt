@@ -1,1 +1,7 @@
 Customers who spent more than average. Find customers whose total spending is above the average customer spending
+Products that have never been sold. List all products that have never been included in any order
+Employees who processed more orders than average. Find employees who have processed more orders than the average number of orders per employee
+Most expensive product in each category. For each category, show the most expensive product and its price
+Customers who bought the most popular product. Find customers who purchased the product that has been sold the most times
+Customers who purchased from all product categories. Find customers who have bought at least one product from EVERY category available in the supermarket. Hint: Use correlated subqueries and count distinct categories
+Products with above-average sales in their category. For each product, determine if its total sales quantity is above the average sales quantity of all products in the same category. Show product name, category, total sales, and category average sales
