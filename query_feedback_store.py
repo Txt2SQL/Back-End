@@ -81,11 +81,9 @@ def create_metadata(
     # STATUS
     # -----------------------------
     if syntax_status != "OK":
-        status = "SYNTAX_ERROR"
-    elif source == "mysql_extraction" and execution_status != "OK":
-        status = "RUNTIME_ERROR"
+        status = syntax_status
     else:
-        status = "OK"
+        status = execution_status
 
     # -----------------------------
     # ERROR MESSAGE
