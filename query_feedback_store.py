@@ -69,13 +69,13 @@ def query_already_exists(store: Chroma, sql_query: str, model_name: str) -> bool
 def create_metadata(
     sql_query: str,
     syntax_status: str,
-    source: str,
     schema_id: str,
     user_request: str,
     model_name: str,
     execution_status: str | None = None,
     execution_output: Any | None = None
 ) -> QueryMetadata:
+    logger.info("📝 Creating metadata for query execution...")
 
     # -----------------------------
     # STATUS
@@ -83,7 +83,8 @@ def create_metadata(
     if syntax_status != "OK":
         status = syntax_status
     else:
-        status = execution_status
+        status = execution_status if execution_status is not None else "UNKNOWN_ERROR"
+    logger.info(f"📊 Status determined: {status}")
 
     # -----------------------------
     # ERROR MESSAGE
@@ -104,6 +105,7 @@ def create_metadata(
         if status == "OK" and execution_output
         else 0
     )
+    logger.info(f"🔢 Rows fetched: {rows_fetched}")
 
     # -----------------------------
     # ERROR TYPE
@@ -114,6 +116,7 @@ def create_metadata(
         error_type = "SYNTAX"
     else:
         error_type = classify_error(error_message)
+    logger.info(f"🐛 Error type classified as: {error_type}")
 
     # -----------------------------
     # KNOWLEDGE SCOPE
@@ -124,6 +127,7 @@ def create_metadata(
         knowledge_scope = "STRUCTURAL"
     else:
         knowledge_scope = "SCHEMA_SPECIFIC"
+    logger.info(f"🧠 Knowledge scope determined: {knowledge_scope}")
 
     return QueryMetadata(
         schema_id=schema_id,
