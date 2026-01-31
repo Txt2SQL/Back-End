@@ -227,7 +227,7 @@ def get_schema_source(full_schema: dict) -> str:
         return "mysql"
     else:
         logger.info("ℹ️  Schema source detected: Text input.\n")
-        return "base"
+        return "text"
 
 def response_cleaning(response) -> str:
     """
@@ -286,7 +286,7 @@ Only output the final SQL query.
 
 def generate_sql_query(
     user_request: str, 
-    mode: str, 
+    source: str, 
     full_schema: dict, 
     model_name: str, 
     query_vs: Chroma, 
@@ -317,7 +317,7 @@ using the provided tables and columns.
 {schema_context}
   
 """    
-    if mode == "mysql":
+    if source == "mysql":
         join_hints = build_join_hints(full_schema)
         template = template + f"""
 {join_hints}
@@ -338,7 +338,7 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - If using aggregates, include GROUP BY  
 """
 
-    if mode == "mysql":
+    if source == "mysql":
         template = add_penalties(template, user_request, query_vs)
         logger.info("Added penalty section for MySQL extraction schema")
 
@@ -453,7 +453,7 @@ def main():
             syntax_status = validate_sql_syntax(sql)
             print(f"\n✅ Syntax check: {syntax_status}")
 
-            if syntax_status == "OK" and source == "mysql_extraction":
+            if syntax_status == "OK" and source == "mysql":
                 print("\n🚀 Executing query against the database...\n")
                 execution_status, execution_output = execute_sql_query(sql)
 
