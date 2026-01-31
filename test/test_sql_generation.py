@@ -114,6 +114,65 @@ def run_single_test(
         error_msg = f"GENERATION_ERROR: {str(e)}"
         return "", "GENERATION_ERROR", error_msg
 
+def run_full_cycle_no_llm(
+    *,
+    user_request: str,
+    sample_sql: str,
+    mode: str,
+    full_schema: dict,
+    query_vs: Chroma,
+    schema_vs: Chroma,
+    execute_sql: bool
+):
+    """
+    Runs the full SQL pipeline WITHOUT calling the LLM.
+    """
+
+    # 1. Force "none" model and inject sample SQL
+    from query_generator import SAMPLE_QUERY_FILE
+
+    with open(SAMPLE_QUERY_FILE, "w", encoding="utf-8") as f:
+        f.write(sample_sql)
+
+    sql = generate_sql_query(
+        user_request=user_request,
+        source=mode,
+        full_schema=full_schema,
+        model_name="none",
+        query_vs=query_vs,
+        schema_vs=schema_vs,
+    )
+
+    # 2. Syntax validation
+    syntax_status = validate_sql_syntax(sql)
+
+    execution_status = None
+    execution_output = None
+
+    # 3. Optional execution
+    if execute_sql and syntax_status == "OK":
+        execution_status, execution_output = execute_sql_query(sql)
+
+    # 4. Metadata
+    metadata = create_metadata(
+        sql_query=sql,
+        syntax_status=syntax_status,
+        schema_id=compute_schema_id(full_schema),
+        user_request=user_request,
+        model_name="none",
+        execution_status=execution_status,
+        execution_output=execution_output,
+    )
+
+    # 5. Store feedback
+    store_query_feedback(
+        store=query_vs,
+        sql_query=sql,
+        qm=metadata,
+    )
+
+    return sql, metadata
+
 
 def run_test_with_timeout(
     request: str, 
@@ -333,247 +392,301 @@ def run_comprehensive_tests(mode: str):
 
 def run_full_cycle_without_llm(
     *,
-    sql: str,
     user_request: str,
     mode: str,
-    full_schema: dict,
+    schema: dict,
     query_vs: Chroma,
+    schema_vs: Chroma,
+    execute_sql: bool,
 ):
     """
-    Executes the full pipeline WITHOUT LLM:
-    - syntax validation
-    - optional execution
-    - metadata creation
-    - store in retriever
+    Runs the full SQL generation pipeline WITHOUT calling the LLM.
     """
+    sql = generate_sql_query(
+        user_request=user_request,
+        source=mode,
+        full_schema=schema,
+        model_name="none",
+        query_vs=query_vs,
+        schema_vs=schema_vs,
+    )
+
     syntax_status = validate_sql_syntax(sql)
-    assert syntax_status == "OK"
 
     execution_status = None
     execution_output = None
 
-    if mode == "mysql":
+    if execute_sql and syntax_status == "OK":
         execution_status, execution_output = execute_sql_query(sql)
-        assert execution_status == "OK"
 
-    metadata = create_metadata(
+    qm = create_metadata(
         sql_query=sql,
         syntax_status=syntax_status,
-        schema_id=compute_schema_id(full_schema),
+        schema_id=compute_schema_id(schema),
         user_request=user_request,
         model_name="none",
         execution_status=execution_status,
         execution_output=execution_output,
     )
 
-    store_query_feedback(
-        store=query_vs,
-        sql_query=sql,
-        qm=metadata,
-    )
+    store_query_feedback(query_vs, sql, qm)
 
-    return metadata
+    return sql, qm
 
 # ==================== PYTEST TEST CASES ====================
 
-class TestSQLGeneration:
-    """Pytest test class for SQL generation."""
-    
-    @classmethod
-    def setup_class(cls):
-        """Setup before all tests."""
-        print("\n🔧 Setting up test class...")
-        cls.full_schema = None
-        try:
-            with open(SCHEMA_FILE, 'r', encoding='utf-8') as f:
-                cls.full_schema = json.load(f)
-            print("✅ Schema loaded successfully")
-        except Exception as e:
-            pytest.skip(f"Cannot load schema: {e}")
-        
-        # Load vector stores with error handling
-        try:
-            embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+@pytest.fixture
+def schema():
+    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-            cls.query_vs = Chroma(
-                collection_name=QUERY_COLLECTION_NAME,
-                persist_directory=VSQ_DIR,
-                embedding_function=embeddings,
-            )
+@pytest.fixture
+def vector_stores():
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
 
-            cls.schema_vs = Chroma(
-                collection_name=SCHEMA_COLLECTION_NAME,
-                persist_directory=VSS_DIR,
-                embedding_function=embeddings,
-            )  
-            print("✅ Vector stores loaded successfully")
-        except Exception as e:
-            pytest.skip(f"Cannot load vector stores: {e}")
-        
-        # Safely retrieve mode from schema
-        if cls.full_schema is not None:
-            cls.mode = cls.full_schema.get("source")
-            if cls.mode is not None:
-                print(f"📋 Generation mode: {cls.mode}")
-            else:
-                pytest.skip("Schema source not found in loaded schema")
-        else:
-            pytest.skip("Schema was not loaded successfully")
-    
-    @pytest.fixture
-    def sample_requests(self):
-        """Provide sample test requests."""
-        return [
-            "Show all customers",
-            "List all products with their categories",
-            "Count orders per customer",
-            "Find total sales amount",
-            "Show employees hired in 2023"
-        ]
-    
-    @pytest.mark.parametrize("model_name", AVAILABLE_MODELS.values())
-    def test_model_generates_sql(self, model_name, sample_requests):
-        """Test that each model can generate SQL for sample requests."""
-        request = sample_requests[0]  # Use first sample request
-        print(f"\nTesting model {model_name} with request: '{request}'")
-        
-        if self.full_schema is None:
-            pytest.skip("Schema not loaded")
-        
+    query_vs = Chroma(
+        collection_name=QUERY_COLLECTION_NAME,
+        persist_directory=VSQ_DIR,
+        embedding_function=embeddings,
+    )
+
+    schema_vs = Chroma(
+        collection_name=SCHEMA_COLLECTION_NAME,
+        persist_directory=VSS_DIR,
+        embedding_function=embeddings,
+    )
+
+    return query_vs, schema_vs
+
+@pytest.fixture(scope="class")
+def load_file():
+    def _load(path: str) -> str:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return _load
+
+
+@pytest.mark.execution
+def test_execute_sql_success_only(load_file):
+    sql = load_file("tests/inputs/sql_success.sql")
+
+    status, result = execute_sql_query(sql)
+
+    assert status == "OK"
+    assert isinstance(result, list)
+
+@pytest.mark.execution
+def test_execute_sql_success_and_store(schema, vector_stores, load_file):
+    query_vs, _ = vector_stores
+    sql = load_file("tests/inputs/sql_success.sql")
+
+    if schema is None:
+        pytest.skip("Schema not loaded")
+    syntax = validate_sql_syntax(sql)
+    status, output = execute_sql_query(sql)
+
+    qm = create_metadata(
+        sql_query=sql,
+        syntax_status=syntax,
+        schema_id=compute_schema_id(schema),
+        user_request="test success",
+        model_name="test",
+        execution_status=status,
+        execution_output=output,
+    )
+
+    store_query_feedback(query_vs, sql, qm)
+
+    assert qm.status == "OK"
+    assert qm.rows_fetched >= 0
+
+@pytest.mark.execution
+def test_syntax_error_and_store(schema, vector_stores, load_file):
+    query_vs, _ = vector_stores
+    sql = load_file("tests/inputs/sql_syntax_error.sql")
+
+    syntax = validate_sql_syntax(sql)
+
+    qm = create_metadata(
+        sql_query=sql,
+        syntax_status=syntax,
+        schema_id=compute_schema_id(schema),
+        user_request="syntax error",
+        model_name="test",
+    )
+
+    store_query_feedback(query_vs, sql, qm)
+
+    assert qm.status == "SYNTAX_ERROR"
+    assert qm.knowledge_scope == "SYNTAX"
+
+@pytest.mark.execution    
+@pytest.mark.parametrize("sql_file", [
+    "tests/inputs/sql_runtime_error_fk.sql",
+    "tests/inputs/sql_runtime_error_column.sql",
+])
+def test_runtime_error_and_store(schema, vector_stores, load_file, sql_file):
+    query_vs, _ = vector_stores
+    sql = load_file(sql_file)
+
+    syntax = validate_sql_syntax(sql)
+    status, error = execute_sql_query(sql)
+
+    qm = create_metadata(
+        sql_query=sql,
+        syntax_status=syntax,
+        schema_id=compute_schema_id(schema),
+        user_request="runtime error",
+        model_name="test",
+        execution_status=status,
+        execution_output=error,
+    )
+
+    store_query_feedback(query_vs, sql, qm)
+
+    assert qm.status == "RUNTIME_ERROR"
+    assert qm.error_type is not None
+
+@pytest.mark.prompt
+def test_complex_prompt_creation_only(schema, vector_stores, capsys):
+    query_vs, schema_vs = vector_stores
+
+    generate_sql_query(
+        user_request="Show total sales by customer",
+        source="mysql",
+        full_schema=schema,
+        model_name="none",
+        query_vs=query_vs,
+        schema_vs=schema_vs,
+    )
+
+    captured = capsys.readouterr().out
+
+    assert "=== SCHEMA ===" in captured
+    assert "IMPORTANT CONSTRAINTS" in captured
+    assert "PREVIOUS FAILURES" in captured or "SQL QUERY" in captured
+
+@pytest.mark.prompt
+def test_simple_prompt_creation_only(schema, vector_stores, capsys):
+    query_vs, schema_vs = vector_stores
+
+    generate_sql_query(
+        user_request="List all customers",
+        source="text",
+        full_schema=schema,
+        model_name="none",
+        query_vs=query_vs,
+        schema_vs=schema_vs,
+    )
+
+    captured = capsys.readouterr().out
+
+    assert "=== SCHEMA ===" in captured
+    assert "PREVIOUS FAILURES" not in captured
+    assert "join" not in captured.lower()
+
+@pytest.mark.fullcycle
+def test_simple_prompt_full_cycle_no_execution(schema, vector_stores):
+    query_vs, schema_vs = vector_stores
+
+    sql, qm = run_full_cycle_without_llm(
+        user_request="List all customers",
+        mode="text",
+        schema=schema,
+        query_vs=query_vs,
+        schema_vs=schema_vs,
+        execute_sql=False,
+    )
+
+    assert sql
+    assert qm.status in {"OK", "UNKNOWN_ERROR"}
+    assert qm.knowledge_scope != "SYNTAX"
+
+@pytest.mark.fullcycle
+def test_complex_prompt_full_cycle_with_execution(schema, vector_stores):
+    query_vs, schema_vs = vector_stores
+
+    sql, qm = run_full_cycle_without_llm(
+        user_request="Show total sales by customer",
+        mode="mysql",
+        schema=schema,
+        query_vs=query_vs,
+        schema_vs=schema_vs,
+        execute_sql=True,
+    )
+
+    assert sql
+    assert qm.status == "OK"
+    assert qm.rows_fetched >= 0
+
+@pytest.mark.fullcycle
+def test_simple_prompt_execute_and_store(schema, vector_stores):
+    query_vs, schema_vs = vector_stores
+
+    sql, qm = run_full_cycle_without_llm(
+        user_request="Show all customers",
+        mode="text",
+        schema=schema,
+        query_vs=query_vs,
+        schema_vs=schema_vs,
+        execute_sql=True,
+    )
+
+    assert sql
+    assert qm.status == "OK"
+    assert qm.rows_fetched >= 0
+
+import threading
+import queue
+
+@pytest.mark.llm
+@pytest.mark.slow
+@pytest.mark.parametrize("model_name", AVAILABLE_MODELS.values())
+def test_real_llm_simple_prompt_generation(schema, vector_stores, model_name):
+    """
+    Real LLM integration test:
+    - simple prompt (text)
+    - no execution
+    - no storage
+    - no prompt inspection
+    """
+    query_vs, schema_vs = vector_stores
+    user_request = "List all customers"
+
+    result_queue: queue.Queue[str | Exception] = queue.Queue()
+
+    def worker():
         try:
             sql = generate_sql_query(
-                request, 
-                self.mode, 
-                self.full_schema, 
-                model_name,
-                self.query_vs,
-                self.schema_vs,
+                user_request=user_request,
+                source="text",
+                full_schema=schema,
+                model_name=model_name,
+                query_vs=query_vs,
+                schema_vs=schema_vs,
             )
-            
-            # Basic validation
-            assert sql is not None, "SQL query should not be None"
-            assert len(sql.strip()) > 0, "SQL query should not be empty"
-            assert "SELECT" in sql.upper(), "SQL query should contain SELECT"
-            
-            print(f"✅ Generated SQL: {sql[:100]}...")
-            
+            result_queue.put(sql)
         except Exception as e:
-            pytest.fail(f"Model {model_name} failed: {e}")
-    
-    def test_syntax_validation(self):
-        """Test SQL syntax validation."""
-        valid_sql = "SELECT * FROM customers WHERE id = 1"
-        invalid_sql = "SELECT FROM WHERE"
-        
-        assert validate_sql_syntax(valid_sql) == "OK"
-        assert validate_sql_syntax(invalid_sql) == "SYNTAX_ERROR"
-    
-    @pytest.mark.slow
-    def test_execute_sql_query(self):
-        """Test executing a valid SQL query."""
-        if self.full_schema is None:
-            pytest.skip("Schema not loaded")
-        
-        sql = "SELECT * FROM customers LIMIT 1"
-        
-        status, output = execute_sql_query(sql)
-        
-        assert status == "OK", f"Execution status should be OK, got {status}"
-        assert isinstance(output, list), "Output should be a list of rows"
-        assert len(output) <= 1, "Output should contain at most 1 row"
-        
-        print(f"✅ Execution output: {output}")
-    
-    @pytest.mark.slow
-    def test_without_llm(self):
-        """Test without LLM."""
-        if self.full_schema is None:
-            pytest.skip("Schema not loaded")
+            result_queue.put(e)
 
-        try:
-            sql = generate_sql_query(
-                "request without LLM",
-                self.mode,
-                self.full_schema,
-                "none",
-                self.query_vs,
-                self.schema_vs,
-            )
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout=120)  # ⏱️ 2 minutes per model
 
-            execution_status = None
-            execution_output = None
-            
-            syntax_status = validate_sql_syntax(sql)
+    if thread.is_alive():
+        pytest.fail(f"LLM model '{model_name}' timed out")
 
-            if syntax_status == "OK" and self.mode == "mysql":
-                execution_status, execution_output = execute_sql_query(sql)
+    result = result_queue.get()
 
-            metadata = create_metadata(
-                sql_query=sql,
-                syntax_status=syntax_status,
-                schema_id=compute_schema_id(self.full_schema),
-                user_request="none",
-                model_name="none",
-                execution_status=execution_status,
-                execution_output=execution_output
-            )
+    if isinstance(result, Exception):
+        pytest.fail(f"LLM model '{model_name}' failed: {result}")
 
-            store_query_feedback(
-                store=self.query_vs,
-                sql_query=sql,
-                qm=metadata
-            )
-            
-            return sql, metadata.status, metadata.error_message
+    sql = result
 
-            assert sql is not None, "SQL query should not be None"
-            assert len(sql.strip()) > 0, "SQL query should not be empty"
-            assert "SELECT" in sql.upper(), "SQL query should contain SELECT"
-            print(f"✅ Generated SQL without LLM: {sql[:100]}...")
-        except Exception as e:
-            pytest.fail(f"Model without LLM failed: {e}")
-
-    @pytest.mark.slow
-    def test_all_models_all_requests(self, sample_requests):
-        """Comprehensive test of all models with all sample requests."""
-        if self.full_schema is None:
-            pytest.skip("Schema not loaded")
-        
-        results = []
-        
-        for request in sample_requests:
-            request_results = {}
-            for model_name in AVAILABLE_MODELS.values():
-                try:
-                    sql = generate_sql_query(
-                        request, 
-                        self.mode, 
-                        self.full_schema, 
-                        model_name,
-                        self.query_vs,
-                        self.schema_vs,
-                    )
-                    
-                    # Validate syntax
-                    syntax_ok = validate_sql_syntax(sql) == "OK"
-                    request_results[model_name] = (sql, syntax_ok)
-                    
-                except Exception as e:
-                    request_results[model_name] = (None, False)
-            
-            results.append((request, request_results))
-        
-        # Log results
-        for request, model_results in results:
-            print(f"\nRequest: {request}")
-            for model, (sql, ok) in model_results.items():
-                status = "✅" if ok else "❌"
-                print(f"  {model}: {status}")
-        
-        # At least some models should succeed
-        success_count = sum(1 for _, results in results 
-                           for _, (_, ok) in results.items() if ok)
-        assert success_count > 0, "At least some models should generate valid SQL"
+    # --- minimal but meaningful assertions ---
+    assert isinstance(sql, str)
+    assert sql.strip()
+    assert "select" in sql.lower()
 
 
 # ==================== COMMAND LINE INTERFACE ====================
