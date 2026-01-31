@@ -460,7 +460,6 @@ def main():
             metadata = create_metadata(
                 sql_query=sql,
                 syntax_status=syntax_status,
-                source=source,
                 schema_id=compute_schema_id(full_schema),
                 user_request=user_request,
                 model_name=selected_model_name,

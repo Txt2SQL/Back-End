@@ -94,7 +94,6 @@ def run_single_test(
         metadata = create_metadata(
             sql_query=sql,
             syntax_status=syntax_status,
-            source=source,
             schema_id=compute_schema_id(full_schema),
             user_request=request,
             model_name=model_name,
@@ -170,9 +169,9 @@ def format_result_line(model_name: str, sql_query: str, status: str,
         clean_error = outcome.replace('\n', ' ').strip()
         if len(clean_error) > MAX_OUTPUT_LENGTH/4:  # Truncate long error messages
             clean_error = clean_error[:MAX_OUTPUT_LENGTH/4] + "..."
-        return f"{model_name}\n\nQuery: {clean_sql}\n\nOutcome: {clean_error}\n\n"
+        return f"🤖{model_name}\n\n🧮Query: {clean_sql}\n\n⚠️Error: {clean_error}\n\n"
     else:
-        return f"{model_name}\n\nQuery: \n{clean_sql}\n\nRows fetched: {outcome}\n\n"
+        return f"🤖{model_name}\n\n🧮Query: \n{clean_sql}\n\n💥Rows fetched: {outcome}\n\n"
 
 
 def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
@@ -220,7 +219,7 @@ def print_test_summary(results: List[Tuple[str, Dict]]):
             total_tests += 1
             if status == "OK":
                 passed_tests += 1
-            elif status == "SYNTAX":
+            elif status == "SYNTAX_ERROR":
                 syntax_errors += 1
             elif status == "RUNTIME_ERROR":
                 runtime_errors += 1
@@ -474,7 +473,6 @@ class TestSQLGeneration:
             metadata = create_metadata(
                 sql_query=sql,
                 syntax_status=syntax_status,
-                source=self.source,
                 schema_id=compute_schema_id(self.full_schema),
                 user_request="none",
                 model_name="none",
