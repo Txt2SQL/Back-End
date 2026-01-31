@@ -292,7 +292,7 @@ def acquire_schema_from_text(raw_text: str):
 
     logger.info("No existing schema found. Generating from scratch...")
     schema = generate_schema_canonical(raw_text)
-    schema["source"] = "text_input"
+    schema["source"] = "text"
     
     logger.info("New schema generated.")
     return schema
@@ -300,7 +300,7 @@ def acquire_schema_from_text(raw_text: str):
 def acquire_schema_from_mysql():
     logger.info("Connecting to MySQL database to retrieve schema...")
     schema = extract_schema()
-    schema["source"] = "mysql_extraction"
+    schema["source"] = "mysql"
     logger.info("Generating schema from database schema...")
     logger.info("New schema generated.")
     return schema

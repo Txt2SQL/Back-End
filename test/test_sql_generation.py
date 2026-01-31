@@ -70,7 +70,7 @@ def run_single_test(
     request: str, 
     model_name: str, 
     full_schema: dict, 
-    source: str,
+    mode: str,
     query_vs: Chroma,
     schema_vs: Chroma
 ) -> Tuple[str, str, str | None]:
@@ -82,7 +82,7 @@ def run_single_test(
     """
     try:
         # Generate SQL query
-        sql = generate_sql_query(request, source, full_schema, model_name, query_vs, schema_vs)
+        sql = generate_sql_query(request, mode, full_schema, model_name, query_vs, schema_vs)
 
         execution_status = None
         execution_output = None
@@ -119,7 +119,7 @@ def run_test_with_timeout(
     request: str, 
     model_name: str, 
     full_schema: dict,
-    source: str,
+    mode: str,
     query_vs: Chroma,
     schema_vs: Chroma,
     timeout: int = TIMEOUT_PER_MODEL
@@ -134,7 +134,7 @@ def run_test_with_timeout(
     
     def worker():
         try:
-            result = run_single_test(request, model_name, full_schema, source, query_vs, schema_vs)
+            result = run_single_test(request, model_name, full_schema, mode, query_vs, schema_vs)
             result_queue.put(result)
         except Exception as e:
             result_queue.put(("", "TIMEOUT_OR_ERROR", str(e)))
@@ -245,7 +245,7 @@ def print_test_summary(results: List[Tuple[str, Dict]]):
 
 # ==================== MAIN TEST FUNCTION ====================
 
-def run_comprehensive_tests():
+def run_comprehensive_tests(mode: str):
     """
     Main function to run comprehensive tests.
     """
@@ -283,10 +283,6 @@ def run_comprehensive_tests():
     ) 
     print(f"✅ Loaded vector stores from {VSQ_DIR} and {VSS_DIR}")
     
-    # 3. Determine source from schema
-    source = full_schema.get("source")
-    print(f"📋 Schema source: {source}")
-    
     # 4. Run tests for each request
     all_results = []
     
@@ -304,7 +300,7 @@ def run_comprehensive_tests():
             model_start_time = time.time()
             
             sql_query, status, outcome = run_test_with_timeout(
-                request, model_name, full_schema, source, query_vs, schema_vs, TIMEOUT_PER_MODEL
+                request, model_name, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
             )
             
             model_time = time.time() - model_start_time
@@ -335,6 +331,48 @@ def run_comprehensive_tests():
     print(f"\n🎉 Testing completed!")
     print(f"📄 Full results saved to: {OUTPUT_FILE}")
 
+def run_full_cycle_without_llm(
+    *,
+    sql: str,
+    user_request: str,
+    mode: str,
+    full_schema: dict,
+    query_vs: Chroma,
+):
+    """
+    Executes the full pipeline WITHOUT LLM:
+    - syntax validation
+    - optional execution
+    - metadata creation
+    - store in retriever
+    """
+    syntax_status = validate_sql_syntax(sql)
+    assert syntax_status == "OK"
+
+    execution_status = None
+    execution_output = None
+
+    if mode == "mysql":
+        execution_status, execution_output = execute_sql_query(sql)
+        assert execution_status == "OK"
+
+    metadata = create_metadata(
+        sql_query=sql,
+        syntax_status=syntax_status,
+        schema_id=compute_schema_id(full_schema),
+        user_request=user_request,
+        model_name="none",
+        execution_status=execution_status,
+        execution_output=execution_output,
+    )
+
+    store_query_feedback(
+        store=query_vs,
+        sql_query=sql,
+        qm=metadata,
+    )
+
+    return metadata
 
 # ==================== PYTEST TEST CASES ====================
 
@@ -372,11 +410,11 @@ class TestSQLGeneration:
         except Exception as e:
             pytest.skip(f"Cannot load vector stores: {e}")
         
-        # Safely retrieve source from schema
+        # Safely retrieve mode from schema
         if cls.full_schema is not None:
-            cls.source = cls.full_schema.get("source")
-            if cls.source is not None:
-                print(f"📋 Schema source: {cls.source}")
+            cls.mode = cls.full_schema.get("source")
+            if cls.mode is not None:
+                print(f"📋 Generation mode: {cls.mode}")
             else:
                 pytest.skip("Schema source not found in loaded schema")
         else:
@@ -405,7 +443,7 @@ class TestSQLGeneration:
         try:
             sql = generate_sql_query(
                 request, 
-                self.source, 
+                self.mode, 
                 self.full_schema, 
                 model_name,
                 self.query_vs,
@@ -455,7 +493,7 @@ class TestSQLGeneration:
         try:
             sql = generate_sql_query(
                 "request without LLM",
-                self.source,
+                self.mode,
                 self.full_schema,
                 "none",
                 self.query_vs,
@@ -467,7 +505,7 @@ class TestSQLGeneration:
             
             syntax_status = validate_sql_syntax(sql)
 
-            if syntax_status == "OK" and self.source == "mysql_extraction":
+            if syntax_status == "OK" and self.mode == "mysql":
                 execution_status, execution_output = execute_sql_query(sql)
 
             metadata = create_metadata(
@@ -509,7 +547,7 @@ class TestSQLGeneration:
                 try:
                     sql = generate_sql_query(
                         request, 
-                        self.source, 
+                        self.mode, 
                         self.full_schema, 
                         model_name,
                         self.query_vs,
@@ -544,8 +582,10 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Test SQL generation with multiple models")
-    parser.add_argument("--mode", choices=["run", "test"], default="run",
-                       help="Mode: 'run' to execute tests, 'test' to run pytest")
+    parser.add_argument("--test", choices=["run", "pytest"], default="run",
+                       help="Test type: 'run' to execute tests, 'pytest' to run the pytest suite")
+    parser.add_argument("--mode", choices=["mysql", "base"], default="base",
+                       help="Mode: 'mysql' for MySQL mode, 'base' for base mode")
     parser.add_argument("--input", default=INPUT_FILE,
                        help="Input file with test requests")
     parser.add_argument("--output", default=OUTPUT_FILE,
@@ -562,7 +602,7 @@ if __name__ == "__main__":
         TIMEOUT_PER_MODEL = args.timeout
         
         # Run the comprehensive tests
-        run_comprehensive_tests()
+        run_comprehensive_tests(args.mode)
     else:
         # Run pytest
         print("Running pytest tests...")
