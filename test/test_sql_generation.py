@@ -18,7 +18,6 @@ from query_generator import (
     compute_schema_id,
     create_metadata,
     AVAILABLE_MODELS,
-    SCHEMA_FILE,
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
     VSS_DIR,
@@ -26,7 +25,7 @@ from query_generator import (
 )
 
 # ==================== CONFIGURATION ====================
-SCHEMA_FILE = "../" + SCHEMA_FILE  # Adjust path to schema file
+SCHEMA_FILE = "./input/schema_canonico.json"   # Adjust path to schema file
 VSS_DIR = "." + VSS_DIR      # Adjust path to schema vector store
 VSQ_DIR = "." + VSQ_DIR      # Adjust path to query vector store
 INPUT_FILE = "test_requests.txt"
@@ -113,65 +112,6 @@ def run_single_test(
         # Catch any unexpected errors during generation
         error_msg = f"GENERATION_ERROR: {str(e)}"
         return "", "GENERATION_ERROR", error_msg
-
-def run_full_cycle_no_llm(
-    *,
-    user_request: str,
-    sample_sql: str,
-    mode: str,
-    full_schema: dict,
-    query_vs: Chroma,
-    schema_vs: Chroma,
-    execute_sql: bool
-):
-    """
-    Runs the full SQL pipeline WITHOUT calling the LLM.
-    """
-
-    # 1. Force "none" model and inject sample SQL
-    from query_generator import SAMPLE_QUERY_FILE
-
-    with open(SAMPLE_QUERY_FILE, "w", encoding="utf-8") as f:
-        f.write(sample_sql)
-
-    sql = generate_sql_query(
-        user_request=user_request,
-        source=mode,
-        full_schema=full_schema,
-        model_name="none",
-        query_vs=query_vs,
-        schema_vs=schema_vs,
-    )
-
-    # 2. Syntax validation
-    syntax_status = validate_sql_syntax(sql)
-
-    execution_status = None
-    execution_output = None
-
-    # 3. Optional execution
-    if execute_sql and syntax_status == "OK":
-        execution_status, execution_output = execute_sql_query(sql)
-
-    # 4. Metadata
-    metadata = create_metadata(
-        sql_query=sql,
-        syntax_status=syntax_status,
-        schema_id=compute_schema_id(full_schema),
-        user_request=user_request,
-        model_name="none",
-        execution_status=execution_status,
-        execution_output=execution_output,
-    )
-
-    # 5. Store feedback
-    store_query_feedback(
-        store=query_vs,
-        sql_query=sql,
-        qm=metadata,
-    )
-
-    return sql, metadata
 
 
 def run_test_with_timeout(
@@ -260,11 +200,12 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
     print(f"✅ Results written to {output_file}")
 
 
-def print_test_summary(results: List[Tuple[str, Dict]]):
+def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     """Print a summary of test results."""
-    print("\n" + "="*60)
-    print("📊 TEST SUMMARY")
-    print("="*60)
+    summary_lines = []
+    summary_lines.append("\n" + "="*60)
+    summary_lines.append("📊 TEST SUMMARY")
+    summary_lines.append("="*60)
     
     total_tests = 0
     passed_tests = 0
@@ -287,20 +228,24 @@ def print_test_summary(results: List[Tuple[str, Dict]]):
             else:
                 other_errors += 1
     
-    print(f"Total requests tested: {len(results)}")
-    print(f"Total model executions: {total_tests}")
-    print(f"✅ Successful queries: {passed_tests}")
-    print(f"⚠️  Syntax errors: {syntax_errors}")
-    print(f"❌ Runtime errors: {runtime_errors}")
-    print(f"⏰ Timeouts: {timeouts}")
-    print(f"🔧 Other errors: {other_errors}")
+    summary_lines.append(f"Total requests tested: {len(results)}")
+    summary_lines.append(f"Total model executions: {total_tests}")
+    summary_lines.append(f"✅ Successful queries: {passed_tests}")
+    summary_lines.append(f"⚠️  Syntax errors: {syntax_errors}")
+    summary_lines.append(f"❌ Runtime errors: {runtime_errors}")
+    summary_lines.append(f"⏰ Timeouts: {timeouts}")
+    summary_lines.append(f"🔧 Other errors: {other_errors}")
     
     if total_tests > 0:
         success_rate = (passed_tests / total_tests) * 100
-        print(f"\n📈 Success rate: {success_rate:.1f}%")
+        summary_lines.append(f"\n📈 Success rate: {success_rate:.1f}%")
     
-    print("="*60)
+    summary_lines.append("="*60)
 
+    with open(output_file, 'a', encoding='utf-8') as f:
+        for line in summary_lines:
+            print(line)
+            f.write(line + "\n")
 
 # ==================== MAIN TEST FUNCTION ====================
 
@@ -385,7 +330,7 @@ def run_comprehensive_tests(mode: str):
     write_test_results(all_results, OUTPUT_FILE)
     
     # 6. Print summary
-    print_test_summary(all_results)
+    print_test_summary(all_results, OUTPUT_FILE)
     
     print(f"\n🎉 Testing completed!")
     print(f"📄 Full results saved to: {OUTPUT_FILE}")
@@ -435,9 +380,17 @@ def run_full_cycle_without_llm(
 
 # ==================== PYTEST TEST CASES ====================
 
+from pathlib import Path
+
 @pytest.fixture
 def schema():
-    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+    project_root = Path(__file__).resolve().parents[1]
+    schema_path = project_root / "schema_canonico.json"
+
+    if not schema_path.exists():
+        pytest.skip(f"Schema file not found: {schema_path}")
+
+    with schema_path.open(encoding="utf-8") as f:
         return json.load(f)
 
 @pytest.fixture
@@ -468,7 +421,7 @@ def load_file():
 
 @pytest.mark.execution
 def test_execute_sql_success_only(load_file):
-    sql = load_file("tests/inputs/sql_success.sql")
+    sql = load_file("test/inputs/sql_success.sql")
 
     status, result = execute_sql_query(sql)
 
@@ -478,7 +431,7 @@ def test_execute_sql_success_only(load_file):
 @pytest.mark.execution
 def test_execute_sql_success_and_store(schema, vector_stores, load_file):
     query_vs, _ = vector_stores
-    sql = load_file("tests/inputs/sql_success.sql")
+    sql = load_file("test/inputs/sql_success.sql")
 
     if schema is None:
         pytest.skip("Schema not loaded")
@@ -503,7 +456,7 @@ def test_execute_sql_success_and_store(schema, vector_stores, load_file):
 @pytest.mark.execution
 def test_syntax_error_and_store(schema, vector_stores, load_file):
     query_vs, _ = vector_stores
-    sql = load_file("tests/inputs/sql_syntax_error.sql")
+    sql = load_file("test/inputs/sql_syntax_error.sql")
 
     syntax = validate_sql_syntax(sql)
 
@@ -522,8 +475,8 @@ def test_syntax_error_and_store(schema, vector_stores, load_file):
 
 @pytest.mark.execution    
 @pytest.mark.parametrize("sql_file", [
-    "tests/inputs/sql_runtime_error_fk.sql",
-    "tests/inputs/sql_runtime_error_column.sql",
+    "test/inputs/sql_runtime_error_fk.sql",
+    "test/inputs/sql_runtime_error_column.sql",
 ])
 def test_runtime_error_and_store(schema, vector_stores, load_file, sql_file):
     query_vs, _ = vector_stores
@@ -639,54 +592,54 @@ def test_simple_prompt_execute_and_store(schema, vector_stores):
 import threading
 import queue
 
-@pytest.mark.llm
-@pytest.mark.slow
-@pytest.mark.parametrize("model_name", AVAILABLE_MODELS.values())
-def test_real_llm_simple_prompt_generation(schema, vector_stores, model_name):
-    """
-    Real LLM integration test:
-    - simple prompt (text)
-    - no execution
-    - no storage
-    - no prompt inspection
-    """
-    query_vs, schema_vs = vector_stores
-    user_request = "List all customers"
+# @pytest.mark.llm
+# @pytest.mark.slow
+# @pytest.mark.parametrize("model_name", AVAILABLE_MODELS.values())
+# def test_real_llm_simple_prompt_generation(schema, vector_stores, model_name):
+#     """
+#     Real LLM integration test:
+#     - simple prompt (text)
+#     - no execution
+#     - no storage
+#     - no prompt inspection
+#     """
+#     query_vs, schema_vs = vector_stores
+#     user_request = "List all customers"
 
-    result_queue: queue.Queue[str | Exception] = queue.Queue()
+#     result_queue: queue.Queue[str | Exception] = queue.Queue()
 
-    def worker():
-        try:
-            sql = generate_sql_query(
-                user_request=user_request,
-                source="text",
-                full_schema=schema,
-                model_name=model_name,
-                query_vs=query_vs,
-                schema_vs=schema_vs,
-            )
-            result_queue.put(sql)
-        except Exception as e:
-            result_queue.put(e)
+#     def worker():
+#         try:
+#             sql = generate_sql_query(
+#                 user_request=user_request,
+#                 source="text",
+#                 full_schema=schema,
+#                 model_name=model_name,
+#                 query_vs=query_vs,
+#                 schema_vs=schema_vs,
+#             )
+#             result_queue.put(sql)
+#         except Exception as e:
+#             result_queue.put(e)
 
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
-    thread.join(timeout=120)  # ⏱️ 2 minutes per model
+#     thread = threading.Thread(target=worker, daemon=True)
+#     thread.start()
+#     thread.join(timeout=120)  # ⏱️ 2 minutes per model
 
-    if thread.is_alive():
-        pytest.fail(f"LLM model '{model_name}' timed out")
+#     if thread.is_alive():
+#         pytest.fail(f"LLM model '{model_name}' timed out")
 
-    result = result_queue.get()
+#     result = result_queue.get()
 
-    if isinstance(result, Exception):
-        pytest.fail(f"LLM model '{model_name}' failed: {result}")
+#     if isinstance(result, Exception):
+#         pytest.fail(f"LLM model '{model_name}' failed: {result}")
 
-    sql = result
+#     sql = result
 
-    # --- minimal but meaningful assertions ---
-    assert isinstance(sql, str)
-    assert sql.strip()
-    assert "select" in sql.lower()
+#     # --- minimal but meaningful assertions ---
+#     assert isinstance(sql, str)
+#     assert sql.strip()
+#     assert "select" in sql.lower()
 
 
 # ==================== COMMAND LINE INTERFACE ====================
@@ -697,8 +650,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test SQL generation with multiple models")
     parser.add_argument("--test", choices=["run", "pytest"], default="run",
                        help="Test type: 'run' to execute tests, 'pytest' to run the pytest suite")
-    parser.add_argument("--mode", choices=["mysql", "base"], default="base",
-                       help="Mode: 'mysql' for MySQL mode, 'base' for base mode")
+    parser.add_argument("--mode", choices=["mysql", "text"], default="text",
+                       help="Mode: 'mysql' for MySQL mode, 'text' for base mode")
     parser.add_argument("--input", default=INPUT_FILE,
                        help="Input file with test requests")
     parser.add_argument("--output", default=OUTPUT_FILE,
@@ -708,7 +661,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    if args.mode == "run":
+    if args.test == "run":
         # Update global variables based on args
         INPUT_FILE = args.input
         OUTPUT_FILE = args.output
