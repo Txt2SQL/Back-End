@@ -208,7 +208,7 @@ def print_vector_store(vector_store: Chroma):
 
     for i, (doc_text, meta) in enumerate(zip(all_docs["documents"], all_docs["metadatas"])):  # type: ignore
         logger.info(f"\n🧱 Document #{i+1}")
-        logger.info("📘 Table:", meta.get("table", "N/A"))
+        logger.info("📘 Table:%s", meta.get("table", "N/A"))
         logger.info("📄 Content:")
         logger.info(doc_text)
         logger.info("-" * 50)
