@@ -29,7 +29,7 @@ SCHEMA_FILE = "./input/schema_canonico.json"   # Adjust path to schema file
 VSS_DIR = "." + VSS_DIR      # Adjust path to schema vector store
 VSQ_DIR = "." + VSQ_DIR      # Adjust path to query vector store
 INPUT_FILE = "test_requests.txt"
-OUTPUT_FILE = f"./test_result/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+OUTPUT_FILE = f"./output/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
 
@@ -323,7 +323,7 @@ def run_comprehensive_tests(mode: str):
         all_results.append((request, model_results))
         
         # Save intermediate results after each request (optional)
-        intermediate_file = f"./test_result/intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
+        intermediate_file = f"./output/intermidiate/intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
         write_test_results([(request, model_results)], intermediate_file)
     
     # 5. Write final results
