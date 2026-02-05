@@ -5,6 +5,7 @@ from langchain_ollama import OllamaEmbeddings
 from utils_pkg import get_context
 from mysql_linker import execute_sql_query
 from langchain_chroma import Chroma
+from langchain_openai import AzureChatOpenAI
 from logging_utils import (
     setup_logger,
     print_llm_prompt,
@@ -27,10 +28,13 @@ SAMPLE_QUERY_FILE = "./test/sample_query.sql"
 
 # === AVAILABLE MODELS ===
 AVAILABLE_MODELS = {
-    "1": "codellama:13b",
-    "2": "codestral:22b",
-    "3": "sqlcoder:15b",
-    "4": "deepseek-coder-v2:16b"
+    0: "without_llm",
+    1: "codellama:13b",
+    2: "codestral:22b",
+    3: "sqlcoder:15b",
+    4: "deepseek-coder-v2:16b",
+    5: "gpt-4o",
+    6: "gpt-5-mini"
 }
 
 # === LOGGING SETUP ===
@@ -194,7 +198,7 @@ def validate_sql_syntax(sql_query: str) -> str:
         logger.error(f"Syntax validation failed: {e}")
         return "SYNTAX_ERROR"
 
-def select_model() -> str:
+def select_model() -> int:
     """
     Prompts user to select an Ollama model from available options.
     Returns the selected model name.
@@ -202,19 +206,36 @@ def select_model() -> str:
     print("\n🤖 Available Ollama models:")
     for key, model_name in AVAILABLE_MODELS.items():
         print(f"   {key}. {model_name}")
-    print(f"   0. without_llm (use sample query)")
+        if key == 0:
+            print(f"   0. without_llm (use sample query)")
     
+    choice = ""
     while True:
-        choice = input("\n👉 Select a model (1-4): ").strip()
+        choice = int(input("\n👉 Select a model (1-4): ").strip())
         if choice in AVAILABLE_MODELS:
             selected = AVAILABLE_MODELS[choice]
             print(f"✅ Selected model: {selected}\n")
-            return selected
-        elif choice == "0":
+            return choice
+        elif choice == 0:
             print("✅ Selected mode: without_llm\n")
-            return "none"
+            return 0
         else:
             logger.error("❌ Invalid choice. Please enter 1, 2, or 3.")
+
+def get_llm_model(choice: int) -> str | OllamaLLM | AzureChatOpenAI
+    if choice == 0 :
+        return "none"
+    elif choice < 5:
+        model_name = AVAILABLE_MODELS[choice]
+        return OllamaLLM(model_name)
+    else:
+        model_name = AVAILABLE_MODELS[choice]
+        return AzureChatOpenAI(
+            azure_deployment=model_name,
+            api_version=AZURE_API_VERSION,
+            api_key=AZURE_API_KEY,
+            azure_endpoint=AZURE_ENDPOINT
+        )
 
 def get_schema_source(full_schema: dict) -> str:
     """
@@ -417,6 +438,7 @@ def main():
         elif choice == "1":
             # Select model at runtime
             selected_model_name = select_model()
+            llm_model = get_llm_model(selected_model_name)
 
             # Load schema
             full_schema = None
