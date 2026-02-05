@@ -266,11 +266,18 @@ def retrieve_failed_queries(
     k: int = 1,
     half_life_days: int = 60
 ):
+    """
+    Retrieve recent, relevant failed queries to build negative guidance.
+    Prioritizes syntax and structural failures, then fills with schema-specific
+    runtime failures when available.
+    """
     logger.info(f"🔍 Retrieving failed queries for request: '{user_request}'")
+
+    retrieval_pool = max(10, k * 6)
 
     syntax_errors = store.similarity_search(
         user_request,
-        k=10,
+        k=retrieval_pool,
         filter={
             "$and": [
                 {"status": "SYNTAX_ERROR"},
@@ -282,7 +289,7 @@ def retrieve_failed_queries(
 
     structural_errors = store.similarity_search(
         user_request,
-        k=10,
+        k=retrieval_pool,
         filter={
             "$and": [
                 {"status": {"$ne": "OK"}},
@@ -292,11 +299,63 @@ def retrieve_failed_queries(
     )
     logger.info(f"ℹ️ Found {len(structural_errors)} structural error queries.")
 
-    docs = syntax_errors + structural_errors
-    logger.info(f"ℹ️ Total failed queries before decay: {len(docs)}")
+    schema_specific_errors = store.similarity_search(
+        user_request,
+        k=retrieval_pool,
+        filter={
+            "$and": [
+                {"status": "RUNTIME_ERROR"},
+                {"knowledge_scope": "SCHEMA_SPECIFIC"}
+            ]
+        } # pyright: ignore[reportArgumentType]
+    )
+    logger.info(f"ℹ️ Found {len(schema_specific_errors)} schema-specific runtime errors.")
 
-    docs = apply_time_decay(docs, half_life_days)
+    candidates = syntax_errors + structural_errors + schema_specific_errors
+    logger.info(f"ℹ️ Total failed query candidates before dedupe: {len(candidates)}")
+
+    # Deduplicate by SQL metadata fallback to raw page content.
+    unique_docs = []
+    seen = set()
+    for doc in candidates:
+        metadata = doc.metadata or {}
+        key = metadata.get("sql_query") or doc.page_content
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_docs.append(doc)
+
+    logger.info(f"ℹ️ Unique failed queries after dedupe: {len(unique_docs)}")
+
+    # Prefer recently-seen failures.
+    decayed = apply_time_decay(unique_docs, half_life_days)
     logger.info(f"⏳ Applied time decay with half-life {half_life_days} days.")
-    logger.info(f"✅ Returning top {k} failed queries.")
 
-    return docs[:k]
+    # Keep diversity of failure causes when possible.
+    selected = []
+    used_error_types = set()
+    for doc in decayed:
+        error_type = (doc.metadata or {}).get("error_type")
+        if error_type and error_type in used_error_types and len(decayed) > k:
+            continue
+        selected.append(doc)
+        if error_type:
+            used_error_types.add(error_type)
+        if len(selected) == k:
+            break
+
+    # Fallback fill if diversity filtering was too restrictive.
+    if len(selected) < k:
+        selected_keys = {(d.metadata or {}).get("sql_query") or d.page_content for d in selected}
+        for doc in decayed:
+            key = (doc.metadata or {}).get("sql_query") or doc.page_content
+            if key in selected_keys:
+                continue
+            selected.append(doc)
+            selected_keys.add(key)
+            if len(selected) == k:
+                break
+
+    logger.info(f"✅ Returning {len(selected)} failed queries (requested k={k}).")
+
+    return selected
