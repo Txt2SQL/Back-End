@@ -24,6 +24,7 @@ class QueryMetadata:
     def to_document_metadata(self, sql_query: str) -> dict:
         base = {
             "schema_id": self.schema_id,
+            "schema_source": self.schema_source,
             "knowledge_scope": self.knowledge_scope,
             "status": self.status,
             "model": self.model_index,
