@@ -41,14 +41,14 @@ def apply_time_decay(
 
     return [doc for _, doc in scored]
 
-def query_already_exists(store: Chroma, sql_query: str, model_name: str) -> bool:
+def query_already_exists(store: Chroma, sql_query: str, model_index: int) -> bool:
     """
     Checks if a SQL query already exists in the vector store.
     Comparison is done on metadata["sql_query"].
     """
     logger.info(f"🔍 Checking if query exists: {sql_query}")
     
-    if model_name == "none":
+    if model_index == 0:
         logger.info("ℹ️ Model is 'none': testing run. Skip storing")
         return False
     
@@ -67,11 +67,13 @@ def query_already_exists(store: Chroma, sql_query: str, model_name: str) -> bool
     return False
 
 def create_metadata(
+    request: str,
     sql_query: str,
     syntax_status: str,
     schema_id: str,
+    schema_source: str,
     user_request: str,
-    model_name: str,
+    model_index: int,
     execution_status: str | None = None,
     execution_output: Any | None = None
 ) -> QueryMetadata:
@@ -82,6 +84,8 @@ def create_metadata(
     # -----------------------------
     if syntax_status != "OK":
         status = syntax_status
+    elif schema_source == "text":
+        status = "UNKNOWN"
     else:
         status = execution_status if execution_status is not None else "UNKNOWN_ERROR"
     logger.info(f"📊 Status determined: {status}")
@@ -130,9 +134,11 @@ def create_metadata(
     logger.info(f"🧠 Knowledge scope determined: {knowledge_scope}")
 
     return QueryMetadata(
+        request=request,
         schema_id=schema_id,
+        schema_source=schema_source,
         user_request=user_request,
-        model_name=model_name,
+        model_index=model_index,
         status=status,
         rows_fetched=rows_fetched,
         error_message=error_message,
@@ -184,7 +190,7 @@ def store_query_feedback(
 ) -> None:
     logger.info(f"💾 Storing feedback for query")
 
-    if query_already_exists(store, sql_query, qm.model_name):
+    if query_already_exists(store, sql_query, qm.model_index):
         logger.info("ℹ️ Query already present. Skipping insert.")
         return
 

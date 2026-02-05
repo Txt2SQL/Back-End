@@ -5,9 +5,11 @@ import time
 @dataclass
 class QueryMetadata:
     # --- Core identity ---
+    request: str
     schema_id: Optional[str]
+    schema_source: str
     user_request: str
-    model_name: str
+    model_index: int
     status: str  # OK | SYNTAX_ERROR | RUNTIME_ERROR
 
     # --- Execution info ---
@@ -24,7 +26,7 @@ class QueryMetadata:
             "schema_id": self.schema_id,
             "knowledge_scope": self.knowledge_scope,
             "status": self.status,
-            "model": self.model_name,
+            "model": self.model_index,
             "timestamp": time.time(),
             "sql_query": sql_query,
             "rows_fetched": self.rows_fetched,
