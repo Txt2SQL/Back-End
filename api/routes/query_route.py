@@ -73,6 +73,7 @@ def generate_query(req: QueryRequest):
     except Exception:
         raise HTTPException(status_code=500, detail="Schema not found")
 
+
     source = get_schema_source(full_schema)
     schema_id = compute_schema_id(full_schema)
 
@@ -106,8 +107,8 @@ def generate_query(req: QueryRequest):
     # Metadata + feedback
     # -------------------------
     metadata = create_metadata(
+        sql_query=sql,
         syntax_status=syntax_status,
-        source=source,
         schema_id=schema_id,
         user_request=req.user_request,
         model_name=req.model_name,
