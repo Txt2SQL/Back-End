@@ -1,26 +1,86 @@
-import mysql.connector, os
-from datetime import datetime
+import mysql.connector
+import os
 from typing import Tuple, Any
 from collections import defaultdict
 from dotenv import load_dotenv
+from getpass import getpass
 from logging_utils import setup_logger
 
-load_dotenv()
+ENV_MYSQL_FILE = ".env.mysql"
+
+REQUIRED_VARS = [
+    "DB_HOST",
+    "DB_PORT",
+    "DB_USER",
+    "DB_PASSWORD",
+    "DB_NAME",
+]
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
 
+def mysql_env_is_valid() -> bool:
+    if not os.path.exists(ENV_MYSQL_FILE):
+        return False
+
+    load_dotenv(ENV_MYSQL_FILE, override=True)
+
+    return all(os.getenv(v) for v in REQUIRED_VARS)
+
+def prompt_mysql_credentials() -> dict:
+    logger.info("🔐 MySQL configuration required")
+
+    return {
+        "DB_HOST": input("DB_HOST (e.g. localhost): ").strip(),
+        "DB_PORT": input("DB_PORT [3306]: ").strip() or "3306",
+        "DB_USER": input("DB_USER: ").strip(),
+        "DB_PASSWORD": getpass("DB_PASSWORD: "),
+        "DB_NAME": input("DB_NAME: ").strip(),
+    }
+
+def write_mysql_env(creds: dict) -> None:
+    existing = {}
+
+    if os.path.exists(ENV_MYSQL_FILE):
+        with open(ENV_MYSQL_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    existing[k] = v
+
+    existing.update(creds)
+
+    with open(ENV_MYSQL_FILE, "w", encoding="utf-8") as f:
+        for k, v in existing.items():
+            f.write(f"{k}={v}\n")
+
+    logger.info(f"✅ MySQL configuration saved to {ENV_MYSQL_FILE}")
+
+def ensure_mysql_env():
+    if mysql_env_is_valid():
+        return
+
+    creds = prompt_mysql_credentials()
+    write_mysql_env(creds)
+    load_dotenv(ENV_MYSQL_FILE, override=True)
+
 def get_db_connection():
+    ensure_mysql_env()
+
     logger.info("🔧 Creating DB connection object...")
-    conn = mysql.connector.connect(
-        host=os.getenv("DB_HOST"),
-        port=int(os.getenv("DB_PORT", 3306)),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME")
-    )
-    logger.info("🔧 DB connection object created")
-    return conn
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            port=int(os.getenv("DB_PORT", 3306)),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME"),
+        )
+        logger.info("✅ DB connection object created")
+        return conn
+    except Exception as e:
+        logger.error(f"❌ Failed to connect to MySQL: {e}")
+        raise
 
 def execute_sql_query(sql_query: str) -> Tuple[str, Any]:
     """

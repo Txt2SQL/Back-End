@@ -157,42 +157,6 @@ def print_llm_prompt(prompt_text: str) -> None:
     logger.info(prompt_text)
     logger.info("=" * 80 + "\n")
     
-def print_schema_preview(schema: dict):
-    """Prints a readable preview of the canonical schema"""
-    logger.info("\n" + "=" * 60)
-    logger.info("Canonical schema preview:")
-    logger.info("=" * 60)
-    
-    # Print tables
-    if "tables" in schema and schema["tables"]:
-        logger.info(f"\nFound {len(schema['tables'])} tables:")
-        for i, table in enumerate(schema["tables"], 1):
-            logger.info(f"\n  Table #{i}: {table.get('name', 'N/A')}")
-            
-            # Print columns
-            if "columns" in table and table["columns"]:
-                logger.info("  Columns:")
-                for col in table["columns"]:
-                    constraints = col.get("constraints", [])
-                    constraints_str = ", ".join(constraints) if constraints else "no constraints"
-                    logger.info(f"    • {col.get('name', 'N/A')} ({col.get('type', 'N/A')}) - {constraints_str}")
-            else:
-                logger.error("  No columns defined")
-    else:
-        logger.error("\nNo tables defined")
-    
-    # Print semantic notes
-    if "semantic_notes" in schema and schema["semantic_notes"]:
-        logger.info(f"\nFound {len(schema['semantic_notes'])} semantic notes:")
-        for i, note in enumerate(schema["semantic_notes"], 1):
-            # Show only first 100 characters for brevity
-            preview = note[:100] + "..." if len(note) > 100 else note
-            logger.info(f"  {i}. {preview}")
-    else:
-        logger.error("\nNo semantic notes")
-    
-    logger.info("=" * 60)
-    
 def print_schema_context(schema_context: str):
     """Prints the schema context in a readable format."""
     logger.info("\n====================  SCHEMA CONTEXT ====================")

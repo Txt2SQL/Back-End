@@ -1,11 +1,14 @@
-import sqlglot, json, hashlib
+import sqlglot, json, hashlib, os
+from dotenv import load_dotenv
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from utils_pkg import get_context
-from mysql_linker import execute_sql_query
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
+from mysql_linker import (
+    execute_sql_query
+    )
 from logging_utils import (
     setup_logger,
     print_llm_prompt,
@@ -19,8 +22,8 @@ from query_feedback_store import (
 )
 
 # === CONFIG ===
-SCHEMA_FILE = "schema_canonico.json"
-SCHEMA_COLLECTION_NAME = "schema_canonico"
+SCHEMA_FILE = "schema_canonical.json"
+SCHEMA_COLLECTION_NAME = "schema_canonical"
 QUERY_COLLECTION_NAME = "query_feedback"
 VSS_DIR = "./vector_store/schema"
 VSQ_DIR = "./vector_store/queries"
@@ -206,12 +209,9 @@ def select_model() -> int:
     print("\n🤖 Available Ollama models:")
     for key, model_name in AVAILABLE_MODELS.items():
         print(f"   {key}. {model_name}")
-        if key == 0:
-            print(f"   0. without_llm (use sample query)")
     
-    choice = ""
     while True:
-        choice = int(input("\n👉 Select a model (1-4): ").strip())
+        choice = int(input("\n👉 Select a model (0-6): ").strip())
         if choice in AVAILABLE_MODELS:
             selected = AVAILABLE_MODELS[choice]
             print(f"✅ Selected model: {selected}\n")
@@ -222,18 +222,29 @@ def select_model() -> int:
         else:
             logger.error("❌ Invalid choice. Please enter 1, 2, or 3.")
 
-def get_llm_model(choice: int) -> str | OllamaLLM | AzureChatOpenAI
+def get_llm_model(choice: int) -> str | OllamaLLM | AzureChatOpenAI:
     if choice == 0 :
         return "none"
     elif choice < 5:
         model_name = AVAILABLE_MODELS[choice]
-        return OllamaLLM(model_name)
+        return OllamaLLM(model=model_name)
     else:
         model_name = AVAILABLE_MODELS[choice]
+        
+        load_dotenv(".env.azure")
+
+        # === Load Azure environment ===
+        AZURE_API_KEY = os.getenv("AZURE_API_KEY")
+        AZURE_ENDPOINT = os.getenv("AZURE_ENDPOINT")
+        AZURE_API_VERSION = os.getenv("AZURE_API_VERSION")
+
+        if not AZURE_API_KEY or not AZURE_ENDPOINT:
+            raise ValueError("❌ Missing Azure credentials in .env")
+
         return AzureChatOpenAI(
             azure_deployment=model_name,
             api_version=AZURE_API_VERSION,
-            api_key=AZURE_API_KEY,
+            api_key=AZURE_API_KEY, # pyright: ignore[reportArgumentType]
             azure_endpoint=AZURE_ENDPOINT
         )
 
@@ -243,7 +254,7 @@ def get_schema_source(full_schema: dict) -> str:
     Returns either "text_input" or "mysql_extraction".
     """
         
-    if "source" in full_schema and full_schema["source"] == "mysql_extraction":
+    if "source" in full_schema and full_schema["source"] == "mysql":
         logger.info("ℹ️  Schema source detected: MySQL extraction.\n")
         return "mysql"
     else:
@@ -309,7 +320,7 @@ def generate_sql_query(
     user_request: str, 
     source: str, 
     full_schema: dict, 
-    model_name: str, 
+    model: str | OllamaLLM | AzureChatOpenAI, 
     query_vs: Chroma, 
     schema_vs: Chroma
 ) -> str:
@@ -319,7 +330,7 @@ def generate_sql_query(
     - past successful queries (positive examples)
     - past failed queries (negative / penalized patterns)
     """
-    logger.info(f"🚀 Starting SQL generation with model: {model_name}")
+    logger.info(f"🚀 Starting SQL generation with model: {model}")
 
     schema_context = get_context(user_request, schema_vs)
     logger.debug(f"Schema context retrieved: {len(schema_context)} characters")
@@ -371,11 +382,15 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
     # Log the final prompt
     print_llm_prompt(template)
     
-    if model_name != "none":
+    if model == "none":
+        # open sample query file and read content
+        with open(SAMPLE_QUERY_FILE, "r", encoding="utf-8") as f:
+            sql_query = f.read().strip()
+        logger.info("SQL generation skipped due to 'without_llm' mode")
+    else:
         logger.info("Sending request to LLM...")
         prompt = ChatPromptTemplate.from_template(template)
-        model = OllamaLLM(model=model_name)
-        chain = prompt | model
+        chain = prompt | model # pyright: ignore[reportOperatorIssue]
 
         response = chain.invoke({
             "schema_context": schema_context,
@@ -387,11 +402,7 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
         # ------------------------------------------------------------------
         sql_query = response_cleaning(response)
         logger.info(f"Generated SQL query length: {len(sql_query)} characters")
-    else:
-        # open sample query file and read content
-        with open(SAMPLE_QUERY_FILE, "r", encoding="utf-8") as f:
-            sql_query = f.read().strip()
-        logger.info("SQL generation skipped due to 'without_llm' mode")
+
 
     return sql_query
 
@@ -437,8 +448,8 @@ def main():
 
         elif choice == "1":
             # Select model at runtime
-            selected_model_name = select_model()
-            llm_model = get_llm_model(selected_model_name)
+            model_index = select_model()
+            llm_model = get_llm_model(model_index)
 
             # Load schema
             full_schema = None
@@ -463,7 +474,7 @@ def main():
             source = get_schema_source(full_schema)
 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, source, full_schema, selected_model_name, query_vs, schema_vs)
+            sql = generate_sql_query(user_request, source, full_schema, llm_model, query_vs, schema_vs)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
@@ -480,11 +491,13 @@ def main():
                 execution_status, execution_output = execute_sql_query(sql)
 
             metadata = create_metadata(
+                request=user_request,
                 sql_query=sql,
                 syntax_status=syntax_status,
                 schema_id=compute_schema_id(full_schema),
+                schema_source=source,
                 user_request=user_request,
-                model_name=selected_model_name,
+                model_index=model_index,
                 execution_status=execution_status,
                 execution_output=execution_output
             )

@@ -18,8 +18,8 @@ from mysql_linker import execute_sql_query
 # =========================
 # CONFIG
 # =========================
-SCHEMA_FILE = "../../schema_canonico.json"
-SCHEMA_COLLECTION_NAME = "schema_canonico"
+SCHEMA_FILE = "../../schema_canonical.json"
+SCHEMA_COLLECTION_NAME = "schema_canonical"
 QUERY_COLLECTION_NAME = "query_feedback"
 VSS_DIR = "../../vector_store/schema"
 VSQ_DIR = "../../vector_store/queries"

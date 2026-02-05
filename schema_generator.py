@@ -1,12 +1,18 @@
 import json, os
+from dotenv import load_dotenv
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from mysql_linker import extract_schema
+from mysql_linker import (
+    mysql_env_is_valid,
+    prompt_mysql_credentials,
+    write_mysql_env,
+    ENV_MYSQL_FILE
+)
 from logging_utils import (
     setup_logger,
-    print_schema_preview,
     print_vector_store
 )
 from utils_pkg import (
@@ -15,9 +21,9 @@ from utils_pkg import (
 )
 
 # === CONFIG ===
-SCHEMA_FILE = "schema_canonico.json"
+SCHEMA_FILE = "schema_canonical.json"
 DB_DIR = "./vector_store/schema"
-COLLECTION_NAME = "schema_canonico"
+COLLECTION_NAME = "schema_canonical"
 MODEL_NAME = "gemma3:12b"
 
 # === LOGGING SETUP ===
@@ -25,6 +31,42 @@ logger = setup_logger(__name__)
 
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
+
+def print_schema_preview(schema: dict):
+    """Prints a readable preview of the canonical schema"""
+    print("\n" + "=" * 60)
+    print("Canonical schema preview:")
+    print("=" * 60)
+    
+    # Print tables
+    if "tables" in schema and schema["tables"]:
+        print(f"\nFound {len(schema['tables'])} tables:")
+        for i, table in enumerate(schema["tables"], 1):
+            print(f"\n  Table #{i}: {table.get('name', 'N/A')}")
+            
+            # Print columns
+            if "columns" in table and table["columns"]:
+                print("  Columns:")
+                for col in table["columns"]:
+                    constraints = col.get("constraints", [])
+                    constraints_str = ", ".join(constraints) if constraints else "no constraints"
+                    print(f"    • {col.get('name', 'N/A')} ({col.get('type', 'N/A')}) - {constraints_str}")
+            else:
+                print("  No columns defined")
+    else:
+        print("\nNo tables defined")
+    
+    # Print semantic notes
+    if "semantic_notes" in schema and schema["semantic_notes"]:
+        print(f"\nFound {len(schema['semantic_notes'])} semantic notes:")
+        for i, note in enumerate(schema["semantic_notes"], 1):
+            # Show only first 100 characters for brevity
+            preview = note[:100] + "..." if len(note) > 100 else note
+            print(f"  {i}. {preview}")
+    else:
+        print("\nNo semantic notes")
+    
+    print("=" * 60)
 
 def classify_update(text: str) -> str:
     """Recognizes if the text describes a structural or semantic modification."""
@@ -298,11 +340,20 @@ def acquire_schema_from_text(raw_text: str):
     return schema
 
 def acquire_schema_from_mysql():
+    # Ensure MySQL credentials exist
+    if not mysql_env_is_valid():
+        creds = prompt_mysql_credentials()
+        write_mysql_env(creds)
+
+    # Load the env after creation/update
+    load_dotenv(ENV_MYSQL_FILE, override=True)
+
     logger.info("Connecting to MySQL database to retrieve schema...")
     schema = extract_schema()
     schema["source"] = "mysql"
     logger.info("Generating schema from database schema...")
     logger.info("New schema generated.")
+
     return schema
 
 def save_validate_and_build(schema):
@@ -333,13 +384,14 @@ def main():
     print("\nChoose how to acquire the database schema:")
     print("1️⃣  via text input (DDL statements or descriptions)")
     print("2️⃣  via MySQL database connection")
+    print("3️⃣  Print current vector store")
 
     method = input("\n👉 Your choice: ").strip()
 
-    if method not in {"1", "2"}:
+    if method not in {"1", "2", "3"}:
         logger.error("Invalid method choice. Exiting.")
         exit(1)
-
+    schema = []
     while True:
         if method == "1":
             print("👉 Paste below the text that describes or updates the schema (press ENTER twice to finish):\n")
@@ -361,8 +413,19 @@ def main():
                 break
             else:
                 schema = acquire_schema_from_text(raw_text)
-        else:
+        elif method == "2":
             schema = acquire_schema_from_mysql()
+        elif method == "3":
+            try:
+                embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+                vector_store = Chroma(
+                    collection_name=COLLECTION_NAME,
+                    persist_directory=DB_DIR,
+                    embedding_function=embeddings,
+                )
+                print_vector_store(vector_store)
+            except FileNotFoundError:
+                logger.error("Vector store does not exist. Please generate the schema first.")
 
         if schema:
             save_validate_and_build(schema)

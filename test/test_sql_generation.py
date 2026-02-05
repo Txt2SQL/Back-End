@@ -25,7 +25,7 @@ from query_generator import (
 )
 
 # ==================== CONFIGURATION ====================
-SCHEMA_FILE = "./input/schema_canonico.json"   # Adjust path to schema file
+SCHEMA_FILE = "./input/schema_canonical.json"   # Adjust path to schema file
 VSS_DIR = "." + VSS_DIR      # Adjust path to schema vector store
 VSQ_DIR = "." + VSQ_DIR      # Adjust path to query vector store
 INPUT_FILE = "test_requests.txt"
@@ -435,7 +435,7 @@ from pathlib import Path
 @pytest.fixture
 def schema():
     project_root = Path(__file__).resolve().parents[1]
-    schema_path = project_root / "schema_canonico.json"
+    schema_path = project_root / "schema_canonical.json"
 
     if not schema_path.exists():
         pytest.skip(f"Schema file not found: {schema_path}")
