@@ -381,14 +381,23 @@ def save_validate_and_build(schema):
 def main():
     """Main function to handle the interactive workflow."""
     print("🤖 Interactive canonical schema management (phase 1)")
+    
+    vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
+
     print("\nChoose how to acquire the database schema:")
     print("1️⃣  via text input (DDL statements or descriptions)")
     print("2️⃣  via MySQL database connection")
-    print("3️⃣  Print current vector store")
+    
+    if vector_store_exists:
+        print("3️⃣  Print current vector store")
 
     method = input("\n👉 Your choice: ").strip()
 
-    if method not in {"1", "2", "3"}:
+    valid_choices = {"1", "2"}
+    if vector_store_exists:
+        valid_choices.add("3")
+
+    if method not in valid_choices:
         logger.error("Invalid method choice. Exiting.")
         exit(1)
     schema = []
@@ -436,11 +445,24 @@ def main():
         print("\nChoose an option:")
         print("0️⃣  Exit")
         print("1️⃣  Provide more text to update the schema")
+        print("3️⃣  Print current vector store")
 
         choice = input("\n👉 Your choice: ").strip()
         if choice == "0":
             print("👋 Exiting. Goodbye!")
             break
+        elif choice == "3":
+            try:
+                embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+                vector_store = Chroma(
+                    collection_name=COLLECTION_NAME,
+                    persist_directory=DB_DIR,
+                    embedding_function=embeddings,
+                )
+                print_vector_store(vector_store)
+            except Exception as e:
+                logger.error(f"Error accessing vector store: {e}")
+            continue
 
 # === ENTRY POINT ===
 if __name__ == "__main__":
