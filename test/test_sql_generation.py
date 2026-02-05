@@ -378,6 +378,56 @@ def run_full_cycle_without_llm(
 
     return sql, qm
 
+def execute_sample_query(input_path: str):
+    """
+    Execute SQL queries from a file and write results to outcomes.txt.
+
+    File format:
+    - One or more SQL queries
+    - Each query MUST end with a semicolon (;)
+    """
+
+    if not input_path:
+        raise ValueError("❌ --test execute requires an input file via --input")
+
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"❌ Input file not found: {input_path}")
+
+    with open(input_path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+
+    if not content:
+        raise ValueError("❌ Input file is empty")
+
+    # Split queries by semicolon, keeping valid SQL only
+    queries = [
+        q.strip() + ";"
+        for q in content.split(";")
+        if q.strip()
+    ]
+
+    if not queries:
+        raise ValueError("❌ No valid SQL queries found in input file")
+
+    output_file = "outcomes.txt"
+
+    with open(output_file, "w", encoding="utf-8") as out:
+        for query in queries:
+            out.write("query:\n\n")
+            out.write(f"{query}\n\n")
+
+            status, result = execute_sql_query(query)
+
+            if status == "OK":
+                rows_fetched = len(result) if isinstance(result, list) else 0
+                out.write(f"rows fetched: {rows_fetched} rows\n\n")
+            else:
+                out.write(f"error: {result}\n\n")
+
+            out.write("\n")
+
+    print(f"✅ Query execution completed. Results written to {output_file}")
+
 # ==================== PYTEST TEST CASES ====================
 
 from pathlib import Path
@@ -648,10 +698,10 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Test SQL generation with multiple models")
-    parser.add_argument("--test", choices=["run", "pytest"], default="run",
-                       help="Test type: 'run' to execute tests, 'pytest' to run the pytest suite")
-    parser.add_argument("--mode", choices=["mysql", "text"], default="text",
-                       help="Mode: 'mysql' for MySQL mode, 'text' for base mode")
+    parser.add_argument("--test", choices=["run", "pytest, execute"], default="run",
+                       help="Test type: 'run' to execute tests, 'pytest' to run the pytest suite, 'execute' ")
+    parser.add_argument("--mode", choices=["mysql", "base"], default="base",
+                       help="Mode: 'mysql' for MySQL mode, 'base' for base mode")
     parser.add_argument("--input", default=INPUT_FILE,
                        help="Input file with test requests")
     parser.add_argument("--output", default=OUTPUT_FILE,
@@ -669,6 +719,10 @@ if __name__ == "__main__":
         
         # Run the comprehensive tests
         run_comprehensive_tests(args.mode)
+    elif args.test == "execute":
+        if not args.input:
+            raise ValueError("❌ --test execute requires --input <sql_file>")
+        execute_sample_query(args.input)
     else:
         # Run pytest
         print("Running pytest tests...")
