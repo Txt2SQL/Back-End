@@ -620,28 +620,13 @@ def main():
             print()
             print(f"✅ Syntax check: {syntax_status}")
 
+            error_feedback = None
             if syntax_status != "OK":
                 print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
-                sql = generate_sql_query(
-                    user_request=user_request,
-                    source=source,
-                    full_schema=full_schema,
-                    model=llm_model,
-                    query_vs=query_vs,
-                    schema_vs=schema_vs,
-                    error_feedback=(
-                        "The previous SQL query failed syntax validation "
-                        f"(status={syntax_status})."
-                    ),
+                error_feedback=(
+                    "The previous SQL query failed syntax validation "
+                    f"(status={syntax_status})."
                 )
-
-                print("\n💡 Regenerated SQL query after syntax feedback:\n")
-                print(sql)
-                print("\n" + "=" * 60)
-
-                syntax_status = validate_sql_syntax(sql)
-                print()
-                print(f"✅ Syntax check after retry: {syntax_status}")
 
             if syntax_status == "OK" and source == "mysql":
                 print()
@@ -651,35 +636,37 @@ def main():
 
                 if execution_status != "OK":
                     print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
-                    sql = generate_sql_query(
-                        user_request=user_request,
-                        source=source,
-                        full_schema=full_schema,
-                        model=llm_model,
-                        query_vs=query_vs,
-                        schema_vs=schema_vs,
-                        error_feedback=(
-                            "The previous SQL query failed at runtime with this error: "
-                            f"{execution_output}."
-                        ),
+                    error_feedback=(
+                        "The previous SQL query failed at runtime with this error: "
+                        f"{execution_output}."
                     )
 
-                    print("\n💡 Regenerated SQL query after runtime feedback:\n")
-                    print(sql)
-                    print("\n" + "=" * 60)
+            if syntax_status != "OK" or execution_status != "OK":
+                sql = generate_sql_query(
+                    user_request,
+                    source,
+                    full_schema,
+                    llm_model,
+                    query_vs,
+                    schema_vs,
+                    error_feedback=error_feedback
+                )
+                print("\n💡 Regenerated SQL query after runtime feedback:\n")
+                print(sql)
+                print("\n" + "=" * 60)
 
-                    syntax_status = validate_sql_syntax(sql)
+                syntax_status = validate_sql_syntax(sql)
+                print()
+                print(f"✅ Syntax check after runtime retry: {syntax_status}")
+
+                if syntax_status == "OK":
                     print()
-                    print(f"✅ Syntax check after runtime retry: {syntax_status}")
+                    print("🚀 Executing regenerated query against the database...")
+                    print()
+                    execution_status, execution_output = execute_sql_query(sql)
 
-                    if syntax_status == "OK":
-                        print()
-                        print("🚀 Executing regenerated query against the database...")
-                        print()
-                        execution_status, execution_output = execute_sql_query(sql)
-
-                if execution_status == "OK":
-                    pretty_print_query_preview(execution_output)
+            if execution_status == "OK":
+                pretty_print_query_preview(execution_output)
 
             metadata = create_metadata(
                 request=user_request,
