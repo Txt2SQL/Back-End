@@ -44,25 +44,77 @@ logger = setup_logger(__name__)
 
 def get_context(user_request: str, vector_store: Chroma) -> str:
     """
-    Retrieves the schema context and past successful queries
-    for a given user request and schema ID.
-    Returns the combined context as a string.
+    Retrieve relevant schema fragments for the user request.
+    Uses light query-intent heuristics to tune retrieval depth,
+    removes duplicate chunks, and groups output by table.
     """
 
     # ------------------------------------------------------------------
     # SCHEMA RETRIEVAL (RAG)
     # ------------------------------------------------------------------
 
-    retriever = vector_store.as_retriever(search_kwargs={
-        "k": 5 if any(w in user_request.lower() 
-                      for w in ["average", "per", "by", "total", "sum", "count"]) 
-                else 3
-        })
+    request_lower = user_request.lower()
+    request_tokens = set(request_lower.replace(",", " ").replace(".", " ").split())
+
+    aggregate_terms = {
+        "avg",
+        "average",
+        "count",
+        "group",
+        "having",
+        "sum",
+        "total",
+        "min",
+        "max",
+    }
+    join_terms = {"join", "across", "between", "related", "each"}
+
+    has_aggregation = bool(request_tokens.intersection(aggregate_terms))
+    has_join_intent = bool(request_tokens.intersection(join_terms)) or " by " in f" {request_lower} "
+
+    # Start with a conservative context size and increase only when complexity suggests it.
+    k = 3
+    if has_aggregation:
+        k += 1
+    if has_join_intent:
+        k += 1
+
+    retriever = vector_store.as_retriever(search_kwargs={"k": k})
     relevant_docs = retriever.invoke(user_request)
 
-    schema_context = "\n\n".join(
-        [f"Table: {d.metadata.get('table')}\n{d.page_content}" for d in relevant_docs]
+    seen_chunks = set()
+    grouped_chunks = {}
+
+    for doc in relevant_docs:
+        table_name = (doc.metadata or {}).get("table") or "unknown_table"
+        content = (doc.page_content or "").strip()
+
+        if not content:
+            continue
+
+        dedup_key = (table_name, content)
+        if dedup_key in seen_chunks:
+            continue
+
+        seen_chunks.add(dedup_key)
+        grouped_chunks.setdefault(table_name, []).append(content)
+
+    sections = []
+    for table_name, chunks in grouped_chunks.items():
+        sections.append(f"Table: {table_name}\n" + "\n".join(chunks[:2]))
+
+    schema_context = "\n\n".join(sections)
+
+    logger.info(
+        "Schema context retrieval complete: k=%s, docs=%s, unique_tables=%s, context_chars=%s",
+        k,
+        len(relevant_docs),
+        len(grouped_chunks),
+        len(schema_context),
     )
+
+    if not schema_context:
+        logger.warning("No schema context retrieved for request: %s", user_request)
 
     return schema_context
 
