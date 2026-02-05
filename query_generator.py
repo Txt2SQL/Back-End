@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
-from utils_pkg import get_context
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
 from mysql_linker import (
@@ -42,6 +41,30 @@ AVAILABLE_MODELS = {
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
+
+def get_context(user_request: str, vector_store: Chroma) -> str:
+    """
+    Retrieves the schema context and past successful queries
+    for a given user request and schema ID.
+    Returns the combined context as a string.
+    """
+
+    # ------------------------------------------------------------------
+    # SCHEMA RETRIEVAL (RAG)
+    # ------------------------------------------------------------------
+
+    retriever = vector_store.as_retriever(search_kwargs={
+        "k": 5 if any(w in user_request.lower() 
+                      for w in ["average", "per", "by", "total", "sum", "count"]) 
+                else 3
+        })
+    relevant_docs = retriever.invoke(user_request)
+
+    schema_context = "\n\n".join(
+        [f"Table: {d.metadata.get('table')}\n{d.page_content}" for d in relevant_docs]
+    )
+
+    return schema_context
 
 def compute_schema_id(full_schema: dict) -> str:
     normalized = json.dumps(full_schema, sort_keys=True)
