@@ -44,27 +44,128 @@ logger = setup_logger(__name__)
 
 def get_context(user_request: str, vector_store: Chroma) -> str:
     """
-    Retrieves the schema context and past successful queries
-    for a given user request and schema ID.
-    Returns the combined context as a string.
+    Retrieve relevant schema fragments for the user request.
+    Uses light query-intent heuristics to tune retrieval depth,
+    removes duplicate chunks, and groups output by table.
     """
 
     # ------------------------------------------------------------------
     # SCHEMA RETRIEVAL (RAG)
     # ------------------------------------------------------------------
 
-    retriever = vector_store.as_retriever(search_kwargs={
-        "k": 5 if any(w in user_request.lower() 
-                      for w in ["average", "per", "by", "total", "sum", "count"]) 
-                else 3
-        })
+    request_lower = user_request.lower()
+    request_tokens = set(request_lower.replace(",", " ").replace(".", " ").split())
+
+    aggregate_terms = {
+        "avg",
+        "average",
+        "count",
+        "group",
+        "having",
+        "sum",
+        "total",
+        "min",
+        "max",
+    }
+    join_terms = {"join", "across", "between", "related", "each"}
+
+    has_aggregation = bool(request_tokens.intersection(aggregate_terms))
+    has_join_intent = bool(request_tokens.intersection(join_terms)) or " by " in f" {request_lower} "
+
+    # Start with a conservative context size and increase only when complexity suggests it.
+    k = 3
+    if has_aggregation:
+        k += 1
+    if has_join_intent:
+        k += 1
+
+    retriever = vector_store.as_retriever(search_kwargs={"k": k})
     relevant_docs = retriever.invoke(user_request)
 
-    schema_context = "\n\n".join(
-        [f"Table: {d.metadata.get('table')}\n{d.page_content}" for d in relevant_docs]
+    seen_chunks = set()
+    grouped_chunks = {}
+
+    for doc in relevant_docs:
+        table_name = (doc.metadata or {}).get("table") or "unknown_table"
+        content = (doc.page_content or "").strip()
+
+        if not content:
+            continue
+
+        dedup_key = (table_name, content)
+        if dedup_key in seen_chunks:
+            continue
+
+        seen_chunks.add(dedup_key)
+        grouped_chunks.setdefault(table_name, []).append(content)
+
+    sections = []
+    for table_name, chunks in grouped_chunks.items():
+        sections.append(f"Table: {table_name}\n" + "\n".join(chunks[:2]))
+
+    schema_context = "\n\n".join(sections)
+
+    logger.info(
+        "Schema context retrieval complete: k=%s, docs=%s, unique_tables=%s, context_chars=%s",
+        k,
+        len(relevant_docs),
+        len(grouped_chunks),
+        len(schema_context),
     )
 
+    if not schema_context:
+        logger.warning("No schema context retrieved for request: %s", user_request)
+
     return schema_context
+
+
+
+def pretty_print_query_preview(rows: list | None, max_rows: int = 5, max_col_width: int = 40) -> None:
+    """
+    Print a compact, fancy preview of fetched rows.
+    """
+    if not rows:
+        print("\n📭 Query executed successfully, but no rows were returned.")
+        return
+
+    sample = rows[:max_rows]
+    normalized = [list(r) if isinstance(r, tuple) else ([r] if not isinstance(r, list) else r) for r in sample]
+    num_cols = max(len(r) for r in normalized) if normalized else 0
+
+    headers = [f"col_{i + 1}" for i in range(num_cols)]
+
+    def fmt(value):
+        value_str = str(value)
+        return value_str if len(value_str) <= max_col_width else value_str[: max_col_width - 3] + "..."
+
+    col_widths = [len(h) for h in headers]
+    for row in normalized:
+        for idx in range(num_cols):
+            cell = fmt(row[idx] if idx < len(row) else "")
+            col_widths[idx] = max(col_widths[idx], len(cell))
+
+    border = "┼".join("─" * (w + 2) for w in col_widths)
+    top = "┌" + border.replace("┼", "┬") + "┐"
+    mid = "├" + border + "┤"
+    bottom = "└" + border.replace("┼", "┴") + "┘"
+
+    def render_row(values):
+        cells = []
+        for idx in range(num_cols):
+            v = fmt(values[idx] if idx < len(values) else "")
+            cells.append(f" {v:<{col_widths[idx]}} ")
+        return "│" + "│".join(cells) + "│"
+
+    print(f"\n✨ Query preview ({len(rows)} row(s) fetched, showing up to {max_rows}):")
+    print(top)
+    print(render_row(headers))
+    print(mid)
+    for row in normalized:
+        print(render_row(row))
+    print(bottom)
+
+    if len(rows) > max_rows:
+        print(f"… and {len(rows) - max_rows} more row(s).")
 
 def compute_schema_id(full_schema: dict) -> str:
     normalized = json.dumps(full_schema, sort_keys=True)
@@ -507,11 +608,17 @@ def main():
             execution_output = None
             
             syntax_status = validate_sql_syntax(sql)
-            print(f"\n✅ Syntax check: {syntax_status}")
+            print()
+            print(f"✅ Syntax check: {syntax_status}")
 
             if syntax_status == "OK" and source == "mysql":
-                print("\n🚀 Executing query against the database...\n")
+                print()
+                print("🚀 Executing query against the database...")
+                print()
                 execution_status, execution_output = execute_sql_query(sql)
+
+                if execution_status == "OK":
+                    pretty_print_query_preview(execution_output)
 
             metadata = create_metadata(
                 request=user_request,
