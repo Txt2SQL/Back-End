@@ -118,6 +118,55 @@ def get_context(user_request: str, vector_store: Chroma) -> str:
 
     return schema_context
 
+
+
+def pretty_print_query_preview(rows: list | None, max_rows: int = 5, max_col_width: int = 40) -> None:
+    """
+    Print a compact, fancy preview of fetched rows.
+    """
+    if not rows:
+        print("\n📭 Query executed successfully, but no rows were returned.")
+        return
+
+    sample = rows[:max_rows]
+    normalized = [list(r) if isinstance(r, tuple) else ([r] if not isinstance(r, list) else r) for r in sample]
+    num_cols = max(len(r) for r in normalized) if normalized else 0
+
+    headers = [f"col_{i + 1}" for i in range(num_cols)]
+
+    def fmt(value):
+        value_str = str(value)
+        return value_str if len(value_str) <= max_col_width else value_str[: max_col_width - 3] + "..."
+
+    col_widths = [len(h) for h in headers]
+    for row in normalized:
+        for idx in range(num_cols):
+            cell = fmt(row[idx] if idx < len(row) else "")
+            col_widths[idx] = max(col_widths[idx], len(cell))
+
+    border = "┼".join("─" * (w + 2) for w in col_widths)
+    top = "┌" + border.replace("┼", "┬") + "┐"
+    mid = "├" + border + "┤"
+    bottom = "└" + border.replace("┼", "┴") + "┘"
+
+    def render_row(values):
+        cells = []
+        for idx in range(num_cols):
+            v = fmt(values[idx] if idx < len(values) else "")
+            cells.append(f" {v:<{col_widths[idx]}} ")
+        return "│" + "│".join(cells) + "│"
+
+    print(f"\n✨ Query preview ({len(rows)} row(s) fetched, showing up to {max_rows}):")
+    print(top)
+    print(render_row(headers))
+    print(mid)
+    for row in normalized:
+        print(render_row(row))
+    print(bottom)
+
+    if len(rows) > max_rows:
+        print(f"… and {len(rows) - max_rows} more row(s).")
+
 def compute_schema_id(full_schema: dict) -> str:
     normalized = json.dumps(full_schema, sort_keys=True)
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
@@ -559,11 +608,17 @@ def main():
             execution_output = None
             
             syntax_status = validate_sql_syntax(sql)
-            print(f"\n✅ Syntax check: {syntax_status}")
+            print()
+            print(f"✅ Syntax check: {syntax_status}")
 
             if syntax_status == "OK" and source == "mysql":
-                print("\n🚀 Executing query against the database...\n")
+                print()
+                print("🚀 Executing query against the database...")
+                print()
                 execution_status, execution_output = execute_sql_query(sql)
+
+                if execution_status == "OK":
+                    pretty_print_query_preview(execution_output)
 
             metadata = create_metadata(
                 request=user_request,
