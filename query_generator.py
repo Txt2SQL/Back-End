@@ -446,7 +446,8 @@ def generate_sql_query(
     full_schema: dict, 
     model: str | OllamaLLM | AzureChatOpenAI, 
     query_vs: Chroma, 
-    schema_vs: Chroma
+    schema_vs: Chroma,
+    error_feedback: str | None = None,
 ) -> str:
     """
     Generates a SQL query using:
@@ -501,6 +502,16 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
     template = template + f"""
     
 SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
+"""
+
+    if error_feedback:
+        template = template + f"""
+
+PREVIOUS QUERY ERROR TO FIX:
+{error_feedback}
+
+You must correct the query considering this error.
+Do NOT repeat the same mistake.
 """
 
     # Log the final prompt
@@ -611,11 +622,63 @@ def main():
             print()
             print(f"✅ Syntax check: {syntax_status}")
 
+            if syntax_status != "OK" and llm_model != "none":
+                print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
+                sql = generate_sql_query(
+                    user_request=user_request,
+                    source=source,
+                    full_schema=full_schema,
+                    model=llm_model,
+                    query_vs=query_vs,
+                    schema_vs=schema_vs,
+                    error_feedback=(
+                        "The previous SQL query failed syntax validation "
+                        f"(status={syntax_status})."
+                    ),
+                )
+
+                print("\n💡 Regenerated SQL query after syntax feedback:\n")
+                print(sql)
+                print("\n" + "=" * 60)
+
+                syntax_status = validate_sql_syntax(sql)
+                print()
+                print(f"✅ Syntax check after retry: {syntax_status}")
+
             if syntax_status == "OK" and source == "mysql":
                 print()
                 print("🚀 Executing query against the database...")
                 print()
                 execution_status, execution_output = execute_sql_query(sql)
+
+                if execution_status != "OK" and llm_model != "none":
+                    print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
+                    sql = generate_sql_query(
+                        user_request=user_request,
+                        source=source,
+                        full_schema=full_schema,
+                        model=llm_model,
+                        query_vs=query_vs,
+                        schema_vs=schema_vs,
+                        error_feedback=(
+                            "The previous SQL query failed at runtime with this error: "
+                            f"{execution_output}."
+                        ),
+                    )
+
+                    print("\n💡 Regenerated SQL query after runtime feedback:\n")
+                    print(sql)
+                    print("\n" + "=" * 60)
+
+                    syntax_status = validate_sql_syntax(sql)
+                    print()
+                    print(f"✅ Syntax check after runtime retry: {syntax_status}")
+
+                    if syntax_status == "OK":
+                        print()
+                        print("🚀 Executing regenerated query against the database...")
+                        print()
+                        execution_status, execution_output = execute_sql_query(sql)
 
                 if execution_status == "OK":
                     pretty_print_query_preview(execution_output)
