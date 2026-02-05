@@ -118,8 +118,6 @@ def get_context(user_request: str, vector_store: Chroma) -> str:
 
     return schema_context
 
-
-
 def pretty_print_query_preview(rows: list | None, max_rows: int = 5, max_col_width: int = 40) -> None:
     """
     Print a compact, fancy preview of fetched rows.
@@ -622,7 +620,7 @@ def main():
             print()
             print(f"✅ Syntax check: {syntax_status}")
 
-            if syntax_status != "OK" and llm_model != "none":
+            if syntax_status != "OK":
                 print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
                 sql = generate_sql_query(
                     user_request=user_request,
@@ -651,7 +649,7 @@ def main():
                 print()
                 execution_status, execution_output = execute_sql_query(sql)
 
-                if execution_status != "OK" and llm_model != "none":
+                if execution_status != "OK":
                     print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
                     sql = generate_sql_query(
                         user_request=user_request,
