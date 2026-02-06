@@ -5,9 +5,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
-from src.mysql_linker import (
-    execute_sql_query
-    )
+from src.mysql_linker import execute_sql_query
+from src.config.settings import AVAILABLE_MODELS
 from src.logging_utils import (
     setup_logger,
     print_llm_prompt,
@@ -24,7 +23,6 @@ from src.config.paths import (
     VECTOR_STORE_DIR,
     SAMPLE_QUERY_PATH,
 )
-from src.config.settings import AVAILABLE_MODELS
 
 # === CONFIG ===
 SCHEMA_FILE = str(PROJECT_ROOT / "schema_canonical.json")
