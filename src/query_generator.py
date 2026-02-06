@@ -19,25 +19,20 @@ from src.retriver_utils import (
     build_penalty_section,
     create_metadata
 )
+from src.config.paths import (
+    PROJECT_ROOT,
+    VECTOR_STORE_DIR,
+    SAMPLE_QUERY_PATH,
+)
+from src.config.settings import AVAILABLE_MODELS
 
 # === CONFIG ===
-SCHEMA_FILE = "schema_canonical.json"
+SCHEMA_FILE = str(PROJECT_ROOT / "schema_canonical.json")
 SCHEMA_COLLECTION_NAME = "schema_canonical"
 QUERY_COLLECTION_NAME = "query_feedback"
-VSS_DIR = "./vector_store/schema"
-VSQ_DIR = "./vector_store/queries"
-SAMPLE_QUERY_FILE = "./test/sample_query.sql"
-
-# === AVAILABLE MODELS ===
-AVAILABLE_MODELS = {
-    0: "without_llm",
-    1: "codellama:13b",
-    2: "codestral:22b",
-    3: "sqlcoder:15b",
-    4: "deepseek-coder-v2:16b",
-    5: "gpt-4o",
-    6: "gpt-5-mini"
-}
+VSS_DIR = str(VECTOR_STORE_DIR / "schema")
+VSQ_DIR = str(VECTOR_STORE_DIR / "queries")
+SAMPLE_QUERY_FILE = str(SAMPLE_QUERY_PATH)
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
