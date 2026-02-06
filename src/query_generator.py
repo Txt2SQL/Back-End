@@ -360,26 +360,17 @@ Only output the final SQL query.
 """
     return template
 
-def generate_sql_query(
-    user_request: str, 
-    source: str, 
-    full_schema: dict, 
-    model: str | OllamaLLM | AzureChatOpenAI, 
-    query_vs: Chroma, 
+def create_prompt(
+    user_request: str,
+    source: str,
+    full_schema: dict,
+    query_vs: Chroma,
     schema_vs: Chroma,
     error_feedback: str | None = None,
-) -> str:
-    """
-    Generates a SQL query using:
-    - canonical schema RAG
-    - past successful queries (positive examples)
-    - past failed queries (negative / penalized patterns)
-    """
-    logger.info(f"🚀 Starting SQL generation with model: {model}")
-
+) -> tuple[str, str]:
     schema_context = get_context(user_request, schema_vs)
     logger.debug(f"Schema context retrieved: {len(schema_context)} characters")
-    
+
     template = f""" 
 You are an expert SQL database assistant.
 You will be provided with:
@@ -434,6 +425,34 @@ You must correct the query considering this error.
 Do NOT repeat the same mistake.
 """
 
+    return template, schema_context
+
+def generate_sql_query(
+    user_request: str, 
+    source: str, 
+    full_schema: dict, 
+    model: str | OllamaLLM | AzureChatOpenAI, 
+    query_vs: Chroma, 
+    schema_vs: Chroma,
+    error_feedback: str | None = None,
+) -> str:
+    """
+    Generates a SQL query using:
+    - canonical schema RAG
+    - past successful queries (positive examples)
+    - past failed queries (negative / penalized patterns)
+    """
+    logger.info(f"🚀 Starting SQL generation with model: {model}")
+
+    template, schema_context = create_prompt(
+        user_request=user_request,
+        source=source,
+        full_schema=full_schema,
+        query_vs=query_vs,
+        schema_vs=schema_vs,
+        error_feedback=error_feedback,
+    )
+
     # Log the final prompt
     print_llm_prompt(template)
     
@@ -447,10 +466,7 @@ Do NOT repeat the same mistake.
         prompt = ChatPromptTemplate.from_template(template)
         chain = prompt | model # pyright: ignore[reportOperatorIssue]
 
-        response = chain.invoke({
-            "schema_context": schema_context,
-            "user_request": user_request
-        })
+        response = chain.invoke({})
 
         # ------------------------------------------------------------------
         # 4. OUTPUT CLEANUP
