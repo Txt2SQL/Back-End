@@ -8,35 +8,42 @@ from src.logging_utils import setup_logger
 
 ENV_MYSQL_FILE = ".env.mysql"
 
-REQUIRED_VARS = [
+REQUIRED_CREDENTIAL_VARS = [
     "DB_HOST",
     "DB_PORT",
     "DB_USER",
     "DB_PASSWORD",
+]
+
+REQUIRED_VARS = [
+    *REQUIRED_CREDENTIAL_VARS,
     "DB_NAME",
 ]
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
 
-def mysql_env_is_valid() -> bool:
+def mysql_env_is_valid(require_db_name: bool = True) -> bool:
     if not os.path.exists(ENV_MYSQL_FILE):
         return False
 
     load_dotenv(ENV_MYSQL_FILE, override=True)
 
-    return all(os.getenv(v) for v in REQUIRED_VARS)
+    required = REQUIRED_VARS if require_db_name else REQUIRED_CREDENTIAL_VARS
+    return all(os.getenv(v) for v in required)
 
-def prompt_mysql_credentials() -> dict:
+def prompt_mysql_credentials(include_db_name: bool = False) -> dict:
     logger.info("🔐 MySQL configuration required")
 
-    return {
+    creds = {
         "DB_HOST": input("DB_HOST (e.g. localhost): ").strip(),
         "DB_PORT": input("DB_PORT [3306]: ").strip() or "3306",
         "DB_USER": input("DB_USER: ").strip(),
         "DB_PASSWORD": getpass("DB_PASSWORD: "),
-        "DB_NAME": input("DB_NAME: ").strip(),
     }
+    if include_db_name:
+        creds["DB_NAME"] = input("DB_NAME: ").strip()
+    return creds
 
 def write_mysql_env(creds: dict) -> None:
     existing = {}
@@ -56,33 +63,38 @@ def write_mysql_env(creds: dict) -> None:
 
     logger.info(f"✅ MySQL configuration saved to {ENV_MYSQL_FILE}")
 
-def ensure_mysql_env():
-    if mysql_env_is_valid():
+def ensure_mysql_env(require_db_name: bool = True):
+    if mysql_env_is_valid(require_db_name=require_db_name):
         return
 
-    creds = prompt_mysql_credentials()
+    creds = prompt_mysql_credentials(include_db_name=require_db_name)
     write_mysql_env(creds)
     load_dotenv(ENV_MYSQL_FILE, override=True)
 
-def get_db_connection():
-    ensure_mysql_env()
+def get_db_connection(database_name: str | None = None):
+    if database_name is None:
+        database_name = os.getenv("DB_NAME")
+    require_db_name = bool(database_name)
+    ensure_mysql_env(require_db_name=require_db_name)
 
     logger.info("🔧 Creating DB connection object...")
     try:
-        conn = mysql.connector.connect(
+        connection_args = {
             host=os.getenv("DB_HOST"),
             port=int(os.getenv("DB_PORT", 3306)),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASSWORD"),
-            database=os.getenv("DB_NAME"),
         )
+        if database_name:
+            connection_args["database"] = database_name
+        conn = mysql.connector.connect(**connection_args)
         logger.info("✅ DB connection object created")
         return conn
     except Exception as e:
         logger.error(f"❌ Failed to connect to MySQL: {e}")
         raise
 
-def execute_sql_query(sql_query: str) -> Tuple[str, Any]:
+def execute_sql_query(sql_query: str, database_name: str | None = None) -> Tuple[str, Any]:
     """
     Executes a SQL query against the real database.
 
@@ -94,7 +106,7 @@ def execute_sql_query(sql_query: str) -> Tuple[str, Any]:
 
     try:
         logger.info("🔌 Connecting to MySQL database...")
-        conn = get_db_connection()
+        conn = get_db_connection(database_name=database_name)
 
         if conn.is_connected():
             logger.info("✅ Connection established")
@@ -129,12 +141,21 @@ def execute_sql_query(sql_query: str) -> Tuple[str, Any]:
         logger.error(f"🔥 RUNTIME ERROR during SQL execution: {e}")
         return "RUNTIME_ERROR", str(e)
 
+def list_databases() -> list[str]:
+    conn = get_db_connection(database_name=None)
+    cursor = conn.cursor()
+    cursor.execute("SHOW DATABASES")
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [row[0] for row in rows]
+
 def extract_schema(database_name: str | None = None) -> dict:
     if database_name is None:
         database_name = os.getenv("DB_NAME", "")
     logger.info(f"📚 Extracting schema for database: {database_name}")
 
-    conn = get_db_connection()
+    conn = get_db_connection(database_name=database_name)
     cursor = conn.cursor(dictionary=True)
 
     logger.info("🔍 Querying information_schema.COLUMNS...")
@@ -191,3 +212,21 @@ def extract_schema(database_name: str | None = None) -> dict:
     logger.info("🏁 Schema extraction completed")
 
     return schema
+
+def export_schema_sql(database_name: str) -> str:
+    conn = get_db_connection(database_name=database_name)
+    cursor = conn.cursor()
+    cursor.execute("SHOW TABLES")
+    tables = [row[0] for row in cursor.fetchall()]
+
+    statements = []
+    for table_name in tables:
+        cursor.execute(f"SHOW CREATE TABLE `{table_name}`")
+        row = cursor.fetchone()
+        if row and len(row) > 1:
+            statements.append(f"{row[1]};")
+
+    cursor.close()
+    conn.close()
+
+    return "\n\n".join(statements) + ("\n" if statements else "")
