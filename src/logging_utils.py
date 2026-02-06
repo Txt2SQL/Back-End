@@ -11,7 +11,7 @@ _PROJECT_LOG_FILE = None
 def get_project_root():
     """Get the absolute path to the project root directory."""
     # Assuming this file is in the project root
-    return os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def get_project_log_file():
     """Get or create the single project log file path."""
@@ -19,7 +19,7 @@ def get_project_log_file():
     
     if _PROJECT_LOG_FILE is None:
         project_root = get_project_root()
-        logs_dir = os.path.join(project_root, "src/logs")
+        logs_dir = os.path.join(project_root, "logs")
         os.makedirs(logs_dir, exist_ok=True)
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

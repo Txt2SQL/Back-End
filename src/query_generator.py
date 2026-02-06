@@ -600,7 +600,10 @@ def main():
             database_name = full_schema.get("database") if source == "mysql" else None
             if source == "mysql" and not database_name:
                 logger.warning("Schema source is MySQL but no database name was found in schema JSON.")
-
+            if model_index == 0:
+                database_name = "supermarket"
+                logger.info("Using 'supermarket' database for without_llm mode.")
+                
             print("\n🔍 Generating query...")
             sql = generate_sql_query(user_request, source, full_schema, llm_model, query_vs, schema_vs)
 
@@ -654,7 +657,7 @@ def main():
                 print()
                 print(f"✅ Syntax check after runtime retry: {syntax_status}")
 
-                if syntax_status == "OK":
+                if syntax_status == "OK" and source != "mysql":
                     print()
                     print("🚀 Executing regenerated query against the database...")
                     print()
