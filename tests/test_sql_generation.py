@@ -23,7 +23,6 @@ from src.query_generator import (
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
-from langchain_core.documents import Document
 from tests import generate_realistic_mysql_db as db_generator
 from pathlib import Path
 
