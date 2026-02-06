@@ -9,10 +9,12 @@ from .paths import (
     TESTS_DIR,
     VECTOR_STORE_DIR,
 )
+from .settings import AVAILABLE_MODELS
 
 __all__ = [
     "API_DIR",
     "DATA_DIR",
+    "AVAILABLE_MODELS",
     "PROJECT_ROOT",
     "SAMPLE_QUERY_PATH",
     "SRC_DIR",
