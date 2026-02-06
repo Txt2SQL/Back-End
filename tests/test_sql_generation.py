@@ -335,6 +335,28 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
     print(f"✅ Results written to {output_file}")
 
 
+def sanitize_request_filename(request: str, max_length: int = 60) -> str:
+    """
+    Build a filesystem-friendly name from the request text.
+    """
+    clean = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in request.strip())
+    clean = "_".join(filter(None, clean.split("_")))
+    if not clean:
+        clean = "request"
+    return clean[:max_length]
+
+
+def write_request_results(request: str, model_results: Dict, output_dir: Path, index: int) -> str:
+    """
+    Write a single request's results to its own file.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    request_slug = sanitize_request_filename(request)
+    output_file = output_dir / f"{index:03d}_{request_slug}.txt"
+    write_test_results([(request, model_results)], str(output_file))
+    return str(output_file)
+
+
 def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     """Print a summary of test results."""
     summary_lines = []
@@ -419,6 +441,7 @@ def run_comprehensive_tests(mode: str, db_name: str):
     
     # 4. Run tests for each request
     all_results = []
+    per_request_output_dir = Path(OUTPUT_FILE).with_suffix("")
     
     for i, request in enumerate(test_requests, 1):
         print(f"\n{'='*60}")
@@ -452,12 +475,10 @@ def run_comprehensive_tests(mode: str, db_name: str):
         print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
         
         all_results.append((request, model_results))
-        
-        # Save intermediate results after each request (optional)
-        intermediate_file = f"./output/intermidiate/intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
-        write_test_results([(request, model_results)], intermediate_file)
+        request_output_file = write_request_results(request, model_results, per_request_output_dir, i)
+        print(f"📄 Request log saved to: {request_output_file}")
     
-    # 5. Write final results
+    # 5. Write final aggregated results
     write_test_results(all_results, OUTPUT_FILE)
     
     # 6. Print summary
@@ -465,6 +486,7 @@ def run_comprehensive_tests(mode: str, db_name: str):
     
     print(f"\n🎉 Testing completed!")
     print(f"📄 Full results saved to: {OUTPUT_FILE}")
+    print(f"📄 Per-request logs saved under: {per_request_output_dir}")
 
 def run_full_cycle_without_llm(
     *,
