@@ -23,6 +23,7 @@ from src.query_generator import (
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
+from src.retriver_utils import build_vector_store
 from tests import generate_realistic_mysql_db as db_generator
 from pathlib import Path
 
@@ -132,38 +133,11 @@ def build_schema_retriever(db_name: str) -> Tuple[dict, Chroma]:
     schema = extract_schema(db_name)
     schema["source"] = "mysql"
     schema["database"] = db_name
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
-
-    documents = []
-    ids = []
-
-    for table in schema.get("tables", []):
-        table_name = table.get("name", "unknown_table")
-        columns = table.get("columns", [])
-
-        col_lines = []
-        for col in columns:
-            col_name = col.get("name", "unknown_column")
-            col_type = col.get("type", "UNKNOWN_TYPE")
-            constraints = ", ".join(col.get("constraints", []))
-            col_line = f"- {col_name} ({col_type}) {constraints}".strip()
-            col_lines.append(col_line)
-
-        text = f"Table: {table_name}\nColumns:\n" + "\n".join(col_lines)
-        documents.append(Document(page_content=text, metadata={"table": table_name}))
-        ids.append(table_name)
-
-    schema_vs = Chroma(
-        collection_name=SCHEMA_COLLECTION_NAME,
+    schema_vs = build_vector_store(
+        schema,
         persist_directory=SVS_DIR,
-        embedding_function=embeddings,
+        collection_name=SCHEMA_COLLECTION_NAME,
     )
-
-    existing_ids = schema_vs.get().get("ids", [])
-    if existing_ids:
-        schema_vs.delete(ids=existing_ids)
-    if documents:
-        schema_vs.add_documents(documents=documents, ids=ids)
 
     return schema, schema_vs
 
@@ -386,6 +360,8 @@ def run_comprehensive_tests(mode: str, db_name: str | None = None):
     """
     print("🤖 Starting comprehensive SQL generation tests")
     print("="*60)
+
+    clear_tmp_dir(TMP_DIR)
     
     # 1. Load test requests
     test_requests = load_test_requests(INPUT_FILE)

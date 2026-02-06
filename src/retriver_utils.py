@@ -18,8 +18,14 @@ logger = setup_logger(__name__)
 # SCHEMA STORE
 # ------------------------------------------------------------------
 
-def build_vector_store(schema_data: dict):
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+def build_vector_store(
+    schema_data: dict,
+    *,
+    persist_directory: str | None = None,
+    collection_name: str | None = None,
+    embedding_model: str = "mxbai-embed-large",
+):
+    embeddings = OllamaEmbeddings(model=embedding_model)
 
     documents = []
     ids = []
@@ -43,11 +49,13 @@ def build_vector_store(schema_data: dict):
 
     logger.info(f"Created {len(documents)} documents to embed...")
 
-    add_schema = not os.path.exists(DB_DIR)
+    persist_directory = persist_directory or DB_DIR
+    collection_name = collection_name or COLLECTION_NAME
+    add_schema = not os.path.exists(persist_directory)
 
     vector_store = Chroma(
-        collection_name=COLLECTION_NAME,
-        persist_directory=DB_DIR,
+        collection_name=collection_name,
+        persist_directory=persist_directory,
         embedding_function=embeddings,
     )
 
@@ -62,7 +70,7 @@ def build_vector_store(schema_data: dict):
             vector_store.delete(ids=existing_ids)
         vector_store.add_documents(documents=documents, ids=ids)
     
-    logger.info(f"Vector store updated and saved in: {DB_DIR}")
+    logger.info(f"Vector store updated and saved in: {persist_directory}")
 
     return vector_store
 
