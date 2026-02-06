@@ -2,8 +2,8 @@ import math, time, re
 from typing import Any
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from logging_utils import setup_logger
-from metadata import QueryMetadata
+from src.logging_utils import setup_logger
+from src.metadata import QueryMetadata
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)

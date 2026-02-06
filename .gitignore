@@ -4,6 +4,6 @@ schema_canonical.json
 vector_store/schema/
 __pycache__/
 .vscode/settings.json
-logs/
+*.log
 test/output/intermediate
 .env*

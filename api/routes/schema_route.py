@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from schema_generator import (
+from src.schema_generator import (
     acquire_schema_from_text, 
     acquire_schema_from_mysql, 
     save_validate_and_build

@@ -5,15 +5,15 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
-from mysql_linker import (
+from src.mysql_linker import (
     execute_sql_query
     )
-from logging_utils import (
+from src.logging_utils import (
     setup_logger,
     print_llm_prompt,
     print_query_vector_store
 )
-from query_feedback_store import (
+from src.query_feedback_store import (
     store_query_feedback,
     retrieve_failed_queries,
     build_penalty_section,
