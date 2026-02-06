@@ -18,6 +18,7 @@ from query_generator import (
     compute_schema_id,
     create_metadata,
     AVAILABLE_MODELS,
+    get_llm_model,
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
     VSS_DIR,
@@ -65,7 +66,7 @@ def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
 
 def run_single_test(
     request: str, 
-    model_name: str, 
+    model_index: int, 
     full_schema: dict, 
     mode: str,
     query_vs: Chroma,
@@ -78,8 +79,9 @@ def run_single_test(
         (sql_query, status, error_message)
     """
     try:
+        llm_model = get_llm_model(model_index)
         # Generate SQL query
-        sql = generate_sql_query(request, mode, full_schema, model_name, query_vs, schema_vs)
+        sql = generate_sql_query(request, mode, full_schema, llm_model, query_vs, schema_vs)
 
         execution_status = None
         execution_output = None
@@ -92,8 +94,9 @@ def run_single_test(
             sql_query=sql,
             syntax_status=syntax_status,
             schema_id=compute_schema_id(full_schema),
+            schema_source=mode,
             user_request=request,
-            model_name=model_name,
+            model_index=model_index,
             execution_status=execution_status,
             execution_output=execution_output
         )
@@ -114,7 +117,7 @@ def run_single_test(
 
 def run_test_with_timeout(
     request: str, 
-    model_name: str, 
+    model_index: int, 
     full_schema: dict,
     mode: str,
     query_vs: Chroma,
@@ -131,7 +134,7 @@ def run_test_with_timeout(
     
     def worker():
         try:
-            result = run_single_test(request, model_name, full_schema, mode, query_vs, schema_vs)
+            result = run_single_test(request, model_index, full_schema, mode, query_vs, schema_vs)
             result_queue.put(result)
         except Exception as e:
             result_queue.put(("", "TIMEOUT_OR_ERROR", str(e)))
@@ -297,12 +300,12 @@ def run_comprehensive_tests(mode: str):
         request_start_time = time.time()
         
         # Test each available model
-        for model_name in AVAILABLE_MODELS.values():
-            print(f"\n🔄 Testing with model: {model_name}")
+        for index, name in AVAILABLE_MODELS.items():
+            print(f"\n🔄 Testing with model: {name}")
             model_start_time = time.time()
             
             sql_query, status, outcome = run_test_with_timeout(
-                request, model_name, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
+                request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
             )
             
             model_time = time.time() - model_start_time
@@ -313,7 +316,7 @@ def run_comprehensive_tests(mode: str):
             if outcome and status not in ["OK", "SYNTAX"]:
                 print(f"   Error: {outcome[:100]}...")
             
-            model_results[model_name] = (sql_query, status, outcome)
+            model_results[name] = (sql_query, status, outcome)
         
         request_time = time.time() - request_start_time
         print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
@@ -349,7 +352,7 @@ def run_full_cycle_without_llm(
         user_request=user_request,
         source=mode,
         full_schema=schema,
-        model_name="none",
+        model="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
@@ -366,8 +369,9 @@ def run_full_cycle_without_llm(
         sql_query=sql,
         syntax_status=syntax_status,
         schema_id=compute_schema_id(schema),
+        schema_source=mode,
         user_request=user_request,
-        model_name="none",
+        model_index=0,
         execution_status=execution_status,
         execution_output=execution_output,
     )
@@ -495,8 +499,9 @@ def test_execute_sql_success_and_store(schema, vector_stores, load_file):
         sql_query=sql,
         syntax_status=syntax,
         schema_id=compute_schema_id(schema),
+        schema_source="mysql",
         user_request="test success",
-        model_name="test",
+        model_index=0,
         execution_status=status,
         execution_output=output,
     )
@@ -517,8 +522,9 @@ def test_syntax_error_and_store(schema, vector_stores, load_file):
         sql_query=sql,
         syntax_status=syntax,
         schema_id=compute_schema_id(schema),
+        schema_source="mysql",
         user_request="syntax error",
-        model_name="test",
+        model_index=0,
     )
 
     store_query_feedback(query_vs, sql, qm)
@@ -542,8 +548,9 @@ def test_runtime_error_and_store(schema, vector_stores, load_file, sql_file):
         sql_query=sql,
         syntax_status=syntax,
         schema_id=compute_schema_id(schema),
+        schema_source="mysql",
         user_request="runtime error",
-        model_name="test",
+        model_index=0,
         execution_status=status,
         execution_output=error,
     )
@@ -561,7 +568,7 @@ def test_complex_prompt_creation_only(schema, vector_stores, capsys):
         user_request="Show total sales by customer",
         source="mysql",
         full_schema=schema,
-        model_name="none",
+        model="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
@@ -580,7 +587,7 @@ def test_simple_prompt_creation_only(schema, vector_stores, capsys):
         user_request="List all customers",
         source="text",
         full_schema=schema,
-        model_name="none",
+        model="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )

@@ -125,7 +125,6 @@ def query_already_exists(store: Chroma, sql_query: str, model_index: int) -> boo
     return False
 
 def create_metadata(
-    request: str,
     sql_query: str,
     syntax_status: str,
     schema_id: str,
@@ -192,7 +191,6 @@ def create_metadata(
     logger.info(f"🧠 Knowledge scope determined: {knowledge_scope}")
 
     return QueryMetadata(
-        request=request,
         schema_id=schema_id,
         schema_source=schema_source,
         user_request=user_request,
