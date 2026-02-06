@@ -1,4 +1,4 @@
-import json, os
+import json, os, re
 from dotenv import load_dotenv
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
@@ -15,10 +15,6 @@ from logging_utils import (
     setup_logger,
     print_vector_store
 )
-from utils_pkg import (
-    extract_json_from_response,
-    validate_schema_structure
-)
 
 # === CONFIG ===
 SCHEMA_FILE = "schema_canonical.json"
@@ -31,6 +27,82 @@ logger = setup_logger(__name__)
 
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
+
+def extract_json_from_response(content: str) -> dict:
+    """Extract JSON from LLM response using multiple methods"""
+    
+    # Method 1: Direct JSON parsing
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+    
+    # Method 2: Extract JSON between curly braces
+    try:
+        # Find the first { and last }
+        start = content.find('{')
+        end = content.rfind('}') + 1
+        
+        if start >= 0 and end > start:
+            json_str = content[start:end]
+            # Clean up common issues
+            json_str = re.sub(r',\s*}', '}', json_str)  # Remove trailing commas
+            json_str = re.sub(r',\s*]', ']', json_str)  # Remove trailing commas in arrays
+            return json.loads(json_str)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    
+    # Method 3: Look for code blocks
+    try:
+        json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', content, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(1))
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    
+    # Method 4: Manual parsing as fallback
+    print("⚠️ Could not parse JSON automatically, creating schema manually...")
+    return create_schema_manually(content)
+
+def create_schema_manually(content: str) -> dict:
+    """Create a basic schema structure manually as fallback"""
+    schema = {
+        "tables": [],
+        "semantic_notes": ["Schema generated manually due to parsing issues"]
+    }
+    
+    # Simple table detection from CREATE TABLE statements
+    create_table_pattern = r'CREATE TABLE\s+(\w+)\s*\('
+    tables = re.findall(create_table_pattern, content, re.IGNORECASE)
+    
+    for table_name in tables:
+        schema["tables"].append({
+            "name": table_name,
+            "columns": []
+        })
+    
+    print(f"🛠️  Manually created schema with {len(tables)} tables")
+    return schema
+
+def validate_schema_structure(schema: dict) -> bool:
+    """Validate that the schema has the expected structure"""
+    if not isinstance(schema, dict):
+        return False
+    if "tables" not in schema:
+        return False
+    if not isinstance(schema["tables"], list):
+        return False
+    
+    # Check if tables have proper structure
+    for table in schema["tables"]:
+        if not isinstance(table, dict):
+            return False
+        if "name" not in table:
+            return False
+        if "columns" not in table or not isinstance(table["columns"], list):
+            return False
+    
+    return True
 
 def print_schema_preview(schema: dict):
     """Prints a readable preview of the canonical schema"""
