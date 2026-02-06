@@ -5,7 +5,6 @@ import time
 @dataclass
 class QueryMetadata:
     # --- Core identity ---
-    request: str
     schema_id: Optional[str]
     schema_source: str
     user_request: str
@@ -23,6 +22,7 @@ class QueryMetadata:
     
     def to_document_metadata(self, sql_query: str) -> dict:
         base = {
+            "request": self.user_request,
             "schema_id": self.schema_id,
             "schema_source": self.schema_source,
             "knowledge_scope": self.knowledge_scope,
