@@ -1,0 +1,21 @@
+Get total revenue by month for a specific company. Track revenue trends and identify seasonal patterns.
+Find top 10 customers by total billed amount. Identify most valuable customers for relationship management.
+Get monthly expense breakdown by category. Budget analysis and expense control.
+Get overdue invoices (past due date). Cash flow management and collections follow-up
+Find unpaid bills with aging analysis. Manage accounts payable and cash outflow planning
+Get account balance summary. Financial position overview and reconciliation
+Get low stock items (below reorder level).
+Find best selling products by revenue.
+Get customer contact information with recent activity.
+Find vendors with pending bills.
+Get unreconciled transactions for an account.
+Find transactions without proper documentation.
+Get monthly profit & loss summary.
+Get tax summary for a period.
+Get user permissions summary.
+Find active users with their company access.
+Find recently modified records (for audit purposes).
+Get failed jobs for troubleshooting.
+Get currency exchange rates and usage.
+Find media files attached to invoices and bills.
+Get recurring transactions due in the next 7 days.

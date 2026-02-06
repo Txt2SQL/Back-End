@@ -128,7 +128,7 @@ def list_databases() -> list[str]:
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
-    return [row[0] for row in rows]
+    return [row[0] for row in rows] # pyright: ignore[reportReturnType, reportArgumentType]
 
 def extract_schema(database_name: str | None = None) -> dict:
     if database_name is None:
@@ -197,14 +197,14 @@ def export_schema_sql(database_name: str) -> str:
     conn = get_db_connection(database_name=database_name)
     cursor = conn.cursor()
     cursor.execute("SHOW TABLES")
-    tables = [row[0] for row in cursor.fetchall()]
+    tables = [row[0] for row in cursor.fetchall()] # pyright: ignore[reportArgumentType]
 
     statements = []
     for table_name in tables:
         cursor.execute(f"SHOW CREATE TABLE `{table_name}`")
         row = cursor.fetchone()
         if row and len(row) > 1:
-            statements.append(f"{row[1]};")
+            statements.append(f"{row[1]};") # pyright: ignore[reportArgumentType]
 
     cursor.close()
     conn.close()

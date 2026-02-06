@@ -1,0 +1,30 @@
+Get all active contacts for a specific account.
+Find all starred or favorite contacts.
+Search for contacts by first name, last name, or nickname.
+Get contact information including their gender.
+List contacts with their birthdays, ordered by month and day.
+Find active contacts that do not have an email address on file.
+Get the 10 most recent activities associated with a specific contact.
+Find contacts who haven't been talked to in the last 30 days.
+Get all upcoming, active reminders scheduled for today.
+Get all notes for a specific contact, ordered by creation date.
+Find all documents attached to a specific contact.
+List all gifts associated with a contact, including status and value.
+Find active debts, showing the amount and the associated contact.
+Get all photos associated with a specific contact.
+Find all active contacts that have an avatar or profile photo.
+Get a list of all tags created for a specific account.
+Find all contacts associated with a specific tag ID.
+Get all stored addresses and locations for a specific contact.
+Get all pending tasks for a specific contact.
+Find all tasks (both completed and incomplete) for an account, including contact names.
+Get a list of companies and the number of contacts associated with each.
+Get basic information for users, including timezone and locale.
+Get the 10 most recent recorded calls for a specific contact.
+Get a total count of contacts broken down by starred, active, and deceased status.
+Get a count of activities grouped by their activity type.
+Get all life events for a contact, including the event type and notes.
+Get a list of relationships for a contact, showing the relationship type and the related person.
+Get a list of pets owned by a specific contact, including pet types.
+Get custom contact fields and their associated data for a specific contact.
+Get the most recent subscription information, including plan type and end dates.

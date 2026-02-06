@@ -1,7 +1,8 @@
 venv/
 .vscode/
-.data/vector_store/schema/
-.data/schema/schema_canonical.json
+data/vector_store/schema/
+data/schema/schema_canonical.json
 **/__pycache__/
 *.log
 .env*
+tests/tmp
