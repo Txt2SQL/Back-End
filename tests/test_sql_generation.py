@@ -1,8 +1,8 @@
 import sys, os, pytest, json, time, shutil
-from xml.dom.minidom import Document
 # Add parent directory to Python path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from xml.dom.minidom import Document
 from datetime import datetime
 from langchain_chroma import Chroma
 from typing import Dict, List, Tuple
