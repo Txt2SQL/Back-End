@@ -1,202 +1,179 @@
-diff --git a/src/query_generator.py b/src/query_generator.py
-index 75fee3ab92f1e84b33e21217a75fba24f3223cb6..de5d769f68d939acc9b1f6c3e6a59e9ab4d1018e 100644
---- a/src/query_generator.py
-+++ b/src/query_generator.py
-@@ -141,161 +141,91 @@ def pretty_print_query_preview(rows: list | None, max_rows: int = 5, max_col_wid
- 
-     def render_row(values):
-         cells = []
-         for idx in range(num_cols):
-             v = fmt(values[idx] if idx < len(values) else "")
-             cells.append(f" {v:<{col_widths[idx]}} ")
-         return "│" + "│".join(cells) + "│"
- 
-     print(f"\n✨ Query preview ({len(rows)} row(s) fetched, showing up to {max_rows}):")
-     print(top)
-     print(render_row(headers))
-     print(mid)
-     for row in normalized:
-         print(render_row(row))
-     print(bottom)
- 
-     if len(rows) > max_rows:
-         print(f"… and {len(rows) - max_rows} more row(s).")
- 
- def compute_schema_id(full_schema: dict) -> str:
-     normalized = json.dumps(full_schema, sort_keys=True)
-     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
- 
- def infer_relationships(schema: dict) -> list[str]:
+diff --git a/tests/test_sql_generation.py b/tests/test_sql_generation.py
+index 9e170ca93389feff4553693a624f16d666f574a9..a2fbe5b9fb613477345622673f566de927edae18 100644
+--- a/tests/test_sql_generation.py
++++ b/tests/test_sql_generation.py
+@@ -313,50 +313,72 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
      """
--    Infer join relationships from *_id column naming conventions.
-+    Fetch join relationships directly from MySQL foreign key metadata.
-     Returns human-readable join hints.
-     """
--    logger.info("🔍 Starting relationship inference...")
--    tables = schema.get("tables", [])
--    
--    if not tables:
--        logger.warning("⚠️  No tables found in schema")
-+    logger.info("🔍 Fetching relationship metadata from MySQL...")
-+    database_name = os.getenv("DB_NAME", "")
-+    if not database_name:
-+        logger.warning("⚠️  DB_NAME is not set; cannot load foreign keys from MySQL")
-         return []
--    
--    # Extract table names for easier checking
--    table_names = [t["name"] for t in tables]
--    logger.info(f"📊 Found {len(tables)} tables: {table_names}")
--    
--    # Map: column_name -> list of table names where column appears
--    column_index = {}
--    total_columns = 0
--
--    logger.info("📋 Building column index...")
--    for table in tables:
--        table_name = table["name"]
--        columns = table.get("columns", [])
--        logger.info(f"  Table '{table_name}': {len(columns)} columns")
--        
--        for col in columns:
--            col_name = col["name"]
--            column_index.setdefault(col_name, []).append(table_name)
--            total_columns += 1
--    
--    logger.info(f"📈 Indexed {total_columns} columns across all tables")
--    logger.info(f"📌 Unique column names: {len(column_index)}")
--    
--    # Show columns that appear in multiple tables
--    multi_table_cols = {col: tables for col, tables in column_index.items() 
--                       if len(tables) > 1}
--    if multi_table_cols:
--        logger.info("🔗 Columns appearing in multiple tables:")
--        for col, tables_list in multi_table_cols.items():
--            logger.info(f"  '{col}': {tables_list}")
--    
-+
-+    fk_query = f"""
-+        SELECT
-+            kcu.TABLE_NAME,
-+            kcu.COLUMN_NAME,
-+            kcu.REFERENCED_TABLE_NAME,
-+            kcu.REFERENCED_COLUMN_NAME
-+        FROM information_schema.KEY_COLUMN_USAGE kcu
-+        WHERE kcu.TABLE_SCHEMA = '{database_name}'
-+          AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-+        ORDER BY kcu.TABLE_NAME, kcu.COLUMN_NAME
+     n = 1
+     with open(output_file, 'w', encoding='utf-8') as f:
+         for request, model_results in results:
+             # Write request
+             truncated_request = truncate_request(request)
+             f.write(f"{n}. {truncated_request}\n\n")
+             
+             # Write results for each model
+             for index in range(1, len(AVAILABLE_MODELS) + 1):
+                 model_name = AVAILABLE_MODELS[index]
+                 if model_name in model_results:
+                     sql, status, outcome = model_results[model_name]
+                     line = format_result_line(model_name, sql, status, outcome)
+                     f.write(f"{line}\n")
+                 else:
+                     f.write(f"{model_name} [TEST NOT RUN] MODEL_NOT_AVAILABLE\n")
+             
+             # Add blank line between requests for readability
+             f.write("\n\n\n\n")
+             n += 1
+     
+     print(f"✅ Results written to {output_file}")
+ 
+ 
++def sanitize_request_filename(request: str, max_length: int = 60) -> str:
 +    """
++    Build a filesystem-friendly name from the request text.
++    """
++    clean = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in request.strip())
++    clean = "_".join(filter(None, clean.split("_")))
++    if not clean:
++        clean = "request"
++    return clean[:max_length]
 +
-+    status, rows = execute_sql_query(fk_query, database_name=database_name)
-+    if status != "OK":
-+        logger.warning("⚠️  Failed to query foreign key metadata: %s", rows)
-+        return []
 +
-+    if not rows:
-+        logger.info("📭 No foreign key relationships found in MySQL metadata")
-+        return []
++def write_request_results(request: str, model_results: Dict, output_dir: Path, index: int) -> str:
++    """
++    Write a single request's results to its own file.
++    """
++    output_dir.mkdir(parents=True, exist_ok=True)
++    request_slug = sanitize_request_filename(request)
++    output_file = output_dir / f"{index:03d}_{request_slug}.txt"
++    write_test_results([(request, model_results)], str(output_file))
++    return str(output_file)
 +
-     relationships = []
--    candidate_fks = []
--    
--    logger.info("🔄 Analyzing foreign key patterns...")
--    for col_name, table_list in column_index.items():
--        # Typical FK pattern: xxx_id appears in more than one table
--        if col_name.endswith("_id") and len(table_list) >= 2:
--            candidate_fks.append(col_name)
--            logger.info(f"  ✓ '{col_name}' is a potential FK (appears in {len(table_list)} tables: {table_list})")
--            
--            # Derive the referenced table name from the column name
--            # e.g., "category_id" -> "category" (singular)
--            referenced_table_singular = col_name.replace("_id", "")
--            
--            # Try to find the matching table (handling singular/plural)
--            referenced_table = None
--            match_type = "unknown"
--            
--            # Strategy 1: Exact match with singular
--            if referenced_table_singular in table_names:
--                referenced_table = referenced_table_singular
--                match_type = "exact singular"
--            
--            # Strategy 2: Try plural version (add 's')
--            elif f"{referenced_table_singular}s" in table_names:
--                referenced_table = f"{referenced_table_singular}s"
--                match_type = "plural (added 's')"
--            
--            # Strategy 3: Try other common plural forms
--            elif referenced_table_singular.endswith('y'):
--                # Try replacing 'y' with 'ies' (category -> categories)
--                plural_ies = referenced_table_singular[:-1] + "ies"
--                if plural_ies in table_names:
--                    referenced_table = plural_ies
--                    match_type = "plural (y -> ies)"
--            
--            # Strategy 4: The column name itself might be a table
--            elif col_name in table_names:
--                referenced_table = col_name
--                match_type = "column name as table"
--            
--            if referenced_table:
--                logger.info(f"    → Found referenced table '{referenced_table}' for FK '{col_name}' ({match_type})")
--                
--                # For each table containing this FK column (except the referenced table itself)
--                for source_table in table_list:
--                    if source_table != referenced_table:
--                        # Format: source_table.fk_column → referenced_table.fk_column
--                        relationship = f"{source_table}.{col_name} → {referenced_table}.{col_name}"
--                        relationships.append(relationship)
--                        logger.info(f"    ✓ Discovered join: {relationship}")
--            else:
--                logger.warning(f"    ⚠️  Could not find matching table for '{referenced_table_singular}'")
--                logger.info(f"      Tried: '{referenced_table_singular}', '{referenced_table_singular}s'")
--                if referenced_table_singular.endswith('y'):
--                    logger.info(f"      Also tried: '{referenced_table_singular[:-1]}ies'")
--                
--        elif col_name.endswith("_id"):
--            logger.info(f"  - '{col_name}' is *_id but only in 1 table ({table_list[0]}) - likely a PK")
--    
-+    for table_name, column_name, referenced_table, referenced_column in rows:
-+        relationship = (
-+            f"{table_name}.{column_name} → {referenced_table}.{referenced_column}"
-+        )
-+        relationships.append(relationship)
 +
-+    unique_relationships = sorted(set(relationships))
-     logger.info("📊 Summary:")
--    logger.info(f"  Candidate foreign keys: {len(candidate_fks)}")
--    logger.info(f"  Inferred relationships: {len(relationships)}")
--    
--    if relationships:
--        unique_relationships = sorted(set(relationships))
--        logger.info(f"  Unique relationships: {len(unique_relationships)}")
--        return unique_relationships
--    else:
--        logger.info("  No relationships inferred")
--        return []
-+    logger.info("  Foreign key relationships: %s", len(unique_relationships))
-+    return unique_relationships
- 
- def build_join_hints(schema: dict) -> str:
-     logger.info("=" * 50)
-     logger.info("🧠 Building join hints from schema...")
-     logger.info("=" * 50)
+ def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
+     """Print a summary of test results."""
+     summary_lines = []
+     summary_lines.append("\n" + "="*60)
+     summary_lines.append("📊 TEST SUMMARY")
+     summary_lines.append("="*60)
      
-     relations = infer_relationships(schema)
- 
-     if not relations:
-         logger.info("📭 No join relationships found")
-         return ""
- 
-     logger.info(f"✨ Found {len(relations)} join relationship(s)")
+     total_tests = 0
+     passed_tests = 0
+     syntax_errors = 0
+     runtime_errors = 0
+     timeouts = 0
+     other_errors = 0
      
-     lines = ["=== JOIN PATH HINTS ==="]
-     for i, r in enumerate(relations, 1):
-         lines.append(f"{i:2}. {r}")
+     for request, model_results in results:
+         for model_name, (sql, status, error) in model_results.items():
+             total_tests += 1
+             if status == "OK":
+                 passed_tests += 1
+             elif status == "SYNTAX_ERROR":
+                 syntax_errors += 1
+             elif status == "RUNTIME_ERROR":
+                 runtime_errors += 1
+             elif status == "TIMEOUT":
+                 timeouts += 1
+@@ -397,96 +419,96 @@ def run_comprehensive_tests(mode: str, db_name: str):
+         print("❌ No test requests found. Exiting.")
+         return
+     
+     # 2. Load schema (from DB when available)
+     full_schema, schema_vs = build_schema_retriever(db_name)
+     print(f"✅ Retrieved schema from database '{db_name}'")
  
-     result = "\n".join(lines)
+     embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+     schema_vs = Chroma(
+         collection_name=SCHEMA_COLLECTION_NAME,
+         persist_directory=SVS_DIR,
+         embedding_function=embeddings,
+     )
+ 
+     # Load query vector store
+     embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+     query_vs = Chroma(
+         collection_name=QUERY_COLLECTION_NAME,
+         persist_directory=QVS_DIR,
+         embedding_function=embeddings,
+     )
+     print(f"✅ Loaded vector stores from {QVS_DIR} and {SVS_DIR}")
      
-     logger.info("\n" + "=" * 50)
-     logger.info("✅ Join hints generated successfully!")
-     logger.info("=" * 50)
+     # 4. Run tests for each request
+     all_results = []
++    per_request_output_dir = Path(OUTPUT_FILE).with_suffix("")
      
-     return result
+     for i, request in enumerate(test_requests, 1):
+         print(f"\n{'='*60}")
+         print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
+         print(f"{'='*60}")
+         
+         model_results = {}
+         request_start_time = time.time()
+         
+         # Test each available model
+         for index in range(1, len(AVAILABLE_MODELS) + 1):
+             name = AVAILABLE_MODELS[index]
+             print(f"\nTesting with model: {name}")
+             model_start_time = time.time()
+             
+             sql_query, status, outcome = run_test_with_timeout(
+                 request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
+             )
+             
+             model_time = time.time() - model_start_time
+             print(f"   Status: {status} ({model_time:.1f}s)")
+             
+             if sql_query:
+                 print(f"   Generated SQL: {sql_query}")
+             if outcome and status not in ["OK", "SYNTAX"]:
+                 print(f"   Error: {outcome[:200]}...")
+             
+             model_results[name] = (sql_query, status, outcome)
+         
+         request_time = time.time() - request_start_time
+         print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
+         
+         all_results.append((request, model_results))
+-        
+-        # Save intermediate results after each request (optional)
+-        intermediate_file = f"./output/intermidiate/intermediate_results_{datetime.now().strftime('%H%M%S')}.txt"
+-        write_test_results([(request, model_results)], intermediate_file)
++        request_output_file = write_request_results(request, model_results, per_request_output_dir, i)
++        print(f"📄 Request log saved to: {request_output_file}")
+     
+-    # 5. Write final results
++    # 5. Write final aggregated results
+     write_test_results(all_results, OUTPUT_FILE)
+     
+     # 6. Print summary
+     print_test_summary(all_results, OUTPUT_FILE)
+     
+     print(f"\n🎉 Testing completed!")
+     print(f"📄 Full results saved to: {OUTPUT_FILE}")
++    print(f"📄 Per-request logs saved under: {per_request_output_dir}")
+ 
+ def run_full_cycle_without_llm(
+     *,
+     user_request: str,
+     mode: str,
+     schema: dict,
+     query_vs: Chroma,
+     schema_vs: Chroma,
+     execute_sql: bool,
+ ):
+     """
+     Runs the full SQL generation pipeline WITHOUT calling the LLM.
+     """
+     sql = generate_sql_query(
+         user_request=user_request,
+         source=mode,
+         full_schema=schema,
+         model="none",
+         query_vs=query_vs,
+         schema_vs=schema_vs,
+     )
+ 
+     syntax_status = validate_sql_syntax(sql)
+ 
+     execution_status = None
