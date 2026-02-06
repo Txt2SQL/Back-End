@@ -1,0 +1,1013 @@
+{
+  "tables": [
+    {
+      "name": "accounts_customuser",
+      "columns": [
+        {
+          "name": "password",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "last_login",
+          "type": "DATETIME",
+          "constraints": []
+        },
+        {
+          "name": "is_superuser",
+          "type": "TINYINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "username",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "first_name",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "last_name",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "is_staff",
+          "type": "TINYINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "is_active",
+          "type": "TINYINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "date_joined",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "karma",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "about",
+          "type": "LONGTEXT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "level",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "lft",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "parent_id",
+          "type": "CHAR",
+          "constraints": []
+        },
+        {
+          "name": "rght",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "tree_id",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "used_invitation_id",
+          "type": "CHAR",
+          "constraints": []
+        }
+      ]
+    },
+    {
+      "name": "accounts_customuser_groups",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "customuser_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "group_id",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "accounts_customuser_user_permissions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "customuser_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "permission_id",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "accounts_emailverification",
+      "columns": [
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "changed_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "verified",
+          "type": "TINYINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "verified_at",
+          "type": "DATETIME",
+          "constraints": []
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "user_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "verification_code",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "accounts_invitation",
+      "columns": [
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "changed_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "num_signups",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "invited_email_address",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "invite_code",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "inviting_user_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "accounts_passwordresetrequest",
+      "columns": [
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "changed_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "verification_code",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "user_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "auth_group",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "auth_group_permissions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "group_id",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "permission_id",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "auth_permission",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "content_type_id",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "codename",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "django_admin_log",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "action_time",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "object_id",
+          "type": "LONGTEXT",
+          "constraints": []
+        },
+        {
+          "name": "object_repr",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "action_flag",
+          "type": "SMALLINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "change_message",
+          "type": "LONGTEXT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "content_type_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "user_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "django_content_type",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "app_label",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "model",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "django_migrations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "app",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "applied",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "django_session",
+      "columns": [
+        {
+          "name": "session_key",
+          "type": "VARCHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "session_data",
+          "type": "LONGTEXT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "expire_date",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "emaildigest_anonymoussubscription",
+      "columns": [
+        {
+          "name": "subscription_ptr_id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "verified",
+          "type": "TINYINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "verified_at",
+          "type": "DATETIME",
+          "constraints": []
+        },
+        {
+          "name": "verification_code",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "logged_in_user_id",
+          "type": "CHAR",
+          "constraints": []
+        }
+      ]
+    },
+    {
+      "name": "emaildigest_emaildigest",
+      "columns": [
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "changed_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "frequency",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "weekly_weekday",
+          "type": "VARCHAR",
+          "constraints": []
+        }
+      ]
+    },
+    {
+      "name": "emaildigest_emaildigest_stories",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "emaildigest_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "story_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "emaildigest_subscription",
+      "columns": [
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "changed_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "frequency",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "weekly_weekday",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "verfied_email",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "is_active",
+          "type": "TINYINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "emaildigest_unsubscription",
+      "columns": [
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "changed_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "from_digest_id",
+          "type": "CHAR",
+          "constraints": []
+        },
+        {
+          "name": "subscription_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "emaildigest_usersubscription",
+      "columns": [
+        {
+          "name": "subscription_ptr_id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "user_id",
+          "type": "CHAR",
+          "constraints": []
+        }
+      ]
+    },
+    {
+      "name": "news_comment",
+      "columns": [
+        {
+          "name": "item_ptr_id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "text",
+          "type": "LONGTEXT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "to_story_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "news_item",
+      "columns": [
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "changed_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "upvotes",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "downvotes",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "points",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "num_comments",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "lft",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "rght",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "tree_id",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "level",
+          "type": "INT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "parent_id",
+          "type": "CHAR",
+          "constraints": []
+        },
+        {
+          "name": "user_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "is_ask",
+          "type": "TINYINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "is_show",
+          "type": "TINYINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "news_story",
+      "columns": [
+        {
+          "name": "item_ptr_id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "url",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "text",
+          "type": "LONGTEXT",
+          "constraints": []
+        },
+        {
+          "name": "title",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "duplicate_of_id",
+          "type": "CHAR",
+          "constraints": []
+        },
+        {
+          "name": "domain",
+          "type": "VARCHAR",
+          "constraints": []
+        }
+      ]
+    },
+    {
+      "name": "news_vote",
+      "columns": [
+        {
+          "name": "id",
+          "type": "CHAR",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "changed_at",
+          "type": "DATETIME",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "item_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "user_id",
+          "type": "CHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "vote",
+          "type": "SMALLINT",
+          "constraints": [
+            "NOT NULL"
+          ]
+        }
+      ]
+    }
+  ],
+  "semantic_notes": [],
+  "source": "mysql",
+  "database": "hacker_news"
+}

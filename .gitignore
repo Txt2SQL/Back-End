@@ -1,9 +1,7 @@
 venv/
 .vscode/
-schema_canonical.json
-vector_store/schema/
-__pycache__/
-.vscode/settings.json
+.data/vector_store/schema/
+.data/schema/schema_canonical.json
+**/__pycache__/
 *.log
-test/output/intermediate
 .env*
