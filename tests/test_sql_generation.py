@@ -21,13 +21,11 @@ from query_generator import (
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
     VSS_DIR,
-    VSQ_DIR
+    VSQ_DIR,
 )
 
 # ==================== CONFIGURATION ====================
 SCHEMA_FILE = "./input/schema_canonical.json"   # Adjust path to schema file
-VSS_DIR = "." + VSS_DIR      # Adjust path to schema vector store
-VSQ_DIR = "." + VSQ_DIR      # Adjust path to query vector store
 INPUT_FILE = "test_requests.txt"
 OUTPUT_FILE = f"./output/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
@@ -444,18 +442,23 @@ def schema():
         return json.load(f)
 
 @pytest.fixture
-def vector_stores():
+def vector_stores(tmp_path):
     embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+
+    query_dir = tmp_path / "vector_store" / "queries"
+    schema_dir = tmp_path / "vector_store" / "schema"
+    query_dir.mkdir(parents=True, exist_ok=True)
+    schema_dir.mkdir(parents=True, exist_ok=True)
 
     query_vs = Chroma(
         collection_name=QUERY_COLLECTION_NAME,
-        persist_directory=VSQ_DIR,
+        persist_directory=str(query_dir),
         embedding_function=embeddings,
     )
 
     schema_vs = Chroma(
         collection_name=SCHEMA_COLLECTION_NAME,
-        persist_directory=VSS_DIR,
+        persist_directory=str(schema_dir),
         embedding_function=embeddings,
     )
 
