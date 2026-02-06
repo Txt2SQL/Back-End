@@ -30,7 +30,6 @@ from pathlib import Path
 # ==================== CONFIGURATION ====================
 BASE_DIR = Path(__file__).resolve().parent
 TMP_DIR = BASE_DIR / "tmp"
-SCHEMA_FILE = "./input/schema.json"   # Adjust path to schema file
 INPUT_FILE = "./input/requests/test_requests.txt"
 OUTPUT_FILE = f"./output/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
@@ -93,7 +92,7 @@ def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
 
     cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
     cursor.execute("SHOW TABLES")
-    tables = [table[0] for table in cursor.fetchall()]
+    tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType]
     for table in tables:
         db_generator.populate_table(cursor, table)
     cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
@@ -113,7 +112,7 @@ def configure_run_paths(db_name: str) -> Tuple[str, str]:
     output_dir = base_dir / "output" / f"{db_name}_results"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    input_file = requests_dir / f"{db_name}_request.txt"
+    input_file = requests_dir / f"{db_name}_requests.txt"
     output_file = output_dir / f"test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
     return str(input_file), str(output_file)
@@ -131,7 +130,6 @@ def build_schema_retriever(db_name: str) -> Tuple[dict, Chroma]:
     Build schema vector store from the live database and return schema data.
     """
     schema = extract_schema(db_name)
-    schema["source"] = "mysql"
     schema["database"] = db_name
     schema_vs = build_vector_store(
         schema,
@@ -191,7 +189,39 @@ def run_single_test(
         
         syntax_status = validate_sql_syntax(sql)
 
-        execution_status, execution_output = execute_sql_query(sql)
+        database_name = full_schema["database"]
+        error_feedback = None
+        if syntax_status != "OK":
+            print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
+            error_feedback=(
+                "The previous SQL query failed syntax validation "
+                f"(status={syntax_status})."
+            )
+
+        if syntax_status == "OK" and mode == "mysql":
+            execution_status, execution_output = execute_sql_query(sql, database_name=full_schema["database"])
+
+            if execution_status != "OK":
+                error_feedback=(
+                    "The previous SQL query failed at runtime with this error: "
+                    f"{execution_output}."
+                )
+
+        if syntax_status != "OK" or execution_status != "OK":
+            sql = generate_sql_query(
+                request,
+                mode,
+                full_schema,
+                llm_model,
+                query_vs,
+                schema_vs,
+                error_feedback=error_feedback
+            )
+
+            syntax_status = validate_sql_syntax(sql)
+
+            if syntax_status == "OK" and mode != "mysql":
+                execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
 
         metadata = create_metadata(
             sql_query=sql,
@@ -354,7 +384,7 @@ def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
 
 # ==================== MAIN TEST FUNCTION ====================
 
-def run_comprehensive_tests(mode: str, db_name: str | None = None):
+def run_comprehensive_tests(mode: str, db_name: str):
     """
     Main function to run comprehensive tests.
     """
@@ -370,24 +400,15 @@ def run_comprehensive_tests(mode: str, db_name: str | None = None):
         return
     
     # 2. Load schema (from DB when available)
-    if db_name:
-        full_schema, schema_vs = build_schema_retriever(db_name)
-        print(f"✅ Retrieved schema from database '{db_name}'")
-    else:
-        try:
-            with open(SCHEMA_FILE, 'r', encoding='utf-8') as f:
-                full_schema = json.load(f)
-            print(f"✅ Loaded schema from {SCHEMA_FILE}")
-        except Exception as e:
-            print(f"❌ Failed to load schema: {e}")
-            return
+    full_schema, schema_vs = build_schema_retriever(db_name)
+    print(f"✅ Retrieved schema from database '{db_name}'")
 
-        embeddings = OllamaEmbeddings(model="mxbai-embed-large")
-        schema_vs = Chroma(
-            collection_name=SCHEMA_COLLECTION_NAME,
-            persist_directory=SVS_DIR,
-            embedding_function=embeddings,
-        )
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+    schema_vs = Chroma(
+        collection_name=SCHEMA_COLLECTION_NAME,
+        persist_directory=SVS_DIR,
+        embedding_function=embeddings,
+    )
 
     # Load query vector store
     embeddings = OllamaEmbeddings(model="mxbai-embed-large")

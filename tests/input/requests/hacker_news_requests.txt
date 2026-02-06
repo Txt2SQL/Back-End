@@ -1,0 +1,21 @@
+High-Karma Inviters. Find users with the highest karma who have actively invited other users, including a count of successful signups.
+Power User Identification. Identify users who are both active posters and commenters, including their average and maximum upvotes.
+Lurker vs. Contributor Analysis. Find users who frequently vote but rarely post content (focused on users who joined in the last 90 days).
+Domain Engagement. Find stories with the highest engagement (comments and votes) categorized by domain for the last 30 days.
+Deepest Comment Threads. Identify comment threads with the deepest nesting levels using recursive analysis.
+Duplicate Performance Comparison. Find duplicate stories and compare the performance (points and comments) of the duplicate versus the original.
+Vote Manipulation Detection. Detect potential manipulation patterns, such as users with excessive voting activity directed at a very small number of authors.
+Controversial Story Identification. Find stories with high point totals but a high percentage of downvotes (mixed sentiment).
+Digest Effectiveness. Analyze email digest performance, including unsubscription rates and the average quality of stories featured.
+Subscription Comparison. Compare subscription and verification patterns between anonymous users and registered users.
+Conversion Funnel Analysis. Analyze the effectiveness of the invitation system, tracking conversion rates, days to join, and the eventual karma of invited users.
+Posting Peak Times. Analyze posting patterns (stories and comments) by time of day and day of the week over the last 90 days.
+Trending Domain Topics. Identify trending topics by tracking the day-over-day change and weekly running totals for story domains.
+User Tree Structure. Analyze the user hierarchy to determine the density of users at different invitation depths and their average karma.
+Admin Content Creators. Find users who are both active content creators (stories/comments) and have performed administrative actions.
+Digest Impact on Growth. Identify stories featured in multiple email digests and calculate their growth in votes and comments after being featured.
+User Retention Cohorts. Calculate user retention rates and average posts per user based on the month they made their first post.
+High-Karma Predictions. Predict potential high-value users by looking at their activity metrics within their first 30 days on the platform.
+Spam and Abuse Detection. Identify potential spam patterns based on post frequency, consistently low scores, or high downvote rates.
+Verification vs. Quality. Analyze the relationship between user email verification and the quality/quantity of their contributions.
+Brigading Detection. Find stories with controversial voting patterns, such as high initial volume or homogeneous voter groups, to identify possible brigading.
