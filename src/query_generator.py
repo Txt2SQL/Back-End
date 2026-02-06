@@ -5,20 +5,20 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
-from src.mysql_linker import execute_sql_query
-from src.config.settings import AVAILABLE_MODELS
-from src.logging_utils import (
+from mysql_linker import execute_sql_query
+from config.settings import AVAILABLE_MODELS
+from logging_utils import (
     setup_logger,
     print_llm_prompt,
     print_query_vector_store
 )
-from src.retriver_utils import (
+from retriver_utils import (
     store_query_feedback,
     retrieve_failed_queries,
     build_penalty_section,
     create_metadata
 )
-from src.config.paths import (
+from config.paths import (
     VECTOR_STORE_DIR,
     SAMPLE_QUERY_PATH,
     SCHEMA_FILE
@@ -345,7 +345,7 @@ def get_llm_model(choice: int) -> str | OllamaLLM | AzureChatOpenAI:
     else:
         model_name = AVAILABLE_MODELS[choice]
         
-        load_dotenv(".env.azure")
+        load_dotenv("../.env.azure")
 
         # === Load Azure environment ===
         AZURE_API_KEY = os.getenv("AZURE_API_KEY")
