@@ -1,4 +1,4 @@
-import sys, os, pytest, json, time
+import sys, os, pytest, json, time, shutil
 # Add parent directory to Python path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -7,6 +7,7 @@ from langchain_chroma import Chroma
 from typing import Dict, List, Tuple
 from langchain_ollama import OllamaEmbeddings
 from src.config.settings import AVAILABLE_MODELS
+from src.mysql_linker import extract_schema, get_db_connection, list_databases
 from src.logging_utils import (
     setup_single_project_logger, 
     setup_logger
@@ -22,21 +23,150 @@ from src.query_generator import (
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
+from langchain_core.documents import Document
+from tests import generate_realistic_mysql_db as db_generator
+from pathlib import Path
 
 # ==================== CONFIGURATION ====================
+BASE_DIR = Path(__file__).resolve().parent
+TMP_DIR = BASE_DIR / "tmp"
 SCHEMA_FILE = "./input/schema.json"   # Adjust path to schema file
 INPUT_FILE = "./input/requests/test_requests.txt"
 OUTPUT_FILE = f"./output/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
-QVS_DIR = "./tmp/query_vector_store"
-SVS_DIR = "./tmp/schema_vector_store"
+QVS_DIR = str(TMP_DIR / "query_vector_store")
+SVS_DIR = str(TMP_DIR / "schema_vector_store")
 
 # === LOGGING SETUP ===
 setup_single_project_logger()
 logger = setup_logger(__name__)
 
 # ==================== TEST FUNCTIONS ====================
+
+DB_OPTIONS = ["supermarket", "monica", "hacker_news", "akaunting"]
+
+def select_test_database() -> str:
+    """
+    Prompt the user to select a database for test execution.
+    """
+    print("🔍 Select a database to use for the test:")
+    for idx, name in enumerate(DB_OPTIONS, 1):
+        print(f"  {idx}. {name}")
+
+    while True:
+        choice = input("Enter the database name or number: ").strip().lower()
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(DB_OPTIONS):
+                return DB_OPTIONS[idx]
+        elif choice in DB_OPTIONS:
+            return choice
+        print("❌ Invalid selection. Please choose a valid database name or number.")
+
+
+def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
+    """
+    Ensure the selected database exists and is populated.
+    """
+    existing_dbs = list_databases()
+    if db_name in existing_dbs:
+        print(f"✅ Database '{db_name}' already exists. Connecting to it...")
+        conn = get_db_connection(database_name=db_name)
+        if conn.is_connected():
+            print(f"✅ Connection to '{db_name}' established.")
+        conn.close()
+        return
+
+    print(f"🛠️  Database '{db_name}' not found. Creating and populating it...")
+    ddl_path = ddl_dir / f"{db_name}.sql"
+    if not ddl_path.exists():
+        raise FileNotFoundError(f"❌ DDL file not found for '{db_name}': {ddl_path}")
+
+    conn = get_db_connection(database_name=None)
+    cursor = conn.cursor()
+
+    db_generator.create_database(cursor, db_name)
+    cursor.execute(f"USE {db_generator.quote_identifier(db_name)}")
+    db_generator.execute_sql_file(cursor, str(ddl_path))
+    conn.commit()
+
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+    cursor.execute("SHOW TABLES")
+    tables = [table[0] for table in cursor.fetchall()]
+    for table in tables:
+        db_generator.populate_table(cursor, table)
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+    print(f"✅ Database '{db_name}' created and populated.")
+
+
+def configure_run_paths(db_name: str) -> Tuple[str, str]:
+    """
+    Configure input and output paths for the selected database.
+    """
+    base_dir = Path(__file__).resolve().parent
+    requests_dir = base_dir / "input" / "requests"
+    output_dir = base_dir / "output" / f"{db_name}_results"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    input_file = requests_dir / f"{db_name}_request.txt"
+    output_file = output_dir / f"test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
+    return str(input_file), str(output_file)
+
+def clear_tmp_dir(tmp_dir: Path) -> None:
+    """
+    Remove and recreate the tmp directory for a clean run.
+    """
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+def build_schema_retriever(db_name: str) -> Tuple[dict, Chroma]:
+    """
+    Build schema vector store from the live database and return schema data.
+    """
+    schema = extract_schema(db_name)
+    schema["source"] = "mysql"
+    schema["database"] = db_name
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+
+    documents = []
+    ids = []
+
+    for table in schema.get("tables", []):
+        table_name = table.get("name", "unknown_table")
+        columns = table.get("columns", [])
+
+        col_lines = []
+        for col in columns:
+            col_name = col.get("name", "unknown_column")
+            col_type = col.get("type", "UNKNOWN_TYPE")
+            constraints = ", ".join(col.get("constraints", []))
+            col_line = f"- {col_name} ({col_type}) {constraints}".strip()
+            col_lines.append(col_line)
+
+        text = f"Table: {table_name}\nColumns:\n" + "\n".join(col_lines)
+        documents.append(Document(page_content=text, metadata={"table": table_name}))
+        ids.append(table_name)
+
+    schema_vs = Chroma(
+        collection_name=SCHEMA_COLLECTION_NAME,
+        persist_directory=SVS_DIR,
+        embedding_function=embeddings,
+    )
+
+    existing_ids = schema_vs.get().get("ids", [])
+    if existing_ids:
+        schema_vs.delete(ids=existing_ids)
+    if documents:
+        schema_vs.add_documents(documents=documents, ids=ids)
+
+    return schema, schema_vs
 
 def load_test_requests(input_file: str) -> List[str]:
     """
@@ -251,7 +381,7 @@ def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
 
 # ==================== MAIN TEST FUNCTION ====================
 
-def run_comprehensive_tests(mode: str):
+def run_comprehensive_tests(mode: str, db_name: str | None = None):
     """
     Main function to run comprehensive tests.
     """
@@ -264,29 +394,33 @@ def run_comprehensive_tests(mode: str):
         print("❌ No test requests found. Exiting.")
         return
     
-    # 2. Load schema
-    try:
-        with open(SCHEMA_FILE, 'r', encoding='utf-8') as f:
-            full_schema = json.load(f)
-        print(f"✅ Loaded schema from {SCHEMA_FILE}")
-    except Exception as e:
-        print(f"❌ Failed to load schema: {e}")
-        return
-    
-    # Load vector stores
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+    # 2. Load schema (from DB when available)
+    if db_name:
+        full_schema, schema_vs = build_schema_retriever(db_name)
+        print(f"✅ Retrieved schema from database '{db_name}'")
+    else:
+        try:
+            with open(SCHEMA_FILE, 'r', encoding='utf-8') as f:
+                full_schema = json.load(f)
+            print(f"✅ Loaded schema from {SCHEMA_FILE}")
+        except Exception as e:
+            print(f"❌ Failed to load schema: {e}")
+            return
 
+        embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+        schema_vs = Chroma(
+            collection_name=SCHEMA_COLLECTION_NAME,
+            persist_directory=SVS_DIR,
+            embedding_function=embeddings,
+        )
+
+    # Load query vector store
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
     query_vs = Chroma(
         collection_name=QUERY_COLLECTION_NAME,
         persist_directory=QVS_DIR,
         embedding_function=embeddings,
     )
-
-    schema_vs = Chroma(
-        collection_name=SCHEMA_COLLECTION_NAME,
-        persist_directory=SVS_DIR,
-        embedding_function=embeddings,
-    ) 
     print(f"✅ Loaded vector stores from {QVS_DIR} and {SVS_DIR}")
     
     # 4. Run tests for each request
@@ -433,8 +567,6 @@ def execute_sample_query(input_path: str):
     print(f"✅ Query execution completed. Results written to {output_file}")
 
 # ==================== PYTEST TEST CASES ====================
-
-from pathlib import Path
 
 @pytest.fixture
 def schema():
@@ -724,13 +856,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     if args.test == "run":
+        clear_tmp_dir(TMP_DIR)
+        selected_db = select_test_database()
+        ddl_dir = Path(__file__).resolve().parent / "input" / "existing_ddl"
+        ensure_database_ready(selected_db, ddl_dir)
+
+        input_file, output_file = configure_run_paths(selected_db)
+        if not os.path.exists(input_file):
+            raise FileNotFoundError(f"❌ Input file not found: {input_file}")
+
         # Update global variables based on args
-        INPUT_FILE = args.input
-        OUTPUT_FILE = args.output
+        INPUT_FILE = input_file
+        OUTPUT_FILE = output_file
         TIMEOUT_PER_MODEL = args.timeout
         
         # Run the comprehensive tests
-        run_comprehensive_tests(args.mode)
+        run_comprehensive_tests(args.mode, db_name=selected_db)
     elif args.test == "execute":
         if not args.input:
             raise ValueError("❌ --test execute requires --input <sql_file>")
