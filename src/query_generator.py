@@ -19,14 +19,19 @@ from src.retriver_utils import (
     build_penalty_section,
     create_metadata
 )
+from src.config.paths import (
+    PROJECT_ROOT,
+    VECTOR_STORE_DIR,
+    SAMPLE_QUERY_PATH,
+)
 
 # === CONFIG ===
-SCHEMA_FILE = "schema_canonical.json"
+SCHEMA_FILE = str(PROJECT_ROOT / "schema_canonical.json")
 SCHEMA_COLLECTION_NAME = "schema_canonical"
 QUERY_COLLECTION_NAME = "query_feedback"
-VSS_DIR = "./vector_store/schema"
-VSQ_DIR = "./vector_store/queries"
-SAMPLE_QUERY_FILE = "./test/sample_query.sql"
+VSS_DIR = str(VECTOR_STORE_DIR / "schema")
+VSQ_DIR = str(VECTOR_STORE_DIR / "queries")
+SAMPLE_QUERY_FILE = str(SAMPLE_QUERY_PATH)
 
 # === AVAILABLE MODELS ===
 AVAILABLE_MODELS = {

@@ -4,10 +4,11 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from src.logging_utils import setup_logger
 from src.metadata import QueryMetadata
+from src.config.paths import VECTOR_STORE_DIR
 from langchain_ollama import OllamaEmbeddings
 
 # === CONFIG ===
-DB_DIR = "./vector_store/schema"
+DB_DIR = str(VECTOR_STORE_DIR / "schema")
 COLLECTION_NAME = "schema_canonical"
 
 # === LOGGING SETUP ===
