@@ -6,31 +6,31 @@ from datetime import datetime
 from langchain_chroma import Chroma
 from typing import Dict, List, Tuple
 from langchain_ollama import OllamaEmbeddings
-from logging_utils import (
+from src.config.settings import AVAILABLE_MODELS
+from src.logging_utils import (
     setup_single_project_logger, 
     setup_logger
 )
-from query_generator import (
+from src.query_generator import (
     generate_sql_query,
     validate_sql_syntax,
     execute_sql_query,
     store_query_feedback,
     compute_schema_id,
     create_metadata,
-    AVAILABLE_MODELS,
     get_llm_model,
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
-    VSS_DIR,
-    VSQ_DIR,
 )
 
 # ==================== CONFIGURATION ====================
-SCHEMA_FILE = "./input/schema_canonical.json"   # Adjust path to schema file
-INPUT_FILE = "test_requests.txt"
+SCHEMA_FILE = "./input/schema.json"   # Adjust path to schema file
+INPUT_FILE = "./input/requests/test_requests.txt"
 OUTPUT_FILE = f"./output/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
+QVS_DIR = "./tmp/query_vector_store"
+SVS_DIR = "./tmp/schema_vector_store"
 
 # === LOGGING SETUP ===
 setup_single_project_logger()
@@ -186,7 +186,8 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
             f.write(f"{n}. {truncated_request}\n\n")
             
             # Write results for each model
-            for model_name in AVAILABLE_MODELS.values():
+            for index in range(1, len(AVAILABLE_MODELS) + 1):
+                model_name = AVAILABLE_MODELS[index]
                 if model_name in model_results:
                     sql, status, outcome = model_results[model_name]
                     line = format_result_line(model_name, sql, status, outcome)
@@ -277,16 +278,16 @@ def run_comprehensive_tests(mode: str):
 
     query_vs = Chroma(
         collection_name=QUERY_COLLECTION_NAME,
-        persist_directory=VSQ_DIR,
+        persist_directory=QVS_DIR,
         embedding_function=embeddings,
     )
 
     schema_vs = Chroma(
         collection_name=SCHEMA_COLLECTION_NAME,
-        persist_directory=VSS_DIR,
+        persist_directory=SVS_DIR,
         embedding_function=embeddings,
     ) 
-    print(f"✅ Loaded vector stores from {VSQ_DIR} and {VSS_DIR}")
+    print(f"✅ Loaded vector stores from {QVS_DIR} and {SVS_DIR}")
     
     # 4. Run tests for each request
     all_results = []
@@ -300,8 +301,9 @@ def run_comprehensive_tests(mode: str):
         request_start_time = time.time()
         
         # Test each available model
-        for index, name in AVAILABLE_MODELS.items():
-            print(f"\n🔄 Testing with model: {name}")
+        for index in range(1, len(AVAILABLE_MODELS) + 1):
+            name = AVAILABLE_MODELS[index]
+            print(f"\nTesting with model: {name}")
             model_start_time = time.time()
             
             sql_query, status, outcome = run_test_with_timeout(
