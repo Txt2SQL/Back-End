@@ -598,6 +598,9 @@ def main():
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
             source = get_schema_source(full_schema)
+            database_name = full_schema.get("database") if source == "mysql" else None
+            if source == "mysql" and not database_name:
+                logger.warning("Schema source is MySQL but no database name was found in schema JSON.")
 
             print("\n🔍 Generating query...")
             sql = generate_sql_query(user_request, source, full_schema, llm_model, query_vs, schema_vs)
@@ -625,7 +628,7 @@ def main():
                 print()
                 print("🚀 Executing query against the database...")
                 print()
-                execution_status, execution_output = execute_sql_query(sql)
+                execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
 
                 if execution_status != "OK":
                     print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
@@ -656,7 +659,7 @@ def main():
                     print()
                     print("🚀 Executing regenerated query against the database...")
                     print()
-                    execution_status, execution_output = execute_sql_query(sql)
+                    execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
 
             if execution_status == "OK":
                 pretty_print_query_preview(execution_output)
