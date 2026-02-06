@@ -5,7 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from src.retriver_utils import build_vector_store
-from src.config.paths import DATA_DIR, VECTOR_STORE_DIR
+from src.config.paths import DATA_DIR, VECTOR_STORE_DIR, SCHEMA_FILE
 from src.mysql_linker import (
     extract_schema,
     export_schema_sql,
@@ -308,21 +308,6 @@ Return ONLY the JSON object:
     schema["database"] = database_name
     return schema
 
-def update_schema_with_vector_store(new_text: str) -> dict:
-    if not os.path.exists(SCHEMA_FILE):
-        raise FileNotFoundError(f"Schema file '{SCHEMA_FILE}' not found. Please create a schema first.")
-    
-    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
-        current_schema = json.load(f)
-    
-    logger.info("Current schema loaded:")
-    print_schema_preview(current_schema)
-    
-    logger.info("Updating schema with new information...")
-    updated_schema = update_schema_with_existing(new_text, current_schema)
-    
-    return updated_schema
-
 def update_schema(raw_text: str, current_schema: dict):
 
     with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
@@ -373,14 +358,8 @@ def acquire_schema_from_text(raw_text: str):
         return {}
     schema = generate_schema_canonical(raw_text, database_name)
     schema["source"] = "text"
-    
-    schema_dir = DATA_DIR / "schema"
-    schema_dir.mkdir(parents=True, exist_ok=True)
-    schema_path = schema_dir / f"{database_name}_schema.sql"
-    schema_path.write_text(raw_text.rstrip() + "\n", encoding="utf-8")
-    logger.info(f"Schema SQL saved to '{schema_path}'")
-
     logger.info("New schema generated.")
+
     return schema
 
 def acquire_schema_from_mysql():
@@ -424,13 +403,6 @@ def acquire_schema_from_mysql():
     schema["database"] = selected_db
     logger.info("Generating schema from database schema...")
     logger.info("New schema generated.")
-
-    schema_dir = DATA_DIR / "schema"
-    schema_dir.mkdir(parents=True, exist_ok=True)
-    schema_sql = export_schema_sql(selected_db)
-    schema_path = schema_dir / f"{selected_db}_schema.sql"
-    schema_path.write_text(schema_sql, encoding="utf-8")
-    logger.info(f"Schema SQL saved to '{schema_path}'")
 
     return schema
 
