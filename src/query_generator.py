@@ -664,7 +664,6 @@ def main():
                 pretty_print_query_preview(execution_output)
 
             metadata = create_metadata(
-                request=user_request,
                 sql_query=sql,
                 syntax_status=syntax_status,
                 schema_id=compute_schema_id(full_schema),
