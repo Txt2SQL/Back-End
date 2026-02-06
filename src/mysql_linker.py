@@ -4,9 +4,9 @@ from typing import Tuple, Any
 from collections import defaultdict
 from dotenv import load_dotenv
 from getpass import getpass
-from src.logging_utils import setup_logger
-from src.config.paths import ENV_MYSQL_FILE
-from src.config.settings import REQUIRED_CREDENTIAL_VARS
+from logging_utils import setup_logger
+from config.paths import ENV_MYSQL_FILE
+from config.settings import REQUIRED_CREDENTIAL_VARS
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
