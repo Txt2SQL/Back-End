@@ -367,7 +367,7 @@ def create_prompt(
     query_vs: Chroma,
     schema_vs: Chroma,
     error_feedback: str | None = None,
-) -> tuple[str, str]:
+) -> str:
     schema_context = get_context(user_request, schema_vs)
     logger.debug(f"Schema context retrieved: {len(schema_context)} characters")
 
@@ -425,16 +425,11 @@ You must correct the query considering this error.
 Do NOT repeat the same mistake.
 """
 
-    return template, schema_context
+    return template
 
 def generate_sql_query(
-    user_request: str, 
-    source: str, 
-    full_schema: dict, 
     model: str | OllamaLLM | AzureChatOpenAI, 
-    query_vs: Chroma, 
-    schema_vs: Chroma,
-    error_feedback: str | None = None,
+    template: str,
 ) -> str:
     """
     Generates a SQL query using:
@@ -444,14 +439,7 @@ def generate_sql_query(
     """
     logger.info(f"🚀 Starting SQL generation with model: {model}")
 
-    template, schema_context = create_prompt(
-        user_request=user_request,
-        source=source,
-        full_schema=full_schema,
-        query_vs=query_vs,
-        schema_vs=schema_vs,
-        error_feedback=error_feedback,
-    )
+
 
     # Log the final prompt
     print_llm_prompt(template)
@@ -549,9 +537,17 @@ def main():
             if model_index == 0:
                 database_name = "supermarket"
                 logger.info("Using 'supermarket' database for without_llm mode.")
+            
+            template = create_prompt(
+                user_request=user_request,
+                source=source,
+                full_schema=full_schema,
+                query_vs=query_vs,
+                schema_vs=schema_vs,
+            )
                 
             print("\n🔍 Generating query...")
-            sql = generate_sql_query(user_request, source, full_schema, llm_model, query_vs, schema_vs)
+            sql = generate_sql_query(llm_model, template)
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
@@ -586,15 +582,16 @@ def main():
                     )
 
             if syntax_status != "OK" or execution_status != "OK":
-                sql = generate_sql_query(
-                    user_request,
-                    source,
-                    full_schema,
-                    llm_model,
-                    query_vs,
-                    schema_vs,
+                template = create_prompt(
+                    user_request=user_request,
+                    source=source,
+                    full_schema=full_schema,
+                    query_vs=query_vs,
+                    schema_vs=schema_vs,
                     error_feedback=error_feedback
                 )
+                sql = generate_sql_query(llm_model, template)
+
                 print("\n💡 Regenerated SQL query after runtime feedback:\n")
                 print(sql)
                 print("\n" + "=" * 60)
