@@ -19,13 +19,12 @@ from src.retriver_utils import (
     create_metadata
 )
 from src.config.paths import (
-    PROJECT_ROOT,
     VECTOR_STORE_DIR,
     SAMPLE_QUERY_PATH,
+    SCHEMA_FILE
 )
 
 # === CONFIG ===
-SCHEMA_FILE = str(PROJECT_ROOT / "schema_canonical.json")
 SCHEMA_COLLECTION_NAME = "schema_canonical"
 QUERY_COLLECTION_NAME = "query_feedback"
 VSS_DIR = str(VECTOR_STORE_DIR / "schema")
