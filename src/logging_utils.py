@@ -19,7 +19,7 @@ def get_project_log_file():
     
     if _PROJECT_LOG_FILE is None:
         project_root = get_project_root()
-        logs_dir = os.path.join(project_root, "logs")
+        logs_dir = os.path.join(project_root, "src/logs")
         os.makedirs(logs_dir, exist_ok=True)
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
