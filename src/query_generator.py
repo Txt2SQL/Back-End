@@ -163,117 +163,47 @@ def compute_schema_id(full_schema: dict) -> str:
 
 def infer_relationships(schema: dict) -> list[str]:
     """
-    Infer join relationships from *_id column naming conventions.
+    Fetch join relationships directly from MySQL foreign key metadata.
     Returns human-readable join hints.
     """
-    logger.info("🔍 Starting relationship inference...")
-    tables = schema.get("tables", [])
-    
-    if not tables:
-        logger.warning("⚠️  No tables found in schema")
+    logger.info("🔍 Fetching relationship metadata from MySQL...")
+    database_name = os.getenv("DB_NAME", "")
+    if not database_name:
+        logger.warning("⚠️  DB_NAME is not set; cannot load foreign keys from MySQL")
         return []
-    
-    # Extract table names for easier checking
-    table_names = [t["name"] for t in tables]
-    logger.info(f"📊 Found {len(tables)} tables: {table_names}")
-    
-    # Map: column_name -> list of table names where column appears
-    column_index = {}
-    total_columns = 0
 
-    logger.info("📋 Building column index...")
-    for table in tables:
-        table_name = table["name"]
-        columns = table.get("columns", [])
-        logger.info(f"  Table '{table_name}': {len(columns)} columns")
-        
-        for col in columns:
-            col_name = col["name"]
-            column_index.setdefault(col_name, []).append(table_name)
-            total_columns += 1
-    
-    logger.info(f"📈 Indexed {total_columns} columns across all tables")
-    logger.info(f"📌 Unique column names: {len(column_index)}")
-    
-    # Show columns that appear in multiple tables
-    multi_table_cols = {col: tables for col, tables in column_index.items() 
-                       if len(tables) > 1}
-    if multi_table_cols:
-        logger.info("🔗 Columns appearing in multiple tables:")
-        for col, tables_list in multi_table_cols.items():
-            logger.info(f"  '{col}': {tables_list}")
-    
-    relationships = []
-    candidate_fks = []
-    
-    logger.info("🔄 Analyzing foreign key patterns...")
-    for col_name, table_list in column_index.items():
-        # Typical FK pattern: xxx_id appears in more than one table
-        if col_name.endswith("_id") and len(table_list) >= 2:
-            candidate_fks.append(col_name)
-            logger.info(f"  ✓ '{col_name}' is a potential FK (appears in {len(table_list)} tables: {table_list})")
-            
-            # Derive the referenced table name from the column name
-            # e.g., "category_id" -> "category" (singular)
-            referenced_table_singular = col_name.replace("_id", "")
-            
-            # Try to find the matching table (handling singular/plural)
-            referenced_table = None
-            match_type = "unknown"
-            
-            # Strategy 1: Exact match with singular
-            if referenced_table_singular in table_names:
-                referenced_table = referenced_table_singular
-                match_type = "exact singular"
-            
-            # Strategy 2: Try plural version (add 's')
-            elif f"{referenced_table_singular}s" in table_names:
-                referenced_table = f"{referenced_table_singular}s"
-                match_type = "plural (added 's')"
-            
-            # Strategy 3: Try other common plural forms
-            elif referenced_table_singular.endswith('y'):
-                # Try replacing 'y' with 'ies' (category -> categories)
-                plural_ies = referenced_table_singular[:-1] + "ies"
-                if plural_ies in table_names:
-                    referenced_table = plural_ies
-                    match_type = "plural (y -> ies)"
-            
-            # Strategy 4: The column name itself might be a table
-            elif col_name in table_names:
-                referenced_table = col_name
-                match_type = "column name as table"
-            
-            if referenced_table:
-                logger.info(f"    → Found referenced table '{referenced_table}' for FK '{col_name}' ({match_type})")
-                
-                # For each table containing this FK column (except the referenced table itself)
-                for source_table in table_list:
-                    if source_table != referenced_table:
-                        # Format: source_table.fk_column → referenced_table.fk_column
-                        relationship = f"{source_table}.{col_name} → {referenced_table}.{col_name}"
-                        relationships.append(relationship)
-                        logger.info(f"    ✓ Discovered join: {relationship}")
-            else:
-                logger.warning(f"    ⚠️  Could not find matching table for '{referenced_table_singular}'")
-                logger.info(f"      Tried: '{referenced_table_singular}', '{referenced_table_singular}s'")
-                if referenced_table_singular.endswith('y'):
-                    logger.info(f"      Also tried: '{referenced_table_singular[:-1]}ies'")
-                
-        elif col_name.endswith("_id"):
-            logger.info(f"  - '{col_name}' is *_id but only in 1 table ({table_list[0]}) - likely a PK")
-    
-    logger.info("📊 Summary:")
-    logger.info(f"  Candidate foreign keys: {len(candidate_fks)}")
-    logger.info(f"  Inferred relationships: {len(relationships)}")
-    
-    if relationships:
-        unique_relationships = sorted(set(relationships))
-        logger.info(f"  Unique relationships: {len(unique_relationships)}")
-        return unique_relationships
-    else:
-        logger.info("  No relationships inferred")
+    fk_query = f"""
+        SELECT
+            kcu.TABLE_NAME,
+            kcu.COLUMN_NAME,
+            kcu.REFERENCED_TABLE_NAME,
+            kcu.REFERENCED_COLUMN_NAME
+        FROM information_schema.KEY_COLUMN_USAGE kcu
+        WHERE kcu.TABLE_SCHEMA = '{database_name}'
+          AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+        ORDER BY kcu.TABLE_NAME, kcu.COLUMN_NAME
+    """
+
+    status, rows = execute_sql_query(fk_query, database_name=database_name)
+    if status != "OK":
+        logger.warning("⚠️  Failed to query foreign key metadata: %s", rows)
         return []
+
+    if not rows:
+        logger.info("📭 No foreign key relationships found in MySQL metadata")
+        return []
+
+    relationships = []
+    for table_name, column_name, referenced_table, referenced_column in rows:
+        relationship = (
+            f"{table_name}.{column_name} → {referenced_table}.{referenced_column}"
+        )
+        relationships.append(relationship)
+
+    unique_relationships = sorted(set(relationships))
+    logger.info("📊 Summary:")
+    logger.info("  Foreign key relationships: %s", len(unique_relationships))
+    return unique_relationships
 
 def build_join_hints(schema: dict) -> str:
     logger.info("=" * 50)
