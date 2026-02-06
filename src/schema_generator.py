@@ -5,9 +5,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from src.retriver_utils import build_vector_store
-from src.config.paths import VECTOR_STORE_DIR
+from src.config.paths import DATA_DIR, VECTOR_STORE_DIR
 from src.mysql_linker import (
     extract_schema,
+    export_schema_sql,
+    list_databases,
     mysql_env_is_valid,
     prompt_mysql_credentials,
     write_mysql_env,
@@ -205,7 +207,7 @@ Your task:
 IMPORTANT RULES:
 - Do NOT remove any existing tables or columns
 - If a table already exists, ADD new columns or UPDATE existing ones (don't duplicate)
-- Maintain the same JSON structure: {{"tables": [...], "semantic_notes": [...]}}
+- Maintain the same JSON structure: {{"database": "<database_name>", "tables": [...], "semantic_notes": [...]}}
 - Return ONLY the updated JSON schema, no other text or explanations
 - Each table must have: "name", "columns" (array)
 - Each column must have: "name", "type", "constraints" (array)
@@ -238,9 +240,12 @@ Return the UPDATED schema JSON:
     
     logger.info("Structural schema generated.")
 
+    if current_schema and "database" in current_schema:
+        schema["database"] = current_schema["database"]
+
     return schema
 
-def generate_schema_canonical(raw_schema_text: str) -> dict:
+def generate_schema_canonical(raw_schema_text: str, database_name: str) -> dict:
 
     logger.info("Raw schema text being sent to LLM:")
     logger.info(f"{raw_schema_text}")
@@ -257,6 +262,7 @@ IMPORTANT:
 
 Required JSON format:
 {{
+  "database": "{database_name}",
   "tables": [
     {{
       "name": "table_name",
@@ -283,7 +289,8 @@ Return ONLY the JSON object:
 
     chain = ChatPromptTemplate.from_template(template) | model
     response = chain.invoke({
-        "raw_schema_text": raw_schema_text
+        "raw_schema_text": raw_schema_text,
+        "database_name": database_name,
     })
 
     # parsing
@@ -298,6 +305,7 @@ Return ONLY the JSON object:
 
     schema = extract_json_from_response(content)
     
+    schema["database"] = database_name
     return schema
 
 def update_schema_with_vector_store(new_text: str) -> dict:
@@ -359,26 +367,70 @@ def acquire_schema_from_text(raw_text: str):
         return update_schema(raw_text, current_schema)
 
     logger.info("No existing schema found. Generating from scratch...")
-    schema = generate_schema_canonical(raw_text)
+    database_name = input("DB_NAME for this schema: ").strip()
+    if not database_name:
+        logger.error("DB_NAME is required to generate the schema.")
+        return {}
+    schema = generate_schema_canonical(raw_text, database_name)
     schema["source"] = "text"
     
+    schema_dir = DATA_DIR / "schema"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    schema_path = schema_dir / f"{database_name}_schema.sql"
+    schema_path.write_text(raw_text.rstrip() + "\n", encoding="utf-8")
+    logger.info(f"Schema SQL saved to '{schema_path}'")
+
     logger.info("New schema generated.")
     return schema
 
 def acquire_schema_from_mysql():
     # Ensure MySQL credentials exist
-    if not mysql_env_is_valid():
+    if not mysql_env_is_valid(require_db_name=False):
         creds = prompt_mysql_credentials()
         write_mysql_env(creds)
 
     # Load the env after creation/update
     load_dotenv(ENV_MYSQL_FILE, override=True)
 
+    databases = list_databases()
+    if not databases:
+        logger.error("No databases available for the provided MySQL credentials.")
+        return {}
+
+    print("\nAvailable databases:")
+    for i, db_name in enumerate(databases, 1):
+        print(f"{i}. {db_name}")
+
+    selected_db = ""
+    while not selected_db:
+        choice = input("\n👉 Select a database (name or number): ").strip()
+        if choice.isdigit():
+            index = int(choice) - 1
+            if 0 <= index < len(databases):
+                selected_db = databases[index]
+            else:
+                logger.error("Invalid database selection. Try again.")
+        elif choice in databases:
+            selected_db = choice
+        else:
+            logger.error("Invalid database selection. Try again.")
+
+    write_mysql_env({"DB_NAME": selected_db})
+    load_dotenv(ENV_MYSQL_FILE, override=True)
+
     logger.info("Connecting to MySQL database to retrieve schema...")
-    schema = extract_schema()
+    schema = extract_schema(selected_db)
     schema["source"] = "mysql"
+    schema["database"] = selected_db
     logger.info("Generating schema from database schema...")
     logger.info("New schema generated.")
+
+    schema_dir = DATA_DIR / "schema"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    schema_sql = export_schema_sql(selected_db)
+    schema_path = schema_dir / f"{selected_db}_schema.sql"
+    schema_path.write_text(schema_sql, encoding="utf-8")
+    logger.info(f"Schema SQL saved to '{schema_path}'")
 
     return schema
 
