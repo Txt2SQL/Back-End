@@ -20,6 +20,7 @@ from src.query_generator import (
     compute_schema_id,
     create_metadata,
     get_llm_model,
+    create_prompt,
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
@@ -188,7 +189,15 @@ def run_single_test(
     try:
         llm_model = get_llm_model(model_index)
         # Generate SQL query
-        sql = generate_sql_query(request, mode, full_schema, llm_model, query_vs, schema_vs)
+        template = create_prompt(
+            user_request=request,
+            source=mode,
+            full_schema=full_schema,
+            query_vs=query_vs,
+            schema_vs=schema_vs,
+        )
+            
+        sql = generate_sql_query(llm_model, template)
 
         execution_status = None
         execution_output = None
@@ -214,15 +223,15 @@ def run_single_test(
                 )
 
         if syntax_status != "OK" or execution_status != "OK":
-            sql = generate_sql_query(
-                request,
-                mode,
-                full_schema,
-                llm_model,
-                query_vs,
-                schema_vs,
+            template = create_prompt(
+                user_request=request,
+                source=mode,
+                full_schema=full_schema,
+                query_vs=query_vs,
+                schema_vs=schema_vs,
                 error_feedback=error_feedback
             )
+            sql = generate_sql_query(llm_model, template)
 
             syntax_status = validate_sql_syntax(sql)
 
@@ -506,14 +515,14 @@ def run_full_cycle_without_llm(
     """
     Runs the full SQL generation pipeline WITHOUT calling the LLM.
     """
-    sql = generate_sql_query(
+    template = create_prompt(
         user_request=user_request,
         source=mode,
         full_schema=schema,
-        model="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
+    sql = generate_sql_query("none", template)
 
     syntax_status = validate_sql_syntax(sql)
 
