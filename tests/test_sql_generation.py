@@ -45,11 +45,17 @@ logger = setup_logger(__name__)
 
 DB_OPTIONS = ["supermarket", "monica", "hacker_news", "akaunting"]
 
-def select_test_database() -> str:
+def select_test_database(args_db: str | None = None) -> str:
     """
     Prompt the user to select a database for test execution.
     """
-    print("🔍 Select a database to use for the test:")
+    if args_db in DB_OPTIONS:
+        return args_db
+    elif args_db is not None:
+        print("Database provided not supported for the tests.")
+        print(f"Supported databases: ")
+    else: print("🔍 Select a database to use for the test:")
+
     for idx, name in enumerate(DB_OPTIONS, 1):
         print(f"  {idx}. {name}")
 
@@ -862,10 +868,9 @@ if __name__ == "__main__":
                        help="Test type: 'run' to execute tests, 'pytest' to run the pytest suite, 'execute' ")
     parser.add_argument("--mode", choices=["mysql", "base"], default="base",
                        help="Mode: 'mysql' for MySQL mode, 'base' for base mode")
-    parser.add_argument("--input", default=False,
-                       help="Input file with test requests")
-    parser.add_argument("--output", default=False,
-                       help="Output file for results")
+    parser.add_argument("--db", default=False, help="Database name")
+    parser.add_argument("--input", default=False, help="Input file with test requests")
+    parser.add_argument("--output", default=False, help="Output file for results")
     parser.add_argument("--timeout", type=int, default=TIMEOUT_PER_MODEL,
                        help="Timeout per model per request (seconds)")
     
@@ -873,7 +878,7 @@ if __name__ == "__main__":
     
     if args.test == "run":        
         clear_tmp_dir(TMP_DIR)
-        selected_db = select_test_database()
+        selected_db = select_test_database(args.db)
         ddl_dir = Path(__file__).resolve().parent / "input" / "existing_ddl"
         ensure_database_ready(selected_db, ddl_dir)
 
