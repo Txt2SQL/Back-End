@@ -1,15 +1,72 @@
-import math, time, re
+import math, time, re, os
 from typing import Any
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from src.logging_utils import setup_logger
 from src.metadata import QueryMetadata
+from langchain_ollama import OllamaEmbeddings
+
+# === CONFIG ===
+DB_DIR = "./vector_store/schema"
+COLLECTION_NAME = "schema_canonical"
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
 
 # ------------------------------------------------------------------
-# STORE FEEDBACK
+# SCHEMA STORE
+# ------------------------------------------------------------------
+
+def build_vector_store(schema_data: dict):
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
+
+    documents = []
+    ids = []
+
+    for table in schema_data.get("tables", []):
+        table_name = table.get("name", "unknown_table")
+        columns = table.get("columns", [])
+
+        col_lines = []
+        for col in columns:
+            col_name = col.get("name", "unknown_column")
+            col_type = col.get("type", "UNKNOWN_TYPE")
+            constraints = ", ".join(col.get("constraints", []))
+            col_line = f"- {col_name} ({col_type}) {constraints}".strip()
+            col_lines.append(col_line)
+
+        text = f"Table: {table_name}\nColumns:\n" + "\n".join(col_lines)
+        doc = Document(page_content=text, metadata={"table": table_name})
+        documents.append(doc)
+        ids.append(table_name)
+
+    logger.info(f"Created {len(documents)} documents to embed...")
+
+    add_schema = not os.path.exists(DB_DIR)
+
+    vector_store = Chroma(
+        collection_name=COLLECTION_NAME,
+        persist_directory=DB_DIR,
+        embedding_function=embeddings,
+    )
+
+    if add_schema:
+        logger.info("Creating a new vector store...")
+        vector_store.add_documents(documents=documents, ids=ids)
+    else:
+        logger.info("Updating existing vector store...")
+        # For updates, we need to handle existing documents
+        existing_ids = vector_store.get()["ids"]
+        if existing_ids:
+            vector_store.delete(ids=existing_ids)
+        vector_store.add_documents(documents=documents, ids=ids)
+    
+    logger.info(f"Vector store updated and saved in: {DB_DIR}")
+
+    return vector_store
+
+# ------------------------------------------------------------------
+# FEEDBACK STORE
 # ------------------------------------------------------------------
 
 def apply_time_decay(

@@ -4,8 +4,9 @@ from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-from src.mysql_linker import extract_schema
+from src.retriver_utils import build_vector_store
 from src.mysql_linker import (
+    extract_schema,
     mysql_env_is_valid,
     prompt_mysql_credentials,
     write_mysql_env,
@@ -312,54 +313,6 @@ def update_schema_with_vector_store(new_text: str) -> dict:
     updated_schema = update_schema_with_existing(new_text, current_schema)
     
     return updated_schema
-
-def build_vector_store(schema_data: dict):
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
-
-    documents = []
-    ids = []
-
-    for table in schema_data.get("tables", []):
-        table_name = table.get("name", "unknown_table")
-        columns = table.get("columns", [])
-
-        col_lines = []
-        for col in columns:
-            col_name = col.get("name", "unknown_column")
-            col_type = col.get("type", "UNKNOWN_TYPE")
-            constraints = ", ".join(col.get("constraints", []))
-            col_line = f"- {col_name} ({col_type}) {constraints}".strip()
-            col_lines.append(col_line)
-
-        text = f"Table: {table_name}\nColumns:\n" + "\n".join(col_lines)
-        doc = Document(page_content=text, metadata={"table": table_name})
-        documents.append(doc)
-        ids.append(table_name)
-
-    logger.info(f"Created {len(documents)} documents to embed...")
-
-    add_schema = not os.path.exists(DB_DIR)
-
-    vector_store = Chroma(
-        collection_name=COLLECTION_NAME,
-        persist_directory=DB_DIR,
-        embedding_function=embeddings,
-    )
-
-    if add_schema:
-        logger.info("Creating a new vector store...")
-        vector_store.add_documents(documents=documents, ids=ids)
-    else:
-        logger.info("Updating existing vector store...")
-        # For updates, we need to handle existing documents
-        existing_ids = vector_store.get()["ids"]
-        if existing_ids:
-            vector_store.delete(ids=existing_ids)
-        vector_store.add_documents(documents=documents, ids=ids)
-    
-    logger.info(f"Vector store updated and saved in: {DB_DIR}")
-
-    return vector_store
 
 def update_schema(raw_text: str, current_schema: dict):
 

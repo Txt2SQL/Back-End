@@ -13,7 +13,7 @@ from src.logging_utils import (
     print_llm_prompt,
     print_query_vector_store
 )
-from src.query_feedback_store import (
+from src.retriver_utils import (
     store_query_feedback,
     retrieve_failed_queries,
     build_penalty_section,
