@@ -12,7 +12,7 @@ from src.schema.generation.query_generator import (
     get_schema_source,
     create_metadata
 )
-from src.query_feedback_store import store_query_feedback
+from src.retriver_utils import store_query_feedback
 from src.mysql_linker import execute_sql_query
 
 # =========================
