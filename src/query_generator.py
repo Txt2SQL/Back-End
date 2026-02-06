@@ -24,6 +24,7 @@ from src.config.paths import (
     VECTOR_STORE_DIR,
     SAMPLE_QUERY_PATH,
 )
+from src.config.settings import AVAILABLE_MODELS
 
 # === CONFIG ===
 SCHEMA_FILE = str(PROJECT_ROOT / "schema_canonical.json")
@@ -32,17 +33,6 @@ QUERY_COLLECTION_NAME = "query_feedback"
 VSS_DIR = str(VECTOR_STORE_DIR / "schema")
 VSQ_DIR = str(VECTOR_STORE_DIR / "queries")
 SAMPLE_QUERY_FILE = str(SAMPLE_QUERY_PATH)
-
-# === AVAILABLE MODELS ===
-AVAILABLE_MODELS = {
-    0: "without_llm",
-    1: "codellama:13b",
-    2: "codestral:22b",
-    3: "sqlcoder:15b",
-    4: "deepseek-coder-v2:16b",
-    5: "gpt-4o",
-    6: "gpt-5-mini"
-}
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
