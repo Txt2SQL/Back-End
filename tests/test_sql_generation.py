@@ -7,6 +7,7 @@ from langchain_chroma import Chroma
 from typing import Dict, List, Tuple
 from langchain_ollama import OllamaEmbeddings
 from src.config.settings import AVAILABLE_MODELS
+from src.mysql_linker import get_db_connection, list_databases
 from src.logging_utils import (
     setup_single_project_logger, 
     setup_logger
@@ -22,6 +23,8 @@ from src.query_generator import (
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
+from tests import generate_realistic_mysql_db as db_generator
+from pathlib import Path
 
 # ==================== CONFIGURATION ====================
 SCHEMA_FILE = "./input/schema.json"   # Adjust path to schema file
@@ -37,6 +40,80 @@ setup_single_project_logger()
 logger = setup_logger(__name__)
 
 # ==================== TEST FUNCTIONS ====================
+
+DB_OPTIONS = ["supermarket", "monica", "hacker_news", "akaunting"]
+
+def select_test_database() -> str:
+    """
+    Prompt the user to select a database for test execution.
+    """
+    print("👉 Select a database to use for the test:")
+    for idx, name in enumerate(DB_OPTIONS, 1):
+        print(f"  {idx}. {name}")
+
+    while True:
+        choice = input("Enter the database name or number: ").strip().lower()
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(DB_OPTIONS):
+                return DB_OPTIONS[idx]
+        elif choice in DB_OPTIONS:
+            return choice
+        print("❌ Invalid selection. Please choose a valid database name or number.")
+
+
+def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
+    """
+    Ensure the selected database exists and is populated.
+    """
+    existing_dbs = list_databases()
+    if db_name in existing_dbs:
+        print(f"✅ Database '{db_name}' already exists. Connecting to it...")
+        conn = get_db_connection(database_name=db_name)
+        if conn.is_connected():
+            print(f"✅ Connection to '{db_name}' established.")
+        conn.close()
+        return
+
+    print(f"🏢  Database '{db_name}' not found. Creating and populating it...")
+    ddl_path = ddl_dir / f"{db_name}.sql"
+    if not ddl_path.exists():
+        raise FileNotFoundError(f"❌ DDL file not found for '{db_name}': {ddl_path}")
+
+    conn = get_db_connection(database_name=None)
+    cursor = conn.cursor()
+
+    db_generator.create_database(cursor, db_name)
+    cursor.execute(f"USE {db_generator.quote_identifier(db_name)}")
+    db_generator.execute_sql_file(cursor, str(ddl_path))
+    conn.commit()
+
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+    cursor.execute("SHOW TABLES")
+    tables = [table[0] for table in cursor.fetchall()]
+    for table in tables:
+        db_generator.populate_table(cursor, table)
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+    print(f"✅ Database '{db_name}' created and populated.")
+
+
+def configure_run_paths(db_name: str) -> Tuple[str, str]:
+    """
+    Configure input and output paths for the selected database.
+    """
+    base_dir = Path(__file__).resolve().parent
+    requests_dir = base_dir / "input" / "requests"
+    output_dir = base_dir / "output" / f"{db_name}_results"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    input_file = requests_dir / f"{db_name}_request.txt"
+    output_file = output_dir / f"test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
+    return str(input_file), str(output_file)
 
 def load_test_requests(input_file: str) -> List[str]:
     """
@@ -434,8 +511,6 @@ def execute_sample_query(input_path: str):
 
 # ==================== PYTEST TEST CASES ====================
 
-from pathlib import Path
-
 @pytest.fixture
 def schema():
     project_root = Path(__file__).resolve().parents[1]
@@ -724,9 +799,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     if args.test == "run":
+        selected_db = select_test_database()
+        ddl_dir = Path(__file__).resolve().parent / "input" / "existing_ddl"
+        ensure_database_ready(selected_db, ddl_dir)
+
+        input_file, output_file = configure_run_paths(selected_db)
+        if not os.path.exists(input_file):
+            raise FileNotFoundError(f"❌ Input file not found: {input_file}")
+
         # Update global variables based on args
-        INPUT_FILE = args.input
-        OUTPUT_FILE = args.output
+        INPUT_FILE = input_file
+        OUTPUT_FILE = output_file
         TIMEOUT_PER_MODEL = args.timeout
         
         # Run the comprehensive tests
