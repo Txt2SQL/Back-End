@@ -1,0 +1,20 @@
+Show all Computer Science students with their GPA
+List courses taught by each instructor
+Find students enrolled in 'Data Structures' course
+Show all enrollments with student names, course names, and grades
+List instructors and the departments they belong to
+Count how many students are in each major
+Calculate average GPA by department
+Find the average salary of instructors by department
+Count how many courses each department offers
+Calculate average grade for each course
+Find students who haven't enrolled in any courses
+List courses with no enrollments
+Show instructors who don't teach any courses
+Find students with GPA above 3.5 and their enrolled courses
+List departments with the number of students and instructors
+Find the most popular course (most enrollments)
+Calculate each student's average grade across all courses
+Find instructors earning more than the average salary
+List students who are taking more than 2 courses
+Find departments with average student GPA above 3.5

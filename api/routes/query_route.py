@@ -5,15 +5,15 @@ import json
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 
-from query_generator import (
+from src.schema.generation.query_generator import (
     generate_sql_query,
     validate_sql_syntax,
     compute_schema_id,
     get_schema_source,
     create_metadata
 )
-from query_feedback_store import store_query_feedback
-from mysql_linker import execute_sql_query
+from src.query_feedback_store import store_query_feedback
+from src.mysql_linker import execute_sql_query
 
 # =========================
 # CONFIG

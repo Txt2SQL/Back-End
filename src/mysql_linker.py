@@ -4,7 +4,7 @@ from typing import Tuple, Any
 from collections import defaultdict
 from dotenv import load_dotenv
 from getpass import getpass
-from logging_utils import setup_logger
+from src.logging_utils import setup_logger
 
 ENV_MYSQL_FILE = ".env.mysql"
 
