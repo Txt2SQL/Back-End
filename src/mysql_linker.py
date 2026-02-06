@@ -20,7 +20,7 @@ def mysql_env_is_valid() -> bool:
     required = REQUIRED_CREDENTIAL_VARS
     return all(os.getenv(v) for v in required)
 
-def prompt_mysql_credentials(include_db_name: bool = False) -> dict:
+def prompt_mysql_credentials() -> dict:
     logger.info("🔐 MySQL configuration required")
 
     creds = {
@@ -29,8 +29,6 @@ def prompt_mysql_credentials(include_db_name: bool = False) -> dict:
         "DB_USER": input("DB_USER: ").strip(),
         "DB_PASSWORD": getpass("DB_PASSWORD: "),
     }
-    if include_db_name:
-        creds["DB_NAME"] = input("DB_NAME: ").strip()
     return creds
 
 def write_mysql_env(creds: dict) -> None:

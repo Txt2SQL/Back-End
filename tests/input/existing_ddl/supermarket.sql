@@ -1,4 +1,3 @@
--- Create Customers table
 CREATE TABLE Customers (
     customer_id INT AUTO_INCREMENT,
     first_name VARCHAR(50) NOT NULL,
