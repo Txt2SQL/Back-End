@@ -9,3 +9,10 @@ AVAILABLE_MODELS = {
     5: "gpt-4o",
     6: "gpt-5-mini",
 }
+
+REQUIRED_CREDENTIAL_VARS = [
+    "DB_HOST",
+    "DB_PORT",
+    "DB_USER",
+    "DB_PASSWORD",
+]

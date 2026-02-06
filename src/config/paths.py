@@ -10,3 +10,5 @@ TESTS_DIR = PROJECT_ROOT / "tests"
 
 SAMPLE_QUERY_PATH = DATA_DIR / "sample_query.sql"
 VECTOR_STORE_DIR = DATA_DIR / "vector_store"
+
+ENV_MYSQL_FILE = ".env.mysql"

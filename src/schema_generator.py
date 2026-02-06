@@ -385,7 +385,7 @@ def acquire_schema_from_text(raw_text: str):
 
 def acquire_schema_from_mysql():
     # Ensure MySQL credentials exist
-    if not mysql_env_is_valid(require_db_name=False):
+    if not mysql_env_is_valid():
         creds = prompt_mysql_credentials()
         write_mysql_env(creds)
 

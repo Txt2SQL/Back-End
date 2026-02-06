@@ -5,31 +5,19 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from getpass import getpass
 from src.logging_utils import setup_logger
-
-ENV_MYSQL_FILE = ".env.mysql"
-
-REQUIRED_CREDENTIAL_VARS = [
-    "DB_HOST",
-    "DB_PORT",
-    "DB_USER",
-    "DB_PASSWORD",
-]
-
-REQUIRED_VARS = [
-    *REQUIRED_CREDENTIAL_VARS,
-    "DB_NAME",
-]
+from src.config.paths import ENV_MYSQL_FILE
+from src.config.settings import REQUIRED_CREDENTIAL_VARS
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
 
-def mysql_env_is_valid(require_db_name: bool = True) -> bool:
+def mysql_env_is_valid() -> bool:
     if not os.path.exists(ENV_MYSQL_FILE):
         return False
 
     load_dotenv(ENV_MYSQL_FILE, override=True)
 
-    required = REQUIRED_VARS if require_db_name else REQUIRED_CREDENTIAL_VARS
+    required = REQUIRED_CREDENTIAL_VARS
     return all(os.getenv(v) for v in required)
 
 def prompt_mysql_credentials(include_db_name: bool = False) -> dict:
@@ -63,33 +51,27 @@ def write_mysql_env(creds: dict) -> None:
 
     logger.info(f"✅ MySQL configuration saved to {ENV_MYSQL_FILE}")
 
-def ensure_mysql_env(require_db_name: bool = True):
-    if mysql_env_is_valid(require_db_name=require_db_name):
+def ensure_mysql_env():
+    if mysql_env_is_valid():
         return
 
-    creds = prompt_mysql_credentials(include_db_name=require_db_name)
+    creds = prompt_mysql_credentials()
     write_mysql_env(creds)
-    load_dotenv(ENV_MYSQL_FILE, override=True)
+    load_dotenv(ENV_MYSQL_FILE)
 
 def get_db_connection(database_name: str | None = None):
-    if database_name is None:
-        database_name = os.getenv("DB_NAME")
-    require_db_name = bool(database_name)
-    ensure_mysql_env(require_db_name=require_db_name)
+
+    ensure_mysql_env()
 
     logger.info("🔧 Creating DB connection object...")
     try:
-        connection_args = {
+        return mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             port=int(os.getenv("DB_PORT", 3306)),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASSWORD"),
+            database = database_name            
         )
-        if database_name:
-            connection_args["database"] = database_name
-        conn = mysql.connector.connect(**connection_args)
-        logger.info("✅ DB connection object created")
-        return conn
     except Exception as e:
         logger.error(f"❌ Failed to connect to MySQL: {e}")
         raise
