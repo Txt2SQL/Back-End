@@ -1,4 +1,6 @@
-import json, os, re
+import json, os, re, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from dotenv import load_dotenv
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
@@ -8,7 +10,6 @@ from src.retriver_utils import build_vector_store
 from src.config.paths import DATA_DIR, VECTOR_STORE_DIR, SCHEMA_FILE
 from src.mysql_linker import (
     extract_schema,
-    export_schema_sql,
     list_databases,
     mysql_env_is_valid,
     prompt_mysql_credentials,

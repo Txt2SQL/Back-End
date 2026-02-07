@@ -334,7 +334,7 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
             f.write(f"{n}. {truncated_request}\n\n")
             
             # Write results for each model
-            for index in range(1, len(AVAILABLE_MODELS) + 1):
+            for index in range(5, len(AVAILABLE_MODELS)):
                 model_name = AVAILABLE_MODELS[index]
                 if model_name in model_results:
                     sql, status, outcome = model_results[model_name]
@@ -350,7 +350,7 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
     print(f"✅ Results written to {output_file}")
 
 
-def sanitize_request_filename(request: str, max_length: int = 60) -> str:
+def sanitize_request_filename(request: str, max_length: int = 15) -> str:
     """
     Build a filesystem-friendly name from the request text.
     """
@@ -467,7 +467,7 @@ def run_comprehensive_tests(mode: str, db_name: str):
         request_start_time = time.time()
         
         # Test each available model
-        for index in range(1, len(AVAILABLE_MODELS) + 1):
+        for index in range(5, len(AVAILABLE_MODELS)):
             name = AVAILABLE_MODELS[index]
             print(f"\nTesting with model: {name}")
             model_start_time = time.time()
@@ -729,11 +729,10 @@ def test_runtime_error_and_store(schema, vector_stores, load_file, sql_file):
 def test_complex_prompt_creation_only(schema, vector_stores, capsys):
     query_vs, schema_vs = vector_stores
 
-    generate_sql_query(
+    create_prompt(
         user_request="Show total sales by customer",
         source="mysql",
         full_schema=schema,
-        model="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
@@ -748,11 +747,10 @@ def test_complex_prompt_creation_only(schema, vector_stores, capsys):
 def test_simple_prompt_creation_only(schema, vector_stores, capsys):
     query_vs, schema_vs = vector_stores
 
-    generate_sql_query(
-        user_request="List all customers",
+    create_prompt(
+        user_request="Show total sales by customer",
         source="text",
         full_schema=schema,
-        model="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )

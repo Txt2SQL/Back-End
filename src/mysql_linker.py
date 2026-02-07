@@ -1,12 +1,13 @@
-import mysql.connector
-import os
+import mysql.connector, os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from typing import Tuple, Any
 from collections import defaultdict
 from dotenv import load_dotenv
 from getpass import getpass
-from logging_utils import setup_logger
-from config.paths import ENV_MYSQL_FILE
-from config.settings import REQUIRED_CREDENTIAL_VARS
+from src.logging_utils import setup_logger
+from src.config.paths import ENV_MYSQL_FILE
+from src.config.settings import REQUIRED_CREDENTIAL_VARS
 
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
@@ -192,21 +193,3 @@ def extract_schema(database_name: str | None = None) -> dict:
     logger.info("🏁 Schema extraction completed")
 
     return schema
-
-def export_schema_sql(database_name: str) -> str:
-    conn = get_db_connection(database_name=database_name)
-    cursor = conn.cursor()
-    cursor.execute("SHOW TABLES")
-    tables = [row[0] for row in cursor.fetchall()] # pyright: ignore[reportArgumentType]
-
-    statements = []
-    for table_name in tables:
-        cursor.execute(f"SHOW CREATE TABLE `{table_name}`")
-        row = cursor.fetchone()
-        if row and len(row) > 1:
-            statements.append(f"{row[1]};") # pyright: ignore[reportArgumentType]
-
-    cursor.close()
-    conn.close()
-
-    return "\n\n".join(statements) + ("\n" if statements else "")

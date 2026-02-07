@@ -1,24 +1,26 @@
-import sqlglot, json, hashlib, os
+import sqlglot, json, hashlib, os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from dotenv import load_dotenv
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
-from mysql_linker import execute_sql_query
-from config.settings import AVAILABLE_MODELS
-from logging_utils import (
+from src.mysql_linker import execute_sql_query
+from src.config.settings import AVAILABLE_MODELS
+from src.logging_utils import (
     setup_logger,
     print_llm_prompt,
     print_query_vector_store
 )
-from retriver_utils import (
+from src.retriver_utils import (
     store_query_feedback,
     retrieve_failed_queries,
     build_penalty_section,
     create_metadata
 )
-from config.paths import (
+from src.config.paths import (
     VECTOR_STORE_DIR,
     SAMPLE_QUERY_PATH,
     SCHEMA_FILE
