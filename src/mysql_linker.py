@@ -75,7 +75,7 @@ def get_db_connection(database_name: str | None = None):
         logger.error(f"❌ Failed to connect to MySQL: {e}")
         raise
 
-def execute_sql_query(sql_query: str, database_name: str | None = None) -> Tuple[str, list]:
+def execute_sql_query(sql_query: str, database_name: str | None = None):
     """
     Executes a SQL query against the real database.
 

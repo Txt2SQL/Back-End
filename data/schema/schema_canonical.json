@@ -1,32 +1,41 @@
 {
   "tables": [
     {
-      "name": "accounts_customuser",
+      "name": "categories",
       "columns": [
         {
-          "name": "password",
+          "name": "category_id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL",
+            "AUTO_INCREMENT"
+          ]
+        },
+        {
+          "name": "category_name",
           "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "last_login",
-          "type": "DATETIME",
+          "name": "description",
+          "type": "TEXT",
           "constraints": []
-        },
+        }
+      ]
+    },
+    {
+      "name": "customers",
+      "columns": [
         {
-          "name": "is_superuser",
-          "type": "TINYINT",
+          "name": "customer_id",
+          "type": "INT",
           "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "username",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
+            "PRIMARY KEY",
+            "NOT NULL",
+            "AUTO_INCREMENT"
           ]
         },
         {
@@ -46,536 +55,55 @@
         {
           "name": "email",
           "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "is_staff",
-          "type": "TINYINT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "is_active",
-          "type": "TINYINT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "date_joined",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "karma",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "about",
-          "type": "LONGTEXT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "level",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "lft",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "parent_id",
-          "type": "CHAR",
           "constraints": []
         },
         {
-          "name": "rght",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
+          "name": "phone",
+          "type": "VARCHAR",
+          "constraints": []
         },
         {
-          "name": "tree_id",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
+          "name": "address",
+          "type": "VARCHAR",
+          "constraints": []
         },
         {
-          "name": "used_invitation_id",
-          "type": "CHAR",
+          "name": "registration_date",
+          "type": "DATE",
           "constraints": []
         }
       ]
     },
     {
-      "name": "accounts_customuser_groups",
+      "name": "employees",
       "columns": [
         {
-          "name": "id",
+          "name": "employee_id",
           "type": "INT",
           "constraints": [
             "PRIMARY KEY",
-            "NOT NULL"
+            "NOT NULL",
+            "AUTO_INCREMENT"
           ]
         },
         {
-          "name": "customuser_id",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "group_id",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "accounts_customuser_user_permissions",
-      "columns": [
-        {
-          "name": "id",
-          "type": "INT",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "customuser_id",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "permission_id",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "accounts_emailverification",
-      "columns": [
-        {
-          "name": "id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "created_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "changed_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "verified",
-          "type": "TINYINT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "verified_at",
-          "type": "DATETIME",
-          "constraints": []
-        },
-        {
-          "name": "email",
+          "name": "first_name",
           "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "user_id",
-          "type": "CHAR",
+          "name": "last_name",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "verification_code",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "accounts_invitation",
-      "columns": [
-        {
-          "name": "id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "created_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "changed_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "num_signups",
-          "type": "INT",
-          "constraints": []
-        },
-        {
-          "name": "invited_email_address",
+          "name": "position",
           "type": "VARCHAR",
           "constraints": []
-        },
-        {
-          "name": "invite_code",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "inviting_user_id",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "accounts_passwordresetrequest",
-      "columns": [
-        {
-          "name": "id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "created_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "changed_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "verification_code",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "user_id",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "auth_group",
-      "columns": [
-        {
-          "name": "id",
-          "type": "INT",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "name",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "auth_group_permissions",
-      "columns": [
-        {
-          "name": "id",
-          "type": "INT",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "group_id",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "permission_id",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "auth_permission",
-      "columns": [
-        {
-          "name": "id",
-          "type": "INT",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "name",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "content_type_id",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "codename",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "django_admin_log",
-      "columns": [
-        {
-          "name": "id",
-          "type": "INT",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "action_time",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "object_id",
-          "type": "LONGTEXT",
-          "constraints": []
-        },
-        {
-          "name": "object_repr",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "action_flag",
-          "type": "SMALLINT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "change_message",
-          "type": "LONGTEXT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "content_type_id",
-          "type": "INT",
-          "constraints": []
-        },
-        {
-          "name": "user_id",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "django_content_type",
-      "columns": [
-        {
-          "name": "id",
-          "type": "INT",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "app_label",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "model",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "django_migrations",
-      "columns": [
-        {
-          "name": "id",
-          "type": "INT",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "app",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "name",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "applied",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "django_session",
-      "columns": [
-        {
-          "name": "session_key",
-          "type": "VARCHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "session_data",
-          "type": "LONGTEXT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "expire_date",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "emaildigest_anonymoussubscription",
-      "columns": [
-        {
-          "name": "subscription_ptr_id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
         },
         {
           "name": "email",
@@ -583,91 +111,92 @@
           "constraints": []
         },
         {
-          "name": "verified",
-          "type": "TINYINT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "verified_at",
-          "type": "DATETIME",
+          "name": "phone",
+          "type": "VARCHAR",
           "constraints": []
         },
         {
-          "name": "verification_code",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
+          "name": "hire_date",
+          "type": "DATE",
+          "constraints": []
         },
         {
-          "name": "logged_in_user_id",
-          "type": "CHAR",
+          "name": "salary",
+          "type": "DECIMAL",
           "constraints": []
         }
       ]
     },
     {
-      "name": "emaildigest_emaildigest",
+      "name": "inventory",
       "columns": [
         {
-          "name": "id",
-          "type": "CHAR",
+          "name": "inventory_id",
+          "type": "INT",
           "constraints": [
             "PRIMARY KEY",
-            "NOT NULL"
+            "NOT NULL",
+            "AUTO_INCREMENT"
           ]
         },
         {
-          "name": "created_at",
-          "type": "DATETIME",
+          "name": "product_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "quantity_change",
+          "type": "INT",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "changed_at",
-          "type": "DATETIME",
+          "name": "change_date",
+          "type": "DATE",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "frequency",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "weekly_weekday",
+          "name": "change_type",
           "type": "VARCHAR",
           "constraints": []
         }
       ]
     },
     {
-      "name": "emaildigest_emaildigest_stories",
+      "name": "order_details",
       "columns": [
         {
-          "name": "id",
+          "name": "order_detail_id",
           "type": "INT",
           "constraints": [
             "PRIMARY KEY",
-            "NOT NULL"
+            "NOT NULL",
+            "AUTO_INCREMENT"
           ]
         },
         {
-          "name": "emaildigest_id",
-          "type": "CHAR",
+          "name": "order_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "product_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "quantity",
+          "type": "INT",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "story_id",
-          "type": "CHAR",
+          "name": "unit_price",
+          "type": "DECIMAL",
           "constraints": [
             "NOT NULL"
           ]
@@ -675,339 +204,246 @@
       ]
     },
     {
-      "name": "emaildigest_subscription",
+      "name": "orders",
       "columns": [
         {
-          "name": "id",
-          "type": "CHAR",
+          "name": "order_id",
+          "type": "INT",
           "constraints": [
             "PRIMARY KEY",
-            "NOT NULL"
+            "NOT NULL",
+            "AUTO_INCREMENT"
           ]
         },
         {
-          "name": "created_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "changed_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "frequency",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "weekly_weekday",
-          "type": "VARCHAR",
+          "name": "customer_id",
+          "type": "INT",
           "constraints": []
         },
         {
-          "name": "verfied_email",
-          "type": "VARCHAR",
+          "name": "employee_id",
+          "type": "INT",
           "constraints": []
         },
         {
-          "name": "is_active",
-          "type": "TINYINT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "emaildigest_unsubscription",
-      "columns": [
-        {
-          "name": "id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "created_at",
-          "type": "DATETIME",
+          "name": "order_date",
+          "type": "DATE",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "changed_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "from_digest_id",
-          "type": "CHAR",
+          "name": "total_amount",
+          "type": "DECIMAL",
           "constraints": []
         },
         {
-          "name": "subscription_id",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "emaildigest_usersubscription",
-      "columns": [
-        {
-          "name": "subscription_ptr_id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "user_id",
-          "type": "CHAR",
-          "constraints": []
-        }
-      ]
-    },
-    {
-      "name": "news_comment",
-      "columns": [
-        {
-          "name": "item_ptr_id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "text",
-          "type": "LONGTEXT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "to_story_id",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "news_item",
-      "columns": [
-        {
-          "name": "id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "created_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "changed_at",
-          "type": "DATETIME",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "upvotes",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "downvotes",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "points",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "num_comments",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "lft",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "rght",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "tree_id",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "level",
-          "type": "INT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "parent_id",
-          "type": "CHAR",
-          "constraints": []
-        },
-        {
-          "name": "user_id",
-          "type": "CHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "is_ask",
-          "type": "TINYINT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "is_show",
-          "type": "TINYINT",
-          "constraints": [
-            "NOT NULL"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "news_story",
-      "columns": [
-        {
-          "name": "item_ptr_id",
-          "type": "CHAR",
-          "constraints": [
-            "PRIMARY KEY",
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "url",
-          "type": "VARCHAR",
-          "constraints": []
-        },
-        {
-          "name": "text",
-          "type": "LONGTEXT",
-          "constraints": []
-        },
-        {
-          "name": "title",
-          "type": "VARCHAR",
-          "constraints": [
-            "NOT NULL"
-          ]
-        },
-        {
-          "name": "duplicate_of_id",
-          "type": "CHAR",
-          "constraints": []
-        },
-        {
-          "name": "domain",
+          "name": "status",
           "type": "VARCHAR",
           "constraints": []
         }
       ]
     },
     {
-      "name": "news_vote",
+      "name": "products",
       "columns": [
         {
-          "name": "id",
-          "type": "CHAR",
+          "name": "product_id",
+          "type": "INT",
           "constraints": [
             "PRIMARY KEY",
-            "NOT NULL"
+            "NOT NULL",
+            "AUTO_INCREMENT"
           ]
         },
         {
-          "name": "created_at",
-          "type": "DATETIME",
+          "name": "product_name",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "changed_at",
-          "type": "DATETIME",
+          "name": "category_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "supplier_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "price",
+          "type": "DECIMAL",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "item_id",
-          "type": "CHAR",
+          "name": "stock_quantity",
+          "type": "INT",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "user_id",
-          "type": "CHAR",
+          "name": "description",
+          "type": "TEXT",
+          "constraints": []
+        }
+      ]
+    },
+    {
+      "name": "reviews",
+      "columns": [
+        {
+          "name": "review_id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL",
+            "AUTO_INCREMENT"
+          ]
+        },
+        {
+          "name": "customer_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "product_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "order_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "rating",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "comment",
+          "type": "TEXT",
+          "constraints": []
+        },
+        {
+          "name": "review_date",
+          "type": "DATE",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
-          "name": "vote",
-          "type": "SMALLINT",
+          "name": "helpful_count",
+          "type": "INT",
+          "constraints": []
+        }
+      ]
+    },
+    {
+      "name": "shipments",
+      "columns": [
+        {
+          "name": "shipment_id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL",
+            "AUTO_INCREMENT"
+          ]
+        },
+        {
+          "name": "order_id",
+          "type": "INT",
+          "constraints": []
+        },
+        {
+          "name": "shipment_date",
+          "type": "DATE",
           "constraints": [
             "NOT NULL"
           ]
+        },
+        {
+          "name": "carrier",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "tracking_number",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "estimated_delivery",
+          "type": "DATE",
+          "constraints": []
+        },
+        {
+          "name": "actual_delivery",
+          "type": "DATE",
+          "constraints": []
+        },
+        {
+          "name": "shipping_cost",
+          "type": "DECIMAL",
+          "constraints": []
+        }
+      ]
+    },
+    {
+      "name": "suppliers",
+      "columns": [
+        {
+          "name": "supplier_id",
+          "type": "INT",
+          "constraints": [
+            "PRIMARY KEY",
+            "NOT NULL",
+            "AUTO_INCREMENT"
+          ]
+        },
+        {
+          "name": "supplier_name",
+          "type": "VARCHAR",
+          "constraints": [
+            "NOT NULL"
+          ]
+        },
+        {
+          "name": "contact_person",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "phone",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR",
+          "constraints": []
+        },
+        {
+          "name": "address",
+          "type": "VARCHAR",
+          "constraints": []
         }
       ]
     }
   ],
   "semantic_notes": [],
   "source": "mysql",
-  "database": "hacker_news"
+  "database": "supermarket"
 }

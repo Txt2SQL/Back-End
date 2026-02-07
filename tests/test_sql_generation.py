@@ -21,6 +21,7 @@ from src.query_generator import (
     create_metadata,
     get_llm_model,
     create_prompt,
+    generation_loop,
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
@@ -193,58 +194,20 @@ def run_single_test(
         llm_model = get_llm_model(model_index)
         logger.info("Running single test with model index %s.", model_index)
         # Generate SQL query
-        template = create_prompt(
+            
+        sql, syntax_status, execution_status, execution_output, error_category = generation_loop(
             user_request=request,
             source=mode,
             full_schema=full_schema,
+            database_name=None,
             query_vs=query_vs,
             schema_vs=schema_vs,
+            llm_model=llm_model
         )
-            
-        sql = generate_sql_query(llm_model, template)
-        logger.info("Generated SQL for request.")
-
-        execution_status = None
-        execution_output = None
         
-        syntax_status = validate_sql_syntax(sql)
-
-        database_name = full_schema["database"]
-        error_feedback = None
-        if syntax_status != "OK":
-            print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
-            logger.warning("Syntax validation failed: %s", syntax_status)
-            error_feedback=(
-                "The previous SQL query failed syntax validation "
-                f"(status={syntax_status})."
-            )
-
-        if syntax_status == "OK" and mode == "mysql":
-            execution_status, execution_output = execute_sql_query(sql, database_name=full_schema["database"])
-
-            if execution_status != "OK":
-                logger.warning("Execution failed: %s", execution_output)
-                error_feedback=(
-                    "The previous SQL query failed at runtime with this error: "
-                    f"{execution_output}."
-                )
-
-        if syntax_status != "OK" or execution_status != "OK":
-            template = create_prompt(
-                user_request=request,
-                source=mode,
-                full_schema=full_schema,
-                query_vs=query_vs,
-                schema_vs=schema_vs,
-                error_feedback=error_feedback
-            )
-            sql = generate_sql_query(llm_model, template)
-
-            syntax_status = validate_sql_syntax(sql)
-
-            if syntax_status == "OK" and mode != "mysql":
-                execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
-
+        if syntax_status == "OK" and mode != "mysql":
+            execution_status, execution_output = execute_sql_query(sql)
+        
         metadata = create_metadata(
             sql_query=sql,
             syntax_status=syntax_status,
@@ -253,7 +216,8 @@ def run_single_test(
             user_request=request,
             model_index=model_index,
             execution_status=execution_status,
-            execution_output=execution_output
+            execution_output=execution_output,
+            error_category=error_category
         )
 
         store_query_feedback(

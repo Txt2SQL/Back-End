@@ -113,10 +113,18 @@ def get_context(user_request: str, vector_store: Chroma) -> str:
 
     return schema_context
 
-def pretty_print_query_preview(rows: list | None, max_rows: int = 5, max_col_width: int = 40) -> None:
+def pretty_print_query_preview(rows: list | None | str, max_rows: int = 5, max_col_width: int = 40) -> None:
     """
     Print a compact, fancy preview of fetched rows.
     """
+    if rows is None:
+        print("\n📭 Query executed successfully, but no rows were returned.")
+        return
+
+    if isinstance(rows, str):
+        print("\n📭 Query executed, but output is not row data.")
+        return
+
     if not rows:
         print("\n📭 Query executed successfully, but no rows were returned.")
         return
@@ -471,7 +479,7 @@ def generate_sql_query(
 def llm_feedback(
     sql: str,
     request: str,
-    execution_output: list | None,
+    execution_output: list | None | str,
 ) -> str:
     """
     Uses an Azure OpenAI model to evaluate whether the SQL query
@@ -483,7 +491,7 @@ def llm_feedback(
     """
 
     # Safety guard
-    if not execution_output:
+    if not execution_output or isinstance(execution_output, str):
         return (
             "INCORRECT_QUERY: The query returned no results, "
             "so correctness cannot be verified."
@@ -588,8 +596,8 @@ def evaluate_feedback_error(
     source: str, 
     database_name: str | None = None, 
     execution_status: str | None = None,
-    execution_output: list | None = None,
-    use_llm_feedback: bool = True) -> Tuple[str, str | None, list | None, str | None]:
+    execution_output: list[Any] | str | None = None,
+    use_llm_feedback: bool = True):
     
     syntax_status = validate_sql_syntax(sql)
     print()
@@ -649,6 +657,58 @@ def build_targeted_retry_instruction(error_category: str) -> str:
     }
 
     return instructions.get(error_category, instructions["UNKNOWN_ERROR"])
+
+def generation_loop(
+    user_request: str,
+    source: str,
+    full_schema: dict,
+    database_name: str | None,
+    query_vs: Chroma,
+    schema_vs: Chroma,
+    llm_model: str | OllamaLLM | AzureChatOpenAI,
+):
+    sql = ""
+    execution_status = None
+    execution_output = None
+    error_feedback = None
+    syntax_status = "UNKNOWN"
+    error_category = None
+
+    for attempt in range(1, 4):
+        template = create_prompt(
+            user_request=user_request,
+            source=source,
+            full_schema=full_schema,
+            query_vs=query_vs,
+            schema_vs=schema_vs,
+            error_feedback=error_feedback,
+        )
+
+        print(f"\n🔍 Generating query (attempt {attempt}/3)...")
+        sql = generate_sql_query(llm_model, template)
+
+
+        syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(
+            user_request,
+            sql,
+            source,
+            database_name,
+            execution_status,
+            execution_output,
+            use_llm_feedback=attempt >= 2,
+        )
+
+        if not error_feedback:
+            break
+
+        if attempt >= 2 and error_feedback.startswith("INCORRECT_QUERY"):
+            error_category, _ = classify_llm_feedback(error_feedback)
+
+            if attempt >= 3:
+                retry_hint = build_targeted_retry_instruction(error_category)
+                error_feedback = f"{error_feedback}\n\n{retry_hint}"
+
+    return sql, syntax_status, execution_status, execution_output, error_category
 
 def main():
     """Main function to handle the interactive workflow."""
@@ -723,49 +783,22 @@ def main():
                 database_name = "supermarket"
                 logger.info("Using 'supermarket' database for without_llm mode.")
             
-            sql = ""
-            execution_status = None
-            execution_output = None
-            error_feedback = None
-            syntax_status = "UNKNOWN"
-            error_category = None
+            print(f"\n🔍 Generating query")
+            
+            # Generate SQL query
+            sql, syntax_status, execution_status, execution_output, error_category = generation_loop(
+                llm_model=llm_model,
+                user_request=user_request,
+                source=source,
+                full_schema=full_schema,
+                database_name=database_name,
+                query_vs=query_vs,
+                schema_vs=schema_vs,
+            )
 
-            for attempt in range(1, 4):
-                template = create_prompt(
-                    user_request=user_request,
-                    source=source,
-                    full_schema=full_schema,
-                    query_vs=query_vs,
-                    schema_vs=schema_vs,
-                    error_feedback=error_feedback if attempt > 1 else None,
-                )
-
-                print(f"\n🔍 Generating query (attempt {attempt}/3)...")
-                sql = generate_sql_query(llm_model, template)
-
-                print("\n💡 Generated SQL query:\n")
-                print(sql)
-                print("\n" + "=" * 60)
-
-                syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(
-                    user_request,
-                    sql,
-                    source,
-                    database_name,
-                    execution_status,
-                    execution_output,
-                    use_llm_feedback=attempt >= 2,
-                )
-
-                if not error_feedback:
-                    break
-
-                if attempt >= 2 and error_feedback.startswith("INCORRECT_QUERY"):
-                    error_category, _ = classify_llm_feedback(error_feedback)
-
-                    if attempt >= 3:
-                        retry_hint = build_targeted_retry_instruction(error_category)
-                        error_feedback = f"{error_feedback}\n\n{retry_hint}"
+            print("\n💡 Generated SQL query:\n")
+            print(sql)
+            print("\n" + "=" * 60)
 
             if execution_status == "OK":
                 pretty_print_query_preview(execution_output)
