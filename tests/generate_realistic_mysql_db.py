@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from faker import Faker
 from mysql.connector import Error
 from src.mysql_linker import get_db_connection
+from src.logging_utils import setup_single_project_logger, setup_logger
 
 
 # Configuration
@@ -13,6 +14,8 @@ SQL_DIR = './existing_ddl'
 ROWS_PER_TABLE = 100  # How many fake rows to generate per table
 
 fake = Faker()
+setup_single_project_logger()
+logger = setup_logger(__name__)
 
 
 def quote_identifier(identifier):
@@ -23,6 +26,7 @@ def quote_identifier(identifier):
 def create_database(cursor, db_name):
     """Create the database only when it does not already exist."""
     try:
+        logger.info("Checking if database exists: %s", db_name)
         cursor.execute(
             "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = %s",
             (db_name,)
@@ -31,19 +35,23 @@ def create_database(cursor, db_name):
 
         if db_exists:
             print(f"[=] Database '{db_name}' already exists. Skipping create/DDL and appending random rows.")
+            logger.info("Database '%s' already exists; skipping create/DDL and appending rows.", db_name)
             return False
 
         cursor.execute(f"CREATE DATABASE {quote_identifier(db_name)}")
         print(f"[+] Database '{db_name}' created.")
+        logger.info("Database '%s' created.", db_name)
         return True
     except Error as e:
         print(f"[-] Error creating database {db_name}: {e}")
+        logger.exception("Error creating database %s", db_name)
         raise
 
 
 def execute_sql_file(cursor, file_path):
     """Read SQL file and execute commands."""
     print(f"[*] Executing DDL from {file_path}...")
+    logger.info("Executing DDL from %s", file_path)
     with open(file_path, 'r', encoding='utf-8') as f:
         sql_content = f.read()
 
@@ -56,6 +64,7 @@ def execute_sql_file(cursor, file_path):
                 cursor.execute(command)
             except Error as e:
                 print(f"    Warning executing statement: {e}")
+                logger.warning("Warning executing statement from %s: %s", file_path, e)
 
 
 def get_table_schema(cursor, table_name):
@@ -106,6 +115,7 @@ def generate_fake_value(col_type, col_name):
 
 def populate_table(cursor, table_name):
     """Generate and insert fake data with fallback when batch insert fails."""
+    logger.info("Populating table: %s", table_name)
     columns = get_table_schema(cursor, table_name)
 
     # Filter out auto_increment columns (database handles them)
@@ -113,6 +123,7 @@ def populate_table(cursor, table_name):
 
     if not insert_cols:
         print(f"    Skipping {table_name} (No columns to insert)")
+        logger.info("Skipping %s (no insertable columns).", table_name)
         return
 
     col_names = [c['name'] for c in insert_cols]
@@ -135,6 +146,7 @@ def populate_table(cursor, table_name):
         inserted_rows = ROWS_PER_TABLE
     except Error as batch_error:
         print(f"    Batch insert failed for {table_name}: {batch_error}")
+        logger.warning("Batch insert failed for %s: %s", table_name, batch_error)
         # Fallback to per-row insert so one bad row does not drop all inserts
         for row in data_batch:
             try:
@@ -144,6 +156,7 @@ def populate_table(cursor, table_name):
                 continue
 
     print(f"    Inserted {inserted_rows}/{ROWS_PER_TABLE} rows into {table_name}")
+    logger.info("Inserted %s/%s rows into %s.", inserted_rows, ROWS_PER_TABLE, table_name)
 
 
 def main():
@@ -155,9 +168,11 @@ def main():
         conn = get_db_connection()
         if conn.is_connected():
             print("Connected to MySQL Server.")
+            logger.info("Connected to MySQL Server.")
             cursor = conn.cursor()
     except Error as e:
         print(f"Error connecting to MySQL: {e}")
+        logger.exception("Error connecting to MySQL.")
         return
 
     # 2. Get list of .sql files
@@ -165,6 +180,7 @@ def main():
 
     if not sql_files:
         print("No .sql files found in directory.")
+        logger.warning("No .sql files found in directory: %s", SQL_DIR)
         return
 
     for file_path in sql_files:
@@ -173,6 +189,7 @@ def main():
         db_name = os.path.splitext(base_name)[0]
 
         print(f"\n--- Processing {db_name} ---")
+        logger.info("Processing database: %s", db_name)
 
         # Create database only when missing
         db_created = create_database(cursor, db_name)
@@ -184,6 +201,7 @@ def main():
         if db_created:
             execute_sql_file(cursor, file_path)
             conn.commit()
+            logger.info("DDL executed and committed for %s.", db_name)
 
         # Disable FK checks to allow random insertion order
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
@@ -205,6 +223,7 @@ def main():
     if conn is not None and conn.is_connected():
         conn.close()
     print("\nDone.")
+    logger.info("Done.")
 
 
 if __name__ == "__main__":
