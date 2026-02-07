@@ -142,7 +142,8 @@ def create_metadata(
     user_request: str,
     model_index: int,
     execution_status: str | None = None,
-    execution_output: Any | None = None
+    execution_output: Any | None = None,
+    error_category: str | None = None
 ) -> QueryMetadata:
     logger.info("📝 Creating metadata for query execution...")
 
@@ -183,8 +184,6 @@ def create_metadata(
     # -----------------------------
     if error_message is None:
         error_type = None
-    elif status == "SYNTAX_ERROR":
-        error_type = "SYNTAX"
     else:
         error_type = classify_error(error_message)
     logger.info(f"🐛 Error type classified as: {error_type}")
