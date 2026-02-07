@@ -937,7 +937,7 @@ if __name__ == "__main__":
         # Update global variables based on args
         INPUT_FILE = args.input if args.input else input_file
         OUTPUT_FILE = args.output if args.output else output_file
-        output_dir = Path(OUTPUT_DIR) / selected_db / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        output_dir = Path(OUTPUT_DIR) / f"{selected_db}_results" / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         TIMEOUT_PER_MODEL = args.timeout
         
         # Run the comprehensive tests
