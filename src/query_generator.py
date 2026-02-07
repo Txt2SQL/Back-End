@@ -586,7 +586,8 @@ def evaluate_feedback_error(
     source: str, 
     database_name: str | None = None, 
     execution_status: str | None = None,
-    execution_output: list | None = None) -> Tuple[str, str | None, list | None, str | None]:
+    execution_output: list | None = None,
+    use_llm_feedback: bool = True) -> Tuple[str, str | None, list | None, str | None]:
     
     syntax_status = validate_sql_syntax(sql)
     print()
@@ -612,7 +613,7 @@ def evaluate_feedback_error(
                 "The previous SQL query failed at runtime with this error: "
                 f"{execution_output}."
             )
-    if syntax_status == "OK" and execution_status == "OK" and source == "mysql":
+    if use_llm_feedback and syntax_status == "OK" and execution_status == "OK" and source == "mysql":
         error_feedback = llm_feedback(sql, request, execution_output)
 
     return sql, execution_status, execution_output, error_feedback
@@ -720,65 +721,52 @@ def main():
                 database_name = "supermarket"
                 logger.info("Using 'supermarket' database for without_llm mode.")
             
-            template = create_prompt(
-                user_request=user_request,
-                source=source,
-                full_schema=full_schema,
-                query_vs=query_vs,
-                schema_vs=schema_vs,
-            )
-                
-            print("\n🔍 Generating query...")
-            sql = generate_sql_query(llm_model, template)
-
-            print("\n💡 Generated SQL query:\n")
-            print(sql)
-            print("\n" + "=" * 60)
-
             execution_status = None
             execution_output = None
-            
-            syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(user_request, sql, source, database_name)
+            error_feedback = None
+            syntax_status = "UNKNOWN"
 
-            if syntax_status != "OK" or execution_status != "OK":
-                if error_feedback and error_feedback.startswith("INCORRECT_QUERY"):
-                    error_category, _ = classify_llm_feedback(error_feedback)
-                    retry_hint = build_targeted_retry_instruction(error_category)
-                    error_feedback = f"{error_feedback}\n\n{retry_hint}"
-
-                print("\n♻️ Regenerating query with new feedback...")
+            for attempt in range(1, 4):
                 template = create_prompt(
                     user_request=user_request,
                     source=source,
                     full_schema=full_schema,
                     query_vs=query_vs,
                     schema_vs=schema_vs,
-                    error_feedback=error_feedback,
+                    error_feedback=error_feedback if attempt > 1 else None,
                 )
-                sql = generate_sql_query(llm_model, template)
-                syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(user_request, sql, source, database_name)
 
-                print("\n💡 Regenerated SQL query after runtime feedback:\n")
+                print(f"\n🔍 Generating query (attempt {attempt}/3)...")
+                sql = generate_sql_query(llm_model, template)
+
+                print("\n💡 Generated SQL query:\n")
                 print(sql)
                 print("\n" + "=" * 60)
 
+                _, execution_status, execution_output, error_feedback = evaluate_feedback_error(
+                    user_request,
+                    sql,
+                    source,
+                    database_name,
+                    execution_status,
+                    execution_output,
+                    use_llm_feedback=attempt >= 2,
+                )
+
                 syntax_status = validate_sql_syntax(sql)
                 print()
-                print(f"✅ Syntax check after runtime retry: {syntax_status}")
+                print(f"✅ Syntax check after attempt {attempt}: {syntax_status}")
 
-                if syntax_status == "OK" and source != "mysql":
-                    print()
-                    print("🚀 Executing regenerated query against the database...")
-                    print()
-                    execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
+                if not error_feedback:
+                    break
 
-                if syntax_status == "OK" and execution_status == "OK" and source == "mysql":
-                    error_feedback = llm_feedback(sql, user_request, execution_output)
-                    
-                    error_category, error_detail = classify_llm_feedback(error_feedback)
+                if attempt == 2 and error_feedback.startswith("INCORRECT_QUERY"):
+                    error_category, _ = classify_llm_feedback(error_feedback)
+                    retry_hint = build_targeted_retry_instruction(error_category)
+                    error_feedback = f"{error_feedback}\n\n{retry_hint}"
 
-                    logger.warning(f"❌ LLM judged query incorrect: {error_category}")
-                    logger.warning(f"📌 Details: {error_detail}")
+                if attempt == 3:
+                    break
 
             if execution_status == "OK":
                 pretty_print_query_preview(execution_output)
