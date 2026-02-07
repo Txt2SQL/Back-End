@@ -378,9 +378,6 @@ def write_request_results(request: str, model_results: Dict, output_dir: Path, i
     logger.info("Request results written to %s.", output_file)
     return str(output_file)
 
-<<<<<<< HEAD
-=======
-
 def add_request_log_handler(log_file: Path) -> logging.FileHandler:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(log_file, encoding="utf-8")
@@ -398,8 +395,6 @@ def remove_request_log_handler(handler: logging.FileHandler) -> None:
     root_logger.removeHandler(handler)
     handler.close()
 
-
->>>>>>> 1a07cf4fda70b960300bf68eecb499ed7fdaa663
 def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     """Print a summary of test results."""
     summary_lines = []
@@ -487,11 +482,11 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     
     # 4. Run tests for each request
     all_results = []
-    request_output_dir = output_dir / "intermediate_results"
+    request_output_dir = output_dir / "intermediate"
     
     for i, request in enumerate(test_requests, 1):
         request_slug = sanitize_request_filename(request)
-        request_log_file = per_request_output_dir / "logs" / f"{i:03d}_{request_slug}.log"
+        request_log_file = request_output_dir / "logs" / f"{i:03d}_{request_slug}.log"
         request_log_handler = add_request_log_handler(request_log_file)
         try:
             print(f"\n{'='*60}")
@@ -531,22 +526,11 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
             logger.info("Total time for request: %.1fs", request_time)
             
-<<<<<<< HEAD
-            model_results[name] = (sql_query, status, outcome)
-        
-        request_time = time.time() - request_start_time
-        print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
-        
-        all_results.append((request, model_results))
-        request_output_file = write_request_results(request, model_results, request_output_dir, i)
-        print(f"📄 Request log saved to: {request_output_file}")
-=======
             all_results.append((request, model_results))
-            request_output_file = write_request_results(request, model_results, per_request_output_dir, i)
+            request_output_file = write_request_results(request, model_results, request_output_dir, i)
             print(f"📄 Request log saved to: {request_output_file}")
         finally:
             remove_request_log_handler(request_log_handler)
->>>>>>> 1a07cf4fda70b960300bf68eecb499ed7fdaa663
     
     # 5. Write final aggregated results
     write_test_results(all_results, OUTPUT_FILE)
@@ -556,13 +540,9 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     
     print(f"\n🎉 Testing completed!")
     print(f"📄 Full results saved to: {OUTPUT_FILE}")
-<<<<<<< HEAD
     print(f"📄 Per-request logs saved under: {request_output_dir}")
-=======
-    print(f"📄 Per-request logs saved under: {per_request_output_dir}")
     logger.info("Testing completed. Full results saved to %s.", OUTPUT_FILE)
-    logger.info("Per-request logs saved under %s.", per_request_output_dir)
->>>>>>> 1a07cf4fda70b960300bf68eecb499ed7fdaa663
+    logger.info("Per-request logs saved under %s.", request_output_dir)
 
 def run_full_cycle_without_llm(
     *,
