@@ -22,6 +22,7 @@ from src.query_generator import (
     get_llm_model,
     create_prompt,
     generation_loop,
+    evaluate_feedback_error,
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
@@ -214,6 +215,7 @@ def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
     return truncated
 
 def run_single_test(
+    db_name: str,
     request: str, 
     model_index: int, 
     full_schema: dict, 
@@ -238,7 +240,7 @@ def run_single_test(
             user_request=request,
             source=mode,
             full_schema=full_schema,
-            database_name=None,
+            database_name=db_name,
             query_vs=query_vs,
             schema_vs=schema_vs,
             llm_model=llm_model
@@ -247,10 +249,14 @@ def run_single_test(
         logger.info("Generation loop completed. SQL generated (truncated): %s", truncate_request(sql))
         logger.info("Syntax status: %s, Execution status: %s", syntax_status, execution_status)
         
-        if syntax_status == "OK" and mode != "mysql":
-            logger.info("Executing SQL query in non-mysql mode.")
-            execution_status, execution_output = execute_sql_query(sql)
-            logger.info("Query execution completed. Status: %s", execution_status)
+        if mode != "mysql":
+            syntax_status, execution_status, _, _, error_category= evaluate_feedback_error(
+                request=request,
+                sql=sql,
+                source=mode,
+                execution_status=execution_status,
+                execution_output=execution_output
+            )
         
         schema_id = compute_schema_id(full_schema)
         logger.info("Creating metadata for test results. Schema ID: %s", schema_id)
@@ -286,6 +292,7 @@ def run_single_test(
 
 
 def run_test_with_timeout(
+    db_name: str,
     request: str, 
     model_index: int, 
     full_schema: dict,
@@ -306,7 +313,7 @@ def run_test_with_timeout(
     def worker():
         try:
             logger.debug("Timeout worker thread started for request: '%s'", truncate_request(request))
-            result = run_single_test(request, model_index, full_schema, mode, query_vs, schema_vs)
+            result = run_single_test(db_name, request, model_index, full_schema, mode, query_vs, schema_vs)
             result_queue.put(result)
             logger.debug("Worker thread completed successfully.")
         except Exception as e:
@@ -363,7 +370,7 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
             f.write(f"{n}. {truncated_request}\n\n")
             
             # Write results for each model
-            for index in range(1, len(AVAILABLE_MODELS)):
+            for index in range(1, len(AVAILABLE_MODELS) - 1):
                 model_name = AVAILABLE_MODELS[index]
                 if model_name in model_results:
                     sql, status, outcome = model_results[model_name]
@@ -521,14 +528,14 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             request_start_time = time.time()
             
             # Test each available model
-            for index in range(1, len(AVAILABLE_MODELS)):
+            for index in range(1, len(AVAILABLE_MODELS) - 1):
                 name = AVAILABLE_MODELS[index]
                 print(f"\nTesting with model: {name}")
                 logger.info("Testing with model: %s", name)
                 model_start_time = time.time()
                 
                 sql_query, status, outcome = run_test_with_timeout(
-                    request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
+                    db_name, request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
                 )
                 
                 model_time = time.time() - model_start_time
