@@ -615,10 +615,10 @@ def evaluate_feedback_error(
                 "The previous SQL query failed at runtime with this error: "
                 f"{execution_output}."
             )
-    if use_llm_feedback and syntax_status == "OK" and execution_status == "OK" and source == "mysql":
-        error_feedback = llm_feedback(sql, request, execution_output)
+        elif use_llm_feedback:
+            error_feedback = llm_feedback(sql, request, execution_output)
 
-    return sql, execution_status, execution_output, error_feedback
+    return syntax_status,execution_status, execution_output, error_feedback
 
 def build_targeted_retry_instruction(error_category: str) -> str:
     instructions = {
@@ -723,11 +723,12 @@ def main():
                 database_name = "supermarket"
                 logger.info("Using 'supermarket' database for without_llm mode.")
             
+            sql = ""
             execution_status = None
             execution_output = None
             error_feedback = None
             syntax_status = "UNKNOWN"
-            sql = ""
+            error_category = None
 
             for attempt in range(1, 4):
                 template = create_prompt(
@@ -746,7 +747,7 @@ def main():
                 print(sql)
                 print("\n" + "=" * 60)
 
-                _, execution_status, execution_output, error_feedback = evaluate_feedback_error(
+                syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(
                     user_request,
                     sql,
                     source,
@@ -756,20 +757,15 @@ def main():
                     use_llm_feedback=attempt >= 2,
                 )
 
-                syntax_status = validate_sql_syntax(sql)
-                print()
-                print(f"✅ Syntax check after attempt {attempt}: {syntax_status}")
-
                 if not error_feedback:
                     break
 
-                if attempt == 2 and error_feedback.startswith("INCORRECT_QUERY"):
+                if attempt >= 2 and error_feedback.startswith("INCORRECT_QUERY"):
                     error_category, _ = classify_llm_feedback(error_feedback)
-                    retry_hint = build_targeted_retry_instruction(error_category)
-                    error_feedback = f"{error_feedback}\n\n{retry_hint}"
 
-                if attempt == 3:
-                    break
+                    if attempt >= 3:
+                        retry_hint = build_targeted_retry_instruction(error_category)
+                        error_feedback = f"{error_feedback}\n\n{retry_hint}"
 
             if execution_status == "OK":
                 pretty_print_query_preview(execution_output)
@@ -782,7 +778,8 @@ def main():
                 user_request=user_request,
                 model_index=model_index,
                 execution_status=execution_status,
-                execution_output=execution_output
+                execution_output=execution_output,
+                error_category=error_category
             )
 
             store_query_feedback(
