@@ -563,18 +563,20 @@ def classify_llm_feedback(feedback: str | None) -> tuple[str, str | None]:
     Returns:
         (error_category, error_detail)
     """
+    if not feedback:
+        return ("NO_ERROR", None)
 
     feedback_lower = feedback.lower()
-
-    if not feedback.startswith("INCORRECT_QUERY"):
+    if not feedback_lower.startswith("incorrect_query"):
         return ("NO_ERROR", None)
 
     # Strip prefix
     explanation = feedback.split(":", 1)[-1].strip()
+    explanation_lower = explanation.lower()
 
     for category, keywords in ERROR_CATEGORIES.items():
         for kw in keywords:
-            if kw in explanation:
+            if kw.lower() in explanation_lower:
                 return (category, explanation)
 
     # Fallback if nothing matches
@@ -725,6 +727,7 @@ def main():
             execution_output = None
             error_feedback = None
             syntax_status = "UNKNOWN"
+            sql = ""
 
             for attempt in range(1, 4):
                 template = create_prompt(
