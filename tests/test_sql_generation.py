@@ -1,4 +1,4 @@
-import sys, os, pytest, json, time, shutil
+import sys, os, pytest, json, time, shutil, logging
 # Add parent directory to Python path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -77,13 +77,16 @@ def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
     existing_dbs = list_databases()
     if db_name in existing_dbs:
         print(f"✅ Database '{db_name}' already exists. Connecting to it...")
+        logger.info("Database '%s' already exists. Connecting.", db_name)
         conn = get_db_connection(database_name=db_name)
         if conn.is_connected():
             print(f"✅ Connection to '{db_name}' established.")
+            logger.info("Connection to '%s' established.", db_name)
         conn.close()
         return
 
     print(f"🛠️  Database '{db_name}' not found. Creating and populating it...")
+    logger.info("Database '%s' not found. Creating and populating.", db_name)
     ddl_path = ddl_dir / f"{db_name}.sql"
     if not ddl_path.exists():
         raise FileNotFoundError(f"❌ DDL file not found for '{db_name}': {ddl_path}")
@@ -107,6 +110,7 @@ def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
     cursor.close()
     conn.close()
     print(f"✅ Database '{db_name}' created and populated.")
+    logger.info("Database '%s' created and populated.", db_name)
 
 def configure_run_paths(db_name: str) -> Tuple[str, str]:
     """
@@ -142,6 +146,7 @@ def build_schema_retriever(db_name: str) -> Tuple[dict, Chroma]:
         collection_name=SCHEMA_COLLECTION_NAME,
     )
 
+    logger.info("Schema retriever built for database '%s'.", db_name)
     return schema, schema_vs
 
 def load_test_requests(input_file: str) -> List[str]:
@@ -157,8 +162,10 @@ def load_test_requests(input_file: str) -> List[str]:
                 if line and not line.startswith('#'):  # Skip empty lines and comments
                     requests.append(line)
         print(f"✅ Loaded {len(requests)} requests from {input_file}")
+        logger.info("Loaded %s requests from %s.", len(requests), input_file)
     except FileNotFoundError:
         print(f"❌ Input file not found: {input_file}")
+        logger.error("Input file not found: %s", input_file)
         requests = []
     return requests
 
@@ -184,6 +191,7 @@ def run_single_test(
     """
     try:
         llm_model = get_llm_model(model_index)
+        logger.info("Running single test with model index %s.", model_index)
         # Generate SQL query
         template = create_prompt(
             user_request=request,
@@ -194,6 +202,7 @@ def run_single_test(
         )
             
         sql = generate_sql_query(llm_model, template)
+        logger.info("Generated SQL for request.")
 
         execution_status = None
         execution_output = None
@@ -204,6 +213,7 @@ def run_single_test(
         error_feedback = None
         if syntax_status != "OK":
             print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
+            logger.warning("Syntax validation failed: %s", syntax_status)
             error_feedback=(
                 "The previous SQL query failed syntax validation "
                 f"(status={syntax_status})."
@@ -213,6 +223,7 @@ def run_single_test(
             execution_status, execution_output = execute_sql_query(sql, database_name=full_schema["database"])
 
             if execution_status != "OK":
+                logger.warning("Execution failed: %s", execution_output)
                 error_feedback=(
                     "The previous SQL query failed at runtime with this error: "
                     f"{execution_output}."
@@ -250,12 +261,14 @@ def run_single_test(
             sql_query=sql,
             qm=metadata
         )
+        logger.info("Stored query feedback for request.")
         
         return sql, metadata.status, str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message
             
     except Exception as e:
         # Catch any unexpected errors during generation
         error_msg = f"GENERATION_ERROR: {str(e)}"
+        logger.exception("Unexpected error during generation.")
         return "", "GENERATION_ERROR", error_msg
 
 
@@ -342,6 +355,7 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
             n += 1
     
     print(f"✅ Results written to {output_file}")
+    logger.info("Results written to %s.", output_file)
 
 def sanitize_request_filename(request: str, max_length: int = 15) -> str:
     """
@@ -361,8 +375,31 @@ def write_request_results(request: str, model_results: Dict, output_dir: Path, i
     request_slug = sanitize_request_filename(request)
     output_file = output_dir / f"{index:03d}_{request_slug}.txt"
     write_test_results([(request, model_results)], str(output_file))
+    logger.info("Request results written to %s.", output_file)
     return str(output_file)
 
+<<<<<<< HEAD
+=======
+
+def add_request_log_handler(log_file: Path) -> logging.FileHandler:
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_file, encoding="utf-8")
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        '%(asctime)s - [%(name)s] - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logging.getLogger().addHandler(handler)
+    return handler
+
+
+def remove_request_log_handler(handler: logging.FileHandler) -> None:
+    root_logger = logging.getLogger()
+    root_logger.removeHandler(handler)
+    handler.close()
+
+
+>>>>>>> 1a07cf4fda70b960300bf68eecb499ed7fdaa663
 def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     """Print a summary of test results."""
     summary_lines = []
@@ -418,6 +455,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     """
     print("🤖 Starting comprehensive SQL generation tests")
     print("="*60)
+    logger.info("Starting comprehensive SQL generation tests (mode=%s, db=%s).", mode, db_name)
     
     # 1. Load test requests
     test_requests = load_test_requests(INPUT_FILE)
@@ -428,6 +466,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     # 2. Load schema (from DB when available)
     full_schema, schema_vs = build_schema_retriever(db_name)
     print(f"✅ Retrieved schema from database '{db_name}'")
+    logger.info("Retrieved schema from database '%s'.", db_name)
 
     embeddings = OllamaEmbeddings(model="mxbai-embed-large")
     schema_vs = Chroma(
@@ -444,37 +483,55 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
         embedding_function=embeddings,
     )
     print(f"✅ Loaded vector stores from {QVS_DIR} and {SVS_DIR}")
+    logger.info("Loaded vector stores from %s and %s.", QVS_DIR, SVS_DIR)
     
     # 4. Run tests for each request
     all_results = []
     request_output_dir = output_dir / "intermediate_results"
     
     for i, request in enumerate(test_requests, 1):
-        print(f"\n{'='*60}")
-        print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
-        print(f"{'='*60}")
-        
-        model_results = {}
-        request_start_time = time.time()
-        
-        # Test each available model
-        for index in range(5, len(AVAILABLE_MODELS)):
-            name = AVAILABLE_MODELS[index]
-            print(f"\nTesting with model: {name}")
-            model_start_time = time.time()
+        request_slug = sanitize_request_filename(request)
+        request_log_file = per_request_output_dir / "logs" / f"{i:03d}_{request_slug}.log"
+        request_log_handler = add_request_log_handler(request_log_file)
+        try:
+            print(f"\n{'='*60}")
+            print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
+            print(f"{'='*60}")
+            logger.info("Starting request %s/%s: %s", i, len(test_requests), truncate_request(request))
+            logger.info("Request log file: %s", request_log_file)
             
-            sql_query, status, outcome = run_test_with_timeout(
-                request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
-            )
+            model_results = {}
+            request_start_time = time.time()
             
-            model_time = time.time() - model_start_time
-            print(f"   Status: {status} ({model_time:.1f}s)")
+            # Test each available model
+            for index in range(5, len(AVAILABLE_MODELS)):
+                name = AVAILABLE_MODELS[index]
+                print(f"\nTesting with model: {name}")
+                logger.info("Testing with model: %s", name)
+                model_start_time = time.time()
+                
+                sql_query, status, outcome = run_test_with_timeout(
+                    request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
+                )
+                
+                model_time = time.time() - model_start_time
+                print(f"   Status: {status} ({model_time:.1f}s)")
+                logger.info("Model %s status: %s (%.1fs)", name, status, model_time)
+                
+                if sql_query:
+                    print(f"   Generated SQL: {sql_query}")
+                    logger.info("Generated SQL: %s", sql_query)
+                if outcome and status not in ["OK", "SYNTAX"]:
+                    print(f"   Error: {outcome[:200]}...")
+                    logger.warning("Error output: %s", outcome[:200])
+                
+                model_results[name] = (sql_query, status, outcome)
             
-            if sql_query:
-                print(f"   Generated SQL: {sql_query}")
-            if outcome and status not in ["OK", "SYNTAX"]:
-                print(f"   Error: {outcome[:200]}...")
+            request_time = time.time() - request_start_time
+            print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
+            logger.info("Total time for request: %.1fs", request_time)
             
+<<<<<<< HEAD
             model_results[name] = (sql_query, status, outcome)
         
         request_time = time.time() - request_start_time
@@ -483,6 +540,13 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
         all_results.append((request, model_results))
         request_output_file = write_request_results(request, model_results, request_output_dir, i)
         print(f"📄 Request log saved to: {request_output_file}")
+=======
+            all_results.append((request, model_results))
+            request_output_file = write_request_results(request, model_results, per_request_output_dir, i)
+            print(f"📄 Request log saved to: {request_output_file}")
+        finally:
+            remove_request_log_handler(request_log_handler)
+>>>>>>> 1a07cf4fda70b960300bf68eecb499ed7fdaa663
     
     # 5. Write final aggregated results
     write_test_results(all_results, OUTPUT_FILE)
@@ -492,7 +556,13 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     
     print(f"\n🎉 Testing completed!")
     print(f"📄 Full results saved to: {OUTPUT_FILE}")
+<<<<<<< HEAD
     print(f"📄 Per-request logs saved under: {request_output_dir}")
+=======
+    print(f"📄 Per-request logs saved under: {per_request_output_dir}")
+    logger.info("Testing completed. Full results saved to %s.", OUTPUT_FILE)
+    logger.info("Per-request logs saved under %s.", per_request_output_dir)
+>>>>>>> 1a07cf4fda70b960300bf68eecb499ed7fdaa663
 
 def run_full_cycle_without_llm(
     *,
