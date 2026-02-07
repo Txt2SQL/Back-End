@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from src.retriver_utils import build_vector_store
-from src.config.paths import DATA_DIR, VECTOR_STORE_DIR, SCHEMA_FILE
+from src.config.paths import VECTOR_STORE_DIR, SCHEMA_FILE
 from src.mysql_linker import (
     extract_schema,
     list_databases,
@@ -22,7 +22,6 @@ from src.logging_utils import (
 )
 
 # === CONFIG ===
-SCHEMA_FILE = "schema_canonical.json"
 DB_DIR = str(VECTOR_STORE_DIR / "schema")
 COLLECTION_NAME = "schema_canonical"
 MODEL_NAME = "gemma3:12b"

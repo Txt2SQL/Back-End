@@ -32,7 +32,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 TMP_DIR = BASE_DIR / "tmp"
 INPUT_FILE = "./input/requests/test_requests.txt"
-OUTPUT_FILE = f"./output/test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+OUTPUT_DIR = "./output"
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
 QVS_DIR = str(TMP_DIR / "query_vector_store")
@@ -69,7 +69,6 @@ def select_test_database(args_db: str | None = None) -> str:
         elif choice in DB_OPTIONS:
             return choice
         print("❌ Invalid selection. Please choose a valid database name or number.")
-
 
 def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
     """
@@ -109,14 +108,13 @@ def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
     conn.close()
     print(f"✅ Database '{db_name}' created and populated.")
 
-
 def configure_run_paths(db_name: str) -> Tuple[str, str]:
     """
     Configure input and output paths for the selected database.
     """
     base_dir = Path(__file__).resolve().parent
     requests_dir = base_dir / "input" / "requests"
-    output_dir = base_dir / "output" / f"{db_name}_results"
+    output_dir = base_dir / "output" / f"{db_name}_results" / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     input_file = requests_dir / f"{db_name}_requests.txt"
@@ -164,13 +162,11 @@ def load_test_requests(input_file: str) -> List[str]:
         requests = []
     return requests
 
-
 def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
     """Truncate long requests for cleaner output."""
     if len(request) <= max_length:
         return request
     return request[:max_length] + "..."
-
 
 def run_single_test(
     request: str, 
@@ -301,7 +297,6 @@ def run_test_with_timeout(
         except queue.Empty:
             return "", "UNKNOWN_ERROR", "No result returned"
 
-
 def format_result_line(model_name: str, sql_query: str, status: str, 
                        outcome: str) -> str:
     """
@@ -320,7 +315,6 @@ def format_result_line(model_name: str, sql_query: str, status: str,
         return f"🤖{model_name}\n\n🧮Query: {clean_sql}\n\n⚠️Error: {clean_error}\n\n"
     else:
         return f"🤖{model_name}\n\n🧮Query: \n{clean_sql}\n\n💥Rows fetched: {outcome}\n\n"
-
 
 def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
     """
@@ -349,7 +343,6 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
     
     print(f"✅ Results written to {output_file}")
 
-
 def sanitize_request_filename(request: str, max_length: int = 15) -> str:
     """
     Build a filesystem-friendly name from the request text.
@@ -360,7 +353,6 @@ def sanitize_request_filename(request: str, max_length: int = 15) -> str:
         clean = "request"
     return clean[:max_length]
 
-
 def write_request_results(request: str, model_results: Dict, output_dir: Path, index: int) -> str:
     """
     Write a single request's results to its own file.
@@ -370,7 +362,6 @@ def write_request_results(request: str, model_results: Dict, output_dir: Path, i
     output_file = output_dir / f"{index:03d}_{request_slug}.txt"
     write_test_results([(request, model_results)], str(output_file))
     return str(output_file)
-
 
 def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     """Print a summary of test results."""
@@ -421,7 +412,7 @@ def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
 
 # ==================== MAIN TEST FUNCTION ====================
 
-def run_comprehensive_tests(mode: str, db_name: str):
+def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     """
     Main function to run comprehensive tests.
     """
@@ -456,7 +447,7 @@ def run_comprehensive_tests(mode: str, db_name: str):
     
     # 4. Run tests for each request
     all_results = []
-    per_request_output_dir = Path(OUTPUT_FILE).with_suffix("")
+    request_output_dir = output_dir / "intermediate_results"
     
     for i, request in enumerate(test_requests, 1):
         print(f"\n{'='*60}")
@@ -490,7 +481,7 @@ def run_comprehensive_tests(mode: str, db_name: str):
         print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
         
         all_results.append((request, model_results))
-        request_output_file = write_request_results(request, model_results, per_request_output_dir, i)
+        request_output_file = write_request_results(request, model_results, request_output_dir, i)
         print(f"📄 Request log saved to: {request_output_file}")
     
     # 5. Write final aggregated results
@@ -501,7 +492,7 @@ def run_comprehensive_tests(mode: str, db_name: str):
     
     print(f"\n🎉 Testing completed!")
     print(f"📄 Full results saved to: {OUTPUT_FILE}")
-    print(f"📄 Per-request logs saved under: {per_request_output_dir}")
+    print(f"📄 Per-request logs saved under: {request_output_dir}")
 
 def run_full_cycle_without_llm(
     *,
@@ -896,10 +887,11 @@ if __name__ == "__main__":
         # Update global variables based on args
         INPUT_FILE = args.input if args.input else input_file
         OUTPUT_FILE = args.output if args.output else output_file
+        output_dir = Path(OUTPUT_DIR) / selected_db / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         TIMEOUT_PER_MODEL = args.timeout
         
         # Run the comprehensive tests
-        run_comprehensive_tests(args.mode, db_name=selected_db)
+        run_comprehensive_tests(args.mode, db_name=selected_db, output_dir=output_dir)
     elif args.test == "execute":
         if not args.input:
             raise ValueError("❌ --test execute requires --input <sql_file>")
