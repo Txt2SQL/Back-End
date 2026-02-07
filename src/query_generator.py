@@ -658,7 +658,9 @@ def evaluate_feedback_error(
     database_name: str | None = None, 
     execution_status: str | None = None,
     execution_output: list[Any] | str | None = None,
-    use_llm_feedback: bool = True):
+    use_llm_feedback: bool = True,
+    use_hint: bool = False
+    ):
     """
     Evaluate feedback and errors for SQL query.
     """
@@ -670,7 +672,8 @@ def evaluate_feedback_error(
     logger.info("Syntax check result: %s", syntax_status)
 
     error_feedback = None
-    if syntax_status != "OK":
+    error_category = None
+    if syntax_status != "OK" and not use_llm_feedback:
         logger.warning("Syntax error detected: %s", syntax_status)
         print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
         error_feedback=(
@@ -685,21 +688,24 @@ def evaluate_feedback_error(
         logger.info("Executing SQL query against database: %s", database_name)
         execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
 
-        if execution_status != "OK":
+        if execution_status != "OK" and not use_llm_feedback:
             logger.warning("Runtime error detected: %s", execution_output)
             print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
             error_feedback=(
                 "The previous SQL query failed at runtime with this error: "
                 f"{execution_output}."
             )
-        elif use_llm_feedback:
+        else:
             logger.info("Using LLM feedback for correctness evaluation")
             error_feedback = llm_feedback(sql, request, execution_output)
-        else:
-            logger.info("LLM feedback disabled, skipping correctness evaluation")
+            if error_feedback.startswith("INCORRECT_QUERY"):
+                error_category, _ = classify_llm_feedback(error_feedback)
+                if use_hint:
+                    retry_hint = build_targeted_retry_instruction(error_category)
+                    error_feedback = f"{error_feedback}\n\n{retry_hint}"
 
     logger.info("Feedback error evaluation completed. Has error feedback: %s", error_feedback is not None)
-    return syntax_status,execution_status, execution_output, error_feedback
+    return syntax_status,execution_status, execution_output, error_feedback, error_category
 
 def build_targeted_retry_instruction(error_category: str) -> str:
     """
@@ -754,9 +760,6 @@ def generation_loop(
     logger.info("Parameters - source: %s, database: %s", 
                 source, database_name)
     
-    # Rest of the generation_loop function...
-    # (Assuming the rest of the function body remains as is)
-    # You would add logger.info statements throughout this function as well
     sql = ""
     execution_status = None
     execution_output = None
@@ -774,11 +777,10 @@ def generation_loop(
             error_feedback=error_feedback,
         )
 
-        print(f"\n🔍 Generating query (attempt {attempt}/3)...")
+        logger.info(f"\n🔍 Generating query (attempt {attempt}/3)...")
         sql = generate_sql_query(llm_model, template)
 
-
-        syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(
+        syntax_status, execution_status, execution_output, error_feedback, error_category = evaluate_feedback_error(
             user_request,
             sql,
             source,
@@ -786,17 +788,11 @@ def generation_loop(
             execution_status,
             execution_output,
             use_llm_feedback=attempt >= 2,
+            use_hint=attempt >= 3
         )
 
-        if not error_feedback:
+        if error_feedback.startswith("CORRECT_QUERY"):
             break
-
-        if attempt >= 2 and error_feedback.startswith("INCORRECT_QUERY"):
-            error_category, _ = classify_llm_feedback(error_feedback)
-
-            if attempt >= 3:
-                retry_hint = build_targeted_retry_instruction(error_category)
-                error_feedback = f"{error_feedback}\n\n{retry_hint}"
 
     return sql, syntax_status, execution_status, execution_output, error_category
 
