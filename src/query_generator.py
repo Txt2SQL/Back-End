@@ -1,3 +1,4 @@
+from typing import Any, Tuple
 import sqlglot, json, hashlib, os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -8,7 +9,7 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
 from src.mysql_linker import execute_sql_query
-from src.config.settings import AVAILABLE_MODELS
+from src.config.settings import AVAILABLE_MODELS, AZURE_MODELS, ERROR_CATEGORIES
 from src.logging_utils import (
     setup_logger,
     print_llm_prompt,
@@ -351,14 +352,6 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
 
 {penalty_section}
 
-Before writing the SQL query, internally determine:
-- Which tables are required
-- How they are joined
-- Whether aggregation or grouping is required
-- Which columns are selected
-
-Do NOT output this reasoning.
-Only output the final SQL query.
 """
     return template
 
@@ -412,19 +405,27 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
         template = add_penalties(template, user_request, query_vs)
         logger.info("Added penalty section for MySQL extraction schema")
 
-    template = template + f"""
-    
-SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
-"""
-
     if error_feedback:
         template = template + f"""
-
-PREVIOUS QUERY ERROR TO FIX:
+=== PREVIOUS QUERY ERROR TO FIX ===
 {error_feedback}
 
 You must correct the query considering this error.
 Do NOT repeat the same mistake.
+"""
+
+    template = template + f"""
+
+Before writing the SQL query, internally determine:
+- Which tables are required
+- How they are joined
+- Whether aggregation or grouping is required
+- Which columns are selected
+
+Do NOT output this reasoning.
+Only output the final SQL query.
+    
+SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
 
     return template
@@ -466,6 +467,185 @@ def generate_sql_query(
 
 
     return sql_query
+
+def llm_feedback(
+    sql: str,
+    request: str,
+    execution_output: list | None,
+) -> str:
+    """
+    Uses an Azure OpenAI model to evaluate whether the SQL query
+    correctly answers the user's request based on execution results.
+
+    Returns:
+        - "CORRECT_QUERY"
+        - "INCORRECT_QUERY: <suggestions>"
+    """
+
+    # Safety guard
+    if not execution_output:
+        return (
+            "INCORRECT_QUERY: The query returned no results, "
+            "so correctness cannot be verified."
+        )
+
+    # Take only the first 20 rows to avoid token explosion
+    preview_rows = execution_output[:20]
+
+    # Convert rows to a readable string
+    rows_text = "\n".join(str(row) for row in preview_rows)
+
+    load_dotenv(".env.azure")
+
+    model = AzureChatOpenAI(
+        azure_deployment="gpt-4o",
+        api_version=os.getenv("AZURE_API_VERSION"),
+        api_key=os.getenv("AZURE_API_KEY"),  # pyright: ignore[reportArgumentType]
+        azure_endpoint=os.getenv("AZURE_ENDPOINT"),
+        temperature=0,
+    )
+
+    evaluation_prompt = f"""
+You are an expert SQL reviewer.
+
+Your task is to evaluate whether the SQL query correctly answers
+the user's request, based ONLY on the query results shown.
+
+--- USER REQUEST ---
+{request}
+
+--- SQL QUERY ---
+{sql}
+
+--- QUERY RESULT (first 20 rows) ---
+{rows_text}
+
+--- INSTRUCTIONS ---
+Respond in EXACTLY one of the following formats:
+
+1) If the query is correct:
+CORRECT_QUERY
+
+2) If the query is incorrect:
+INCORRECT_QUERY: <clear explanation of what is wrong and how to fix it>
+
+Rules:
+- Do NOT rewrite the full SQL query.
+- Be concise and precise.
+- Judge correctness, not syntax or performance.
+"""
+
+    logger.info("🧠 Sending query result to LLM for correctness evaluation")
+
+    response = model.invoke(evaluation_prompt)
+
+    if hasattr(response, "content"):
+        verdict = response.content.strip()
+    else:
+        verdict = str(response).strip()
+
+    logger.info(f"🧪 LLM evaluation verdict: {verdict}")
+
+    # Hard validation to avoid silent failures
+    if not verdict.startswith(("CORRECT_QUERY", "INCORRECT_QUERY")):
+        logger.warning("⚠️ Unexpected LLM feedback format")
+        return (
+            "INCORRECT_QUERY: Unable to confidently evaluate correctness "
+            "from the query results."
+        )
+
+    return verdict
+
+def classify_llm_feedback(feedback: str) -> tuple[str, str | None]:
+    """
+    Classifies an INCORRECT_QUERY LLM feedback string.
+
+    Returns:
+        (error_category, error_detail)
+    """
+
+    feedback_lower = feedback.lower()
+
+    if not feedback.startswith("INCORRECT_QUERY"):
+        return ("NO_ERROR", None)
+
+    # Strip prefix
+    explanation = feedback.split(":", 1)[-1].strip()
+
+    for category, keywords in ERROR_CATEGORIES.items():
+        for kw in keywords:
+            if kw in explanation:
+                return (category, explanation)
+
+    # Fallback if nothing matches
+    return ("UNKNOWN_ERROR", explanation)
+
+def evaluate_feedback_error(
+    request: str,
+    sql: str, 
+    source: str, 
+    database_name: str | None = None, 
+    execution_status: str | None = None,
+    execution_output: list | None = None) -> Tuple[str, str | None, list | None, str | None]:
+    
+    syntax_status = validate_sql_syntax(sql)
+    print()
+    print(f"✅ Syntax check: {syntax_status}")
+
+    error_feedback = None
+    if syntax_status != "OK":
+        print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
+        error_feedback=(
+            "The previous SQL query failed syntax validation "
+            f"(status={syntax_status})."
+        )
+
+    if syntax_status == "OK" and source == "mysql":
+        print()
+        print("🚀 Executing query against the database...")
+        print()
+        execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
+
+        if execution_status != "OK":
+            print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
+            error_feedback=(
+                "The previous SQL query failed at runtime with this error: "
+                f"{execution_output}."
+            )
+    if syntax_status == "OK" and execution_status == "OK" and source == "mysql":
+        error_feedback = llm_feedback(sql, request, execution_output)
+
+    return sql, execution_status, execution_output, error_feedback
+
+def build_targeted_retry_instruction(error_category: str) -> str:
+    instructions = {
+        "AGGREGATION_ERROR": (
+            "The query has incorrect aggregation logic. "
+            "Re-check GROUP BY clauses and aggregated columns."
+        ),
+        "JOIN_ERROR": (
+            "The query has incorrect or missing joins. "
+            "Re-evaluate join paths using foreign keys."
+        ),
+        "FILTER_ERROR": (
+            "The query applies incorrect filtering. "
+            "Review WHERE conditions carefully."
+        ),
+        "PROJECTION_ERROR": (
+            "The selected columns do not match the request."
+        ),
+        "SEMANTIC_ERROR": (
+            "The query does not answer the user's request correctly."
+        ),
+        "SCHEMA_ERROR": (
+            "The query references invalid tables or columns."
+        ),
+        "UNKNOWN_ERROR": (
+            "Re-evaluate the query carefully to match the request."
+        ),
+    }
+
+    return instructions.get(error_category, instructions["UNKNOWN_ERROR"])
 
 def main():
     """Main function to handle the interactive workflow."""
@@ -558,41 +738,26 @@ def main():
             execution_status = None
             execution_output = None
             
-            syntax_status = validate_sql_syntax(sql)
-            print()
-            print(f"✅ Syntax check: {syntax_status}")
+            syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(user_request, sql, source, database_name)
 
-            error_feedback = None
-            if syntax_status != "OK":
-                print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
-                error_feedback=(
-                    "The previous SQL query failed syntax validation "
-                    f"(status={syntax_status})."
-                )
+            if error_feedback and error_feedback.startswith("INCORRECT_QUERY"):
+                error_category, error_detail = classify_llm_feedback(error_feedback)
+                retry_hint = build_targeted_retry_instruction(error_category)
 
-            if syntax_status == "OK" and source == "mysql":
-                print()
-                print("🚀 Executing query against the database...")
-                print()
-                execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
-
-                if execution_status != "OK":
-                    print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
-                    error_feedback=(
-                        "The previous SQL query failed at runtime with this error: "
-                        f"{execution_output}."
-                    )
-
-            if syntax_status != "OK" or execution_status != "OK":
+                print("\n♻️ Regenerating query with new feedback...")
                 template = create_prompt(
                     user_request=user_request,
                     source=source,
                     full_schema=full_schema,
                     query_vs=query_vs,
                     schema_vs=schema_vs,
-                    error_feedback=error_feedback
+                    error_feedback=(
+                        f"{error_feedback}\n\n"
+                        f"TARGETED FIX:\n{retry_hint}"
+                    ),
                 )
                 sql = generate_sql_query(llm_model, template)
+                syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(user_request, sql, source, database_name)
 
                 print("\n💡 Regenerated SQL query after runtime feedback:\n")
                 print(sql)
@@ -607,6 +772,14 @@ def main():
                     print("🚀 Executing regenerated query against the database...")
                     print()
                     execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
+
+                if syntax_status == "OK" and execution_status == "OK" and source == "mysql":
+                    error_feedback = llm_feedback(sql, user_request, execution_output)
+                    
+                    error_category, error_detail = classify_llm_feedback(error_feedback)
+
+                    logger.warning(f"❌ LLM judged query incorrect: {error_category}")
+                    logger.warning(f"📌 Details: {error_detail}")
 
             if execution_status == "OK":
                 pretty_print_query_preview(execution_output)
