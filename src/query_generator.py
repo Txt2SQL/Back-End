@@ -556,7 +556,7 @@ Rules:
 
     return verdict
 
-def classify_llm_feedback(feedback: str) -> tuple[str, str | None]:
+def classify_llm_feedback(feedback: str | None) -> tuple[str, str | None]:
     """
     Classifies an INCORRECT_QUERY LLM feedback string.
 
@@ -740,9 +740,11 @@ def main():
             
             syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(user_request, sql, source, database_name)
 
-            if error_feedback and error_feedback.startswith("INCORRECT_QUERY"):
-                error_category, error_detail = classify_llm_feedback(error_feedback)
-                retry_hint = build_targeted_retry_instruction(error_category)
+            if syntax_status != "OK" or execution_status != "OK":
+                if error_feedback and error_feedback.startswith("INCORRECT_QUERY"):
+                    error_category, _ = classify_llm_feedback(error_feedback)
+                    retry_hint = build_targeted_retry_instruction(error_category)
+                    error_feedback = f"{error_feedback}\n\n{retry_hint}"
 
                 print("\n♻️ Regenerating query with new feedback...")
                 template = create_prompt(
@@ -751,10 +753,7 @@ def main():
                     full_schema=full_schema,
                     query_vs=query_vs,
                     schema_vs=schema_vs,
-                    error_feedback=(
-                        f"{error_feedback}\n\n"
-                        f"TARGETED FIX:\n{retry_hint}"
-                    ),
+                    error_feedback=error_feedback,
                 )
                 sql = generate_sql_query(llm_model, template)
                 syntax_status, execution_status, execution_output, error_feedback = evaluate_feedback_error(user_request, sql, source, database_name)
