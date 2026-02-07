@@ -22,7 +22,7 @@ class QueryMetadata:
     timestamp: float = field(default_factory=time.time)
     
     def to_document_metadata(self, sql_query: str) -> dict:
-        base = {
+        raw = {
             "request": self.user_request,
             "schema_id": self.schema_id,
             "schema_source": self.schema_source,
@@ -37,7 +37,14 @@ class QueryMetadata:
             "error_category": self.error_category
         }
 
-        return base
+        clean = {}
+        for k, v in raw.items():
+            if isinstance(v, (str, int, float, bool)) or v is None:
+                clean[k] = v
+            else:
+                clean[k] = str(v)  # ← last-resort safety
+
+        return clean
 
     def to_page_content(self, sql_query: str) -> str:
         return f"""

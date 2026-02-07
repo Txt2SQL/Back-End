@@ -199,6 +199,14 @@ def create_metadata(
         knowledge_scope = "SCHEMA_SPECIFIC"
     logger.info(f"🧠 Knowledge scope determined: {knowledge_scope}")
 
+    # -----------------------------
+    # ERROR CATEGORY (SECOND LLM)
+    # -----------------------------
+    effective_error_category = None
+    if syntax_status != "OK" and execution_status != "OK":
+        effective_error_category = error_category
+    logger.info(f"🏷️ Error category stored: {effective_error_category}")
+    
     return QueryMetadata(
         schema_id=schema_id,
         schema_source=schema_source,
@@ -208,7 +216,8 @@ def create_metadata(
         rows_fetched=rows_fetched,
         error_message=error_message,
         knowledge_scope=knowledge_scope,
-        error_type=error_type
+        error_type=error_type,
+        error_category=effective_error_category
     )
 
 def classify_error(error_message: str | None) -> str | None:
