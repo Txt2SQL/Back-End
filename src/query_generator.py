@@ -37,82 +37,6 @@ SAMPLE_QUERY_FILE = str(SAMPLE_QUERY_PATH)
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
 
-def get_context(user_request: str, vector_store: Chroma) -> str:
-    """
-    Retrieve relevant schema fragments for the user request.
-    Uses light query-intent heuristics to tune retrieval depth,
-    removes duplicate chunks, and groups output by table.
-    """
-
-    # ------------------------------------------------------------------
-    # SCHEMA RETRIEVAL (RAG)
-    # ------------------------------------------------------------------
-
-    request_lower = user_request.lower()
-    request_tokens = set(request_lower.replace(",", " ").replace(".", " ").split())
-
-    aggregate_terms = {
-        "avg",
-        "average",
-        "count",
-        "group",
-        "having",
-        "sum",
-        "total",
-        "min",
-        "max",
-    }
-    join_terms = {"join", "across", "between", "related", "each"}
-
-    has_aggregation = bool(request_tokens.intersection(aggregate_terms))
-    has_join_intent = bool(request_tokens.intersection(join_terms)) or " by " in f" {request_lower} "
-
-    # Start with a conservative context size and increase only when complexity suggests it.
-    k = 3
-    if has_aggregation:
-        k += 1
-    if has_join_intent:
-        k += 1
-
-    retriever = vector_store.as_retriever(search_kwargs={"k": k})
-    relevant_docs = retriever.invoke(user_request)
-
-    seen_chunks = set()
-    grouped_chunks = {}
-
-    for doc in relevant_docs:
-        table_name = (doc.metadata or {}).get("table") or "unknown_table"
-        content = (doc.page_content or "").strip()
-
-        if not content:
-            continue
-
-        dedup_key = (table_name, content)
-        if dedup_key in seen_chunks:
-            continue
-
-        seen_chunks.add(dedup_key)
-        grouped_chunks.setdefault(table_name, []).append(content)
-
-    sections = []
-    for table_name, chunks in grouped_chunks.items():
-        sections.append(f"Table: {table_name}\n" + "\n".join(chunks[:2]))
-
-    schema_context = "\n\n".join(sections)
-
-    logger.info(
-        "Schema context retrieval complete: k=%s, docs=%s, unique_tables=%s, context_chars=%s",
-        k,
-        len(relevant_docs),
-        len(grouped_chunks),
-        len(schema_context),
-    )
-
-    if not schema_context:
-        logger.warning("No schema context retrieved for request: %s", user_request)
-
-    return schema_context
-
 def pretty_print_query_preview(rows: list | None | str, max_rows: int = 5, max_col_width: int = 40) -> None:
     """
     Print a compact, fancy preview of fetched rows.
@@ -168,9 +92,121 @@ def pretty_print_query_preview(rows: list | None | str, max_rows: int = 5, max_c
     if len(rows) > max_rows:
         print(f"… and {len(rows) - max_rows} more row(s).")
 
+def select_model() -> int:
+    """
+    Prompts user to select an Ollama model from available options.
+    Returns the selected model name.
+    """
+    print("\n🤖 Available Ollama models:")
+    for key, model_name in AVAILABLE_MODELS.items():
+        print(f"   {key}. {model_name}")
+    
+    while True:
+        choice = int(input("\n👉 Select a model (0-6): ").strip())
+        if choice in AVAILABLE_MODELS:
+            selected = AVAILABLE_MODELS[choice]
+            print(f"✅ Selected model: {selected}\n")
+            return choice
+        elif choice == 0:
+            print("✅ Selected mode: without_llm\n")
+            return 0
+        else:
+            logger.error("❌ Invalid choice. Please enter 1, 2, or 3.")
+
+def get_context(user_request: str, vector_store: Chroma) -> str:
+    """
+    Retrieve relevant schema fragments for the user request.
+    Uses light query-intent heuristics to tune retrieval depth,
+    removes duplicate chunks, and groups output by table.
+    """
+    logger.info("Retrieving schema context for request: '%s'", user_request)
+
+    # ------------------------------------------------------------------
+    # SCHEMA RETRIEVAL (RAG)
+    # ------------------------------------------------------------------
+
+    request_lower = user_request.lower()
+    request_tokens = set(request_lower.replace(",", " ").replace(".", " ").split())
+
+    aggregate_terms = {
+        "avg",
+        "average",
+        "count",
+        "group",
+        "having",
+        "sum",
+        "total",
+        "min",
+        "max",
+    }
+    join_terms = {"join", "across", "between", "related", "each"}
+
+    has_aggregation = bool(request_tokens.intersection(aggregate_terms))
+    has_join_intent = bool(request_tokens.intersection(join_terms)) or " by " in f" {request_lower} "
+
+    # Start with a conservative context size and increase only when complexity suggests it.
+    k = 3
+    if has_aggregation:
+        k += 1
+        logger.debug("Request contains aggregation terms, increasing k to %s", k)
+    if has_join_intent:
+        k += 1
+        logger.debug("Request contains join intent, increasing k to %s", k)
+    
+    logger.info("Retrieval parameters - has_aggregation: %s, has_join_intent: %s, k: %s", 
+                has_aggregation, has_join_intent, k)
+
+    retriever = vector_store.as_retriever(search_kwargs={"k": k})
+    relevant_docs = retriever.invoke(user_request)
+    logger.debug("Retrieved %s relevant documents", len(relevant_docs))
+
+    seen_chunks = set()
+    grouped_chunks = {}
+
+    for doc in relevant_docs:
+        table_name = (doc.metadata or {}).get("table") or "unknown_table"
+        content = (doc.page_content or "").strip()
+
+        if not content:
+            logger.debug("Skipping empty document")
+            continue
+
+        dedup_key = (table_name, content)
+        if dedup_key in seen_chunks:
+            logger.debug("Duplicate chunk found for table '%s'", table_name)
+            continue
+
+        seen_chunks.add(dedup_key)
+        grouped_chunks.setdefault(table_name, []).append(content)
+
+    sections = []
+    for table_name, chunks in grouped_chunks.items():
+        sections.append(f"Table: {table_name}\n" + "\n".join(chunks[:2]))
+
+    schema_context = "\n\n".join(sections)
+
+    logger.info(
+        "Schema context retrieval complete: k=%s, docs=%s, unique_tables=%s, context_chars=%s",
+        k,
+        len(relevant_docs),
+        len(grouped_chunks),
+        len(schema_context),
+    )
+
+    if not schema_context:
+        logger.warning("No schema context retrieved for request: %s", user_request)
+
+    return schema_context
+
 def compute_schema_id(full_schema: dict) -> str:
+    """
+    Compute a unique identifier for the schema.
+    """
+    logger.debug("Computing schema ID")
     normalized = json.dumps(full_schema, sort_keys=True)
-    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    schema_id = hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    logger.debug("Schema ID computed: %s", schema_id)
+    return schema_id
 
 def infer_relationships(schema: dict) -> list[str]:
     """
@@ -195,6 +231,7 @@ def infer_relationships(schema: dict) -> list[str]:
         ORDER BY kcu.TABLE_NAME, kcu.COLUMN_NAME
     """
 
+    logger.debug("Executing foreign key query for database: %s", database_name)
     status, rows = execute_sql_query(fk_query, database_name=database_name)
     if status != "OK":
         logger.warning("⚠️  Failed to query foreign key metadata: %s", rows)
@@ -204,6 +241,7 @@ def infer_relationships(schema: dict) -> list[str]:
         logger.info("📭 No foreign key relationships found in MySQL metadata")
         return []
 
+    logger.info("Found %s foreign key relationship(s)", len(rows))
     relationships = []
     for table_name, column_name, referenced_table, referenced_column in rows:
         relationship = (
@@ -248,43 +286,28 @@ def validate_sql_syntax(sql_query: str) -> str:
         - "OK" if it compiles
         - "SYNTAX_ERROR" if it fails
     """
+    logger.debug("Validating SQL syntax for query: %s", sql_query)
     try:
         # Parse only, no DB execution
         sqlglot.parse_one(sql_query)
+        logger.debug("SQL syntax validation passed")
         return "OK"
     except Exception as e:
         logger.error(f"Syntax validation failed: {e}")
         return "SYNTAX_ERROR"
 
-def select_model() -> int:
-    """
-    Prompts user to select an Ollama model from available options.
-    Returns the selected model name.
-    """
-    print("\n🤖 Available Ollama models:")
-    for key, model_name in AVAILABLE_MODELS.items():
-        print(f"   {key}. {model_name}")
-    
-    while True:
-        choice = int(input("\n👉 Select a model (0-6): ").strip())
-        if choice in AVAILABLE_MODELS:
-            selected = AVAILABLE_MODELS[choice]
-            print(f"✅ Selected model: {selected}\n")
-            return choice
-        elif choice == 0:
-            print("✅ Selected mode: without_llm\n")
-            return 0
-        else:
-            logger.error("❌ Invalid choice. Please enter 1, 2, or 3.")
-
 def get_llm_model(choice: int) -> str | OllamaLLM | AzureChatOpenAI:
+    logger.info("Getting LLM model for choice: %s", choice)
     if choice == 0 :
+        logger.info("Selected 'none' model (no LLM)")
         return "none"
     elif choice < 5:
         model_name = AVAILABLE_MODELS[choice]
+        logger.info("Selected Ollama model: %s", model_name)
         return OllamaLLM(model=model_name)
     else:
         model_name = AVAILABLE_MODELS[choice]
+        logger.info("Selected Azure OpenAI model: %s", model_name)
         
         load_dotenv("../.env.azure")
 
@@ -294,8 +317,10 @@ def get_llm_model(choice: int) -> str | OllamaLLM | AzureChatOpenAI:
         AZURE_API_VERSION = os.getenv("AZURE_API_VERSION")
 
         if not AZURE_API_KEY or not AZURE_ENDPOINT:
+            logger.error("❌ Missing Azure credentials in .env")
             raise ValueError("❌ Missing Azure credentials in .env")
 
+        logger.info("Azure credentials loaded successfully")
         return AzureChatOpenAI(
             azure_deployment=model_name,
             api_version=AZURE_API_VERSION,
@@ -308,12 +333,13 @@ def get_schema_source(full_schema: dict) -> str:
     Returns the schema source.
     Returns either "text_input" or "mysql_extraction".
     """
+    logger.debug("Determining schema source")
         
     if "source" in full_schema and full_schema["source"] == "mysql":
-        logger.info("ℹ️  Schema source detected: MySQL extraction.\n")
+        logger.info("ℹ️  Schema source detected: MySQL extraction.")
         return "mysql"
     else:
-        logger.info("ℹ️  Schema source detected: Text input.\n")
+        logger.info("ℹ️  Schema source detected: Text input.")
         return "text"
 
 def response_cleaning(response) -> str:
@@ -324,6 +350,7 @@ def response_cleaning(response) -> str:
     - Removes markdown fences
     Returns only the SQL code.
     """
+    logger.debug("Cleaning LLM response")
     if isinstance(response, str):
         sql_query = response.strip()
     elif hasattr(response, "content"):
@@ -331,15 +358,20 @@ def response_cleaning(response) -> str:
     else:
         sql_query = str(response).strip()
 
+    logger.debug("Original response length: %s characters", len(sql_query))
+
     # Remove markdown fences if present
     if sql_query.startswith("```"):
         sql_query = sql_query.split("```")[1]
+        logger.debug("Removed markdown fence from response")
+    
     sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
 
     # Remove everything before the first SELECT (case-insensitive)
     select_index = sql_query.upper().find("SELECT")
     if select_index > 0:
         sql_query = sql_query[select_index:]
+        logger.debug("Removed text before SELECT statement")
     
     # Remove everything after the first semicolon (inclusive)
     semicolon_index = sql_query.find(";")
@@ -348,12 +380,19 @@ def response_cleaning(response) -> str:
     
     sql_query = sql_query.strip()
     
+    logger.debug("Cleaned response length: %s characters", len(sql_query))
     return sql_query
 
 def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
-
+    """
+    Add penalty section based on failed queries.
+    """
+    logger.info("Adding penalty section for request: '%s'", user_request)
+    
     # Negative examples → pattern penalization
     failed_queries = retrieve_failed_queries(user_request, query_vs)
+    logger.debug("Retrieved %s failed queries for penalty section", len(failed_queries))
+    
     penalty_section = build_penalty_section(failed_queries)
     
     template = template + f"""
@@ -361,6 +400,7 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
 {penalty_section}
 
 """
+    logger.info("Penalty section added to template")
     return template
 
 def create_prompt(
@@ -371,6 +411,11 @@ def create_prompt(
     schema_vs: Chroma,
     error_feedback: str | None = None,
 ) -> str:
+    """
+    Create prompt for SQL generation.
+    """
+    logger.info("Creating prompt for request: '%s', source: %s", user_request, source)
+    
     schema_context = get_context(user_request, schema_vs)
     logger.debug(f"Schema context retrieved: {len(schema_context)} characters")
 
@@ -389,6 +434,7 @@ using the provided tables and columns.
   
 """    
     if source == "mysql":
+        logger.info("MySQL source detected, adding join hints")
         join_hints = build_join_hints(full_schema)
         template = template + f"""
 {join_hints}
@@ -414,6 +460,7 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
         logger.info("Added penalty section for MySQL extraction schema")
 
     if error_feedback:
+        logger.info("Adding error feedback to prompt")
         template = template + f"""
 === PREVIOUS QUERY ERROR TO FIX ===
 {error_feedback}
@@ -436,6 +483,7 @@ Only output the final SQL query.
 SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
 
+    logger.info("Prompt created successfully. Total length: %s characters", len(template))
     return template
 
 def generate_sql_query(
@@ -450,29 +498,30 @@ def generate_sql_query(
     """
     logger.info(f"🚀 Starting SQL generation with model: {model}")
 
-
-
     # Log the final prompt
     print_llm_prompt(template)
     
     if model == "none":
+        logger.info("Using sample query file: %s", SAMPLE_QUERY_FILE)
         # open sample query file and read content
         with open(SAMPLE_QUERY_FILE, "r", encoding="utf-8") as f:
             sql_query = f.read().strip()
-        logger.info("SQL generation skipped due to 'without_llm' mode")
+        logger.info("SQL generation skipped due to 'without_llm' mode. Retrieved from file: %s", 
+                    sql_query)
     else:
         logger.info("Sending request to LLM...")
         prompt = ChatPromptTemplate.from_template(template)
         chain = prompt | model # pyright: ignore[reportOperatorIssue]
 
         response = chain.invoke({})
+        logger.debug("LLM response received")
 
         # ------------------------------------------------------------------
         # 4. OUTPUT CLEANUP
         # ------------------------------------------------------------------
         sql_query = response_cleaning(response)
         logger.info(f"Generated SQL query length: {len(sql_query)} characters")
-
+        logger.debug("Generated SQL: %s", sql_query)
 
     return sql_query
 
@@ -489,9 +538,11 @@ def llm_feedback(
         - "CORRECT_QUERY"
         - "INCORRECT_QUERY: <suggestions>"
     """
+    logger.info("Starting LLM feedback evaluation for query: '%s'", sql)
 
     # Safety guard
     if not execution_output or isinstance(execution_output, str):
+        logger.warning("Execution output is empty or string, cannot verify correctness")
         return (
             "INCORRECT_QUERY: The query returned no results, "
             "so correctness cannot be verified."
@@ -499,11 +550,13 @@ def llm_feedback(
 
     # Take only the first 20 rows to avoid token explosion
     preview_rows = execution_output[:20]
+    logger.debug("Using first %s rows for evaluation", len(preview_rows))
 
     # Convert rows to a readable string
     rows_text = "\n".join(str(row) for row in preview_rows)
 
     load_dotenv(".env.azure")
+    logger.debug("Loaded Azure environment variables")
 
     model = AzureChatOpenAI(
         azure_deployment="gpt-4o",
@@ -546,9 +599,10 @@ Rules:
     logger.info("🧠 Sending query result to LLM for correctness evaluation")
 
     response = model.invoke(evaluation_prompt)
+    logger.debug("LLM evaluation response received")
 
     if hasattr(response, "content"):
-        verdict = response.content.strip()
+        verdict = response.content.strip() # pyright: ignore[reportAttributeAccessIssue]
     else:
         verdict = str(response).strip()
 
@@ -556,7 +610,7 @@ Rules:
 
     # Hard validation to avoid silent failures
     if not verdict.startswith(("CORRECT_QUERY", "INCORRECT_QUERY")):
-        logger.warning("⚠️ Unexpected LLM feedback format")
+        logger.warning("⚠️ Unexpected LLM feedback format: %s", verdict)
         return (
             "INCORRECT_QUERY: Unable to confidently evaluate correctness "
             "from the query results."
@@ -571,23 +625,30 @@ def classify_llm_feedback(feedback: str | None) -> tuple[str, str | None]:
     Returns:
         (error_category, error_detail)
     """
+    logger.debug("Classifying LLM feedback: %s", feedback)
+    
     if not feedback:
+        logger.debug("No feedback provided, returning NO_ERROR")
         return ("NO_ERROR", None)
 
     feedback_lower = feedback.lower()
     if not feedback_lower.startswith("incorrect_query"):
+        logger.debug("Feedback is not incorrect_query, returning NO_ERROR")
         return ("NO_ERROR", None)
 
     # Strip prefix
     explanation = feedback.split(":", 1)[-1].strip()
     explanation_lower = explanation.lower()
+    logger.debug("Extracted explanation: %s", explanation)
 
     for category, keywords in ERROR_CATEGORIES.items():
         for kw in keywords:
             if kw.lower() in explanation_lower:
+                logger.info("Feedback classified as: %s", category)
                 return (category, explanation)
 
     # Fallback if nothing matches
+    logger.warning("Feedback did not match any known error category, classifying as UNKNOWN_ERROR")
     return ("UNKNOWN_ERROR", explanation)
 
 def evaluate_feedback_error(
@@ -598,13 +659,19 @@ def evaluate_feedback_error(
     execution_status: str | None = None,
     execution_output: list[Any] | str | None = None,
     use_llm_feedback: bool = True):
+    """
+    Evaluate feedback and errors for SQL query.
+    """
+    logger.info("Evaluating feedback error for request: '%s'", request)
     
     syntax_status = validate_sql_syntax(sql)
     print()
     print(f"✅ Syntax check: {syntax_status}")
+    logger.info("Syntax check result: %s", syntax_status)
 
     error_feedback = None
     if syntax_status != "OK":
+        logger.warning("Syntax error detected: %s", syntax_status)
         print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
         error_feedback=(
             "The previous SQL query failed syntax validation "
@@ -615,20 +682,31 @@ def evaluate_feedback_error(
         print()
         print("🚀 Executing query against the database...")
         print()
+        logger.info("Executing SQL query against database: %s", database_name)
         execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
 
         if execution_status != "OK":
+            logger.warning("Runtime error detected: %s", execution_output)
             print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
             error_feedback=(
                 "The previous SQL query failed at runtime with this error: "
                 f"{execution_output}."
             )
         elif use_llm_feedback:
+            logger.info("Using LLM feedback for correctness evaluation")
             error_feedback = llm_feedback(sql, request, execution_output)
+        else:
+            logger.info("LLM feedback disabled, skipping correctness evaluation")
 
+    logger.info("Feedback error evaluation completed. Has error feedback: %s", error_feedback is not None)
     return syntax_status,execution_status, execution_output, error_feedback
 
 def build_targeted_retry_instruction(error_category: str) -> str:
+    """
+    Build targeted retry instruction based on error category.
+    """
+    logger.info("Building targeted retry instruction for error category: %s", error_category)
+    
     instructions = {
         "AGGREGATION_ERROR": (
             "The query has incorrect aggregation logic. "
@@ -656,7 +734,9 @@ def build_targeted_retry_instruction(error_category: str) -> str:
         ),
     }
 
-    return instructions.get(error_category, instructions["UNKNOWN_ERROR"])
+    instruction = instructions.get(error_category, instructions["UNKNOWN_ERROR"])
+    logger.debug("Retry instruction: %s", instruction)
+    return instruction
 
 def generation_loop(
     user_request: str,
@@ -667,6 +747,16 @@ def generation_loop(
     schema_vs: Chroma,
     llm_model: str | OllamaLLM | AzureChatOpenAI,
 ):
+    """
+    Main generation loop with retry logic.
+    """
+    logger.info("Starting generation loop for request: '%s'", user_request)
+    logger.info("Parameters - source: %s, database: %s", 
+                source, database_name)
+    
+    # Rest of the generation_loop function...
+    # (Assuming the rest of the function body remains as is)
+    # You would add logger.info statements throughout this function as well
     sql = ""
     execution_status = None
     execution_output = None
