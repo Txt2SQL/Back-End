@@ -52,11 +52,15 @@ def select_test_database(args_db: str | None = None) -> str:
     Prompt the user to select a database for test execution.
     """
     if args_db in DB_OPTIONS:
+        logger.info("Database '%s' selected via command line argument.", args_db)
         return args_db
     elif args_db is not None:
         print("Database provided not supported for the tests.")
         print(f"Supported databases: ")
-    else: print("🔍 Select a database to use for the test:")
+        logger.warning("Unsupported database '%s' provided via command line argument.", args_db)
+    else: 
+        print("🔍 Select a database to use for the test:")
+        logger.info("Starting interactive database selection.")
 
     for idx, name in enumerate(DB_OPTIONS, 1):
         print(f"  {idx}. {name}")
@@ -66,15 +70,20 @@ def select_test_database(args_db: str | None = None) -> str:
         if choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(DB_OPTIONS):
-                return DB_OPTIONS[idx]
+                selected_db = DB_OPTIONS[idx]
+                logger.info("Database '%s' selected via numeric input %s.", selected_db, choice)
+                return selected_db
         elif choice in DB_OPTIONS:
+            logger.info("Database '%s' selected via name input.", choice)
             return choice
         print("❌ Invalid selection. Please choose a valid database name or number.")
+        logger.info("Invalid selection entered: '%s'", choice)
 
 def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
     """
     Ensure the selected database exists and is populated.
     """
+    logger.info("Checking if database '%s' is ready.", db_name)
     existing_dbs = list_databases()
     if db_name in existing_dbs:
         print(f"✅ Database '{db_name}' already exists. Connecting to it...")
@@ -84,26 +93,35 @@ def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
             print(f"✅ Connection to '{db_name}' established.")
             logger.info("Connection to '%s' established.", db_name)
         conn.close()
+        logger.info("Database '%s' is ready for use.", db_name)
         return
 
     print(f"🛠️  Database '{db_name}' not found. Creating and populating it...")
     logger.info("Database '%s' not found. Creating and populating.", db_name)
     ddl_path = ddl_dir / f"{db_name}.sql"
     if not ddl_path.exists():
+        logger.error("DDL file not found for '%s': %s", db_name, ddl_path)
         raise FileNotFoundError(f"❌ DDL file not found for '{db_name}': {ddl_path}")
 
+    logger.info("DDL file found at: %s", ddl_path)
     conn = get_db_connection(database_name=None)
     cursor = conn.cursor()
 
+    logger.info("Creating database '%s'.", db_name)
     db_generator.create_database(cursor, db_name)
     cursor.execute(f"USE {db_generator.quote_identifier(db_name)}")
+    
+    logger.info("Executing DDL script: %s", ddl_path)
     db_generator.execute_sql_file(cursor, str(ddl_path))
     conn.commit()
 
     cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
     cursor.execute("SHOW TABLES")
     tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType]
+    logger.info("Found %s tables to populate: %s", len(tables), tables)
+    
     for table in tables:
+        logger.info("Populating table: %s", table)
         db_generator.populate_table(cursor, table)
     cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
     conn.commit()
@@ -111,43 +129,57 @@ def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
     cursor.close()
     conn.close()
     print(f"✅ Database '{db_name}' created and populated.")
-    logger.info("Database '%s' created and populated.", db_name)
+    logger.info("Database '%s' created and populated with %s tables.", db_name, len(tables))
 
 def configure_run_paths(db_name: str) -> Tuple[str, str]:
     """
     Configure input and output paths for the selected database.
     """
+    logger.info("Configuring run paths for database '%s'.", db_name)
     base_dir = Path(__file__).resolve().parent
     requests_dir = base_dir / "input" / "requests"
     output_dir = base_dir / "output" / f"{db_name}_results" / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    logger.info("Creating output directory: %s", output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     input_file = requests_dir / f"{db_name}_requests.txt"
     output_file = output_dir / f"test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
+    logger.info("Input file: %s", input_file)
+    logger.info("Output file: %s", output_file)
+    
     return str(input_file), str(output_file)
 
 def clear_tmp_dir(tmp_dir: Path) -> None:
     """
     Remove and recreate the tmp directory for a clean run.
     """
+    logger.info("Clearing temporary directory: %s", tmp_dir)
     if tmp_dir.exists():
+        logger.info("Removing existing temporary directory.")
         shutil.rmtree(tmp_dir)
+    logger.info("Creating new temporary directory.")
     tmp_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Temporary directory cleared and ready.")
 
 def build_schema_retriever(db_name: str) -> Tuple[dict, Chroma]:
     """
     Build schema vector store from the live database and return schema data.
     """
+    logger.info("Building schema retriever for database '%s'.", db_name)
     schema = extract_schema(db_name)
     schema["database"] = db_name
+    logger.info("Schema extracted for database '%s'. Number of tables: %s", db_name, len(schema.get('tables', [])))
+    
+    logger.info("Building vector store for schema. Persist directory: %s", SVS_DIR)
     schema_vs = build_vector_store(
         schema,
         persist_directory=SVS_DIR,
         collection_name=SCHEMA_COLLECTION_NAME,
     )
 
-    logger.info("Schema retriever built for database '%s'.", db_name)
+    logger.info("Schema retriever built for database '%s'. Vector store created successfully.", db_name)
     return schema, schema_vs
 
 def load_test_requests(input_file: str) -> List[str]:
@@ -155,13 +187,15 @@ def load_test_requests(input_file: str) -> List[str]:
     Load test requests from a text file.
     Each line is a separate request.
     """
+    logger.info("Loading test requests from file: %s", input_file)
     requests = []
     try:
         with open(input_file, 'r', encoding='utf-8') as f:
-            for line in f:
+            for idx, line in enumerate(f, 1):
                 line = line.strip()
                 if line and not line.startswith('#'):  # Skip empty lines and comments
                     requests.append(line)
+                    logger.debug("Loaded request %s: %s", idx, truncate_request(line))
         print(f"✅ Loaded {len(requests)} requests from {input_file}")
         logger.info("Loaded %s requests from %s.", len(requests), input_file)
     except FileNotFoundError:
@@ -172,9 +206,12 @@ def load_test_requests(input_file: str) -> List[str]:
 
 def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
     """Truncate long requests for cleaner output."""
+    logger.debug("Truncating request. Original length: %s, Max length: %s", len(request), max_length)
     if len(request) <= max_length:
         return request
-    return request[:max_length] + "..."
+    truncated = request[:max_length] + "..."
+    logger.debug("Request truncated to: %s", truncated)
+    return truncated
 
 def run_single_test(
     request: str, 
@@ -190,11 +227,13 @@ def run_single_test(
     Returns:
         (sql_query, status, error_message)
     """
+    logger.info("Starting single test execution. Request: '%s', Model: %s, Mode: %s", 
+                truncate_request(request), model_index, mode)
     try:
         llm_model = get_llm_model(model_index)
-        logger.info("Running single test with model index %s.", model_index)
-        # Generate SQL query
-            
+        logger.info("LLM model initialized for model index %s.", model_index)
+        
+        logger.info("Entering generation loop for request.")
         sql, syntax_status, execution_status, execution_output, error_category = generation_loop(
             user_request=request,
             source=mode,
@@ -205,13 +244,21 @@ def run_single_test(
             llm_model=llm_model
         )
         
+        logger.info("Generation loop completed. SQL generated (truncated): %s", truncate_request(sql))
+        logger.info("Syntax status: %s, Execution status: %s", syntax_status, execution_status)
+        
         if syntax_status == "OK" and mode != "mysql":
+            logger.info("Executing SQL query in non-mysql mode.")
             execution_status, execution_output = execute_sql_query(sql)
+            logger.info("Query execution completed. Status: %s", execution_status)
+        
+        schema_id = compute_schema_id(full_schema)
+        logger.info("Creating metadata for test results. Schema ID: %s", schema_id)
         
         metadata = create_metadata(
             sql_query=sql,
             syntax_status=syntax_status,
-            schema_id=compute_schema_id(full_schema),
+            schema_id=schema_id,
             schema_source=mode,
             user_request=request,
             model_index=model_index,
@@ -220,19 +267,21 @@ def run_single_test(
             error_category=error_category
         )
 
+        logger.info("Storing query feedback in vector store.")
         store_query_feedback(
             store=query_vs,
             sql_query=sql,
             qm=metadata
         )
-        logger.info("Stored query feedback for request.")
+        logger.info("Query feedback stored successfully.")
         
+        logger.info("Test completed with status: %s", metadata.status)
         return sql, metadata.status, str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message
             
     except Exception as e:
         # Catch any unexpected errors during generation
         error_msg = f"GENERATION_ERROR: {str(e)}"
-        logger.exception("Unexpected error during generation.")
+        logger.exception("Unexpected error during generation. Request: '%s'", truncate_request(request))
         return "", "GENERATION_ERROR", error_msg
 
 
@@ -248,6 +297,7 @@ def run_test_with_timeout(
     """
     Run test with timeout to prevent hanging.
     """
+    logger.info("Starting test with timeout. Timeout: %s seconds", timeout)
     import threading
     import queue
     
@@ -255,23 +305,31 @@ def run_test_with_timeout(
     
     def worker():
         try:
+            logger.debug("Timeout worker thread started for request: '%s'", truncate_request(request))
             result = run_single_test(request, model_index, full_schema, mode, query_vs, schema_vs)
             result_queue.put(result)
+            logger.debug("Worker thread completed successfully.")
         except Exception as e:
+            logger.exception("Worker thread encountered exception.")
             result_queue.put(("", "TIMEOUT_OR_ERROR", str(e)))
     
     thread = threading.Thread(target=worker)
     thread.daemon = True
     thread.start()
+    logger.debug("Timeout thread started, waiting for completion...")
     thread.join(timeout)
     
     if thread.is_alive():
         # Thread is still running - timeout occurred
+        logger.warning("Test exceeded timeout of %s seconds for request: '%s'", timeout, truncate_request(request))
         return "", "TIMEOUT", f"Test exceeded {timeout}s timeout"
     else:
         try:
-            return result_queue.get_nowait()
+            result = result_queue.get_nowait()
+            logger.info("Test completed within timeout. Status: %s", result[1])
+            return result
         except queue.Empty:
+            logger.error("No result returned from worker thread. Queue is empty.")
             return "", "UNKNOWN_ERROR", "No result returned"
 
 def format_result_line(model_name: str, sql_query: str, status: str, 
@@ -305,7 +363,7 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
             f.write(f"{n}. {truncated_request}\n\n")
             
             # Write results for each model
-            for index in range(5, len(AVAILABLE_MODELS)):
+            for index in range(1, len(AVAILABLE_MODELS)):
                 model_name = AVAILABLE_MODELS[index]
                 if model_name in model_results:
                     sql, status, outcome = model_results[model_name]
@@ -463,7 +521,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             request_start_time = time.time()
             
             # Test each available model
-            for index in range(5, len(AVAILABLE_MODELS)):
+            for index in range(1, len(AVAILABLE_MODELS)):
                 name = AVAILABLE_MODELS[index]
                 print(f"\nTesting with model: {name}")
                 logger.info("Testing with model: %s", name)
