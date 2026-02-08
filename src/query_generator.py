@@ -850,7 +850,6 @@ def generation_loop(
             query_vs=query_vs,
             schema_vs=schema_vs,
             error_feedback=error_feedback,
-            include_penalties=include_penalties,
         )
 
         logger.info(f"\n🔍 Generating query (attempt {attempt}/3)...")
@@ -869,8 +868,6 @@ def generation_loop(
 
         if error_category == "CORRECT_QUERY" or (source == "text" and syntax_status == "OK"):
             break
-        if error_feedback:
-            include_penalties = False
 
     return sql, syntax_status, execution_status, execution_output, error_category
 
