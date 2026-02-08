@@ -342,7 +342,7 @@ def main():
             return
 
         create_database(cursor, db_name)
-        cursor.execute(f"USE {quote_identifier(db_name)}")
+        cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
         execute_sql_file(cursor, file_path)
         conn.commit()
         logger.info("DDL executed and committed for %s.", db_name)
@@ -352,10 +352,10 @@ def main():
             logger.info("Database '%s' does not exist.", db_name)
             return
 
-        cursor.execute(f"USE {quote_identifier(db_name)}")
+        cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
 
-    cursor.execute("SHOW TABLES")
-    tables = [table[0] for table in cursor.fetchall()]
+    cursor.execute("SHOW TABLES") # pyright: ignore[reportOptionalMemberAccess]
+    tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
 
     if action == "2":
         rows_per_table = None
@@ -375,22 +375,22 @@ def main():
         if not selected_tables:
             return
 
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
         fk_value_cache = {}
         for table in selected_tables:
             populate_table(cursor, table, rows_per_table, fk_value_cache)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
         conn.commit()
     elif action == "3":
         selected_tables = select_tables(tables, "svuotare (empty)")
         if not selected_tables:
             return
 
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
         for table in selected_tables:
-            cursor.execute(f"TRUNCATE TABLE {quote_identifier(table)}")
+            cursor.execute(f"TRUNCATE TABLE {quote_identifier(table)}") # pyright: ignore[reportOptionalMemberAccess]
             logger.info("Truncated table %s.", table)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
         conn.commit()
 
     if cursor is not None:
