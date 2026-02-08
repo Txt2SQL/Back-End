@@ -84,14 +84,43 @@ def get_table_schema(cursor, table_name):
     for row in cursor.fetchall():
         col_name = row[0]
         col_type = row[1]
+        is_nullable = row[2]
         extra = row[5]  # auto_increment
 
         columns.append({
             'name': col_name,
             'type': col_type,
-            'is_auto_increment': 'auto_increment' in extra.lower()
+            'is_auto_increment': 'auto_increment' in extra.lower(),
+            'is_nullable': is_nullable.upper() == 'YES'
         })
     return columns
+
+
+def get_foreign_key_map(cursor, table_name):
+    """Return mapping of column name -> (referenced_table, referenced_column)."""
+    cursor.execute(
+        """
+        SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = %s
+          AND REFERENCED_TABLE_NAME IS NOT NULL
+        """,
+        (table_name,)
+    )
+    return {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
+
+
+def get_existing_values(cursor, table_name, column_name, cache):
+    """Return cached list of existing values for a referenced column."""
+    cache_key = (table_name, column_name)
+    if cache_key not in cache:
+        cursor.execute(
+            f"SELECT {quote_identifier(column_name)} FROM {quote_identifier(table_name)} "
+            f"WHERE {quote_identifier(column_name)} IS NOT NULL"
+        )
+        cache[cache_key] = [row[0] for row in cursor.fetchall()]
+    return cache[cache_key]
 
 
 def generate_fake_value(col_type, col_name):
@@ -123,10 +152,11 @@ def generate_fake_value(col_type, col_name):
     return "test"
 
 
-def populate_table(cursor, table_name, rows_per_table):
+def populate_table(cursor, table_name, rows_per_table, fk_value_cache):
     """Generate and insert fake data with fallback when batch insert fails."""
     logger.info("Populating table: %s", table_name)
     columns = get_table_schema(cursor, table_name)
+    fk_map = get_foreign_key_map(cursor, table_name)
 
     # Filter out auto_increment columns (database handles them)
     insert_cols = [c for c in columns if not c['is_auto_increment']]
@@ -143,17 +173,52 @@ def populate_table(cursor, table_name, rows_per_table):
     sql = f"INSERT INTO {quote_identifier(table_name)} ({col_names_str}) VALUES ({placeholders})"
 
     data_batch = []
+    missing_fk_logged = set()
     for _ in range(rows_per_table):
         row_data = []
+        skip_row = False
         for col in insert_cols:
-            val = generate_fake_value(col['type'], col['name'])
+            fk_target = fk_map.get(col['name'])
+            if fk_target:
+                ref_table, ref_column = fk_target
+                available_values = get_existing_values(
+                    cursor,
+                    ref_table,
+                    ref_column,
+                    fk_value_cache
+                )
+                if available_values:
+                    val = random.choice(available_values)
+                elif col['is_nullable']:
+                    val = None
+                else:
+                    skip_row = True
+                    missing_key = (table_name, col['name'])
+                    if missing_key not in missing_fk_logged:
+                        logger.warning(
+                            "Missing referenced values for %s.%s -> %s.%s; skipping rows.",
+                            table_name,
+                            col['name'],
+                            ref_table,
+                            ref_column
+                        )
+                        missing_fk_logged.add(missing_key)
+                    break
+            else:
+                val = generate_fake_value(col['type'], col['name'])
             row_data.append(val)
-        data_batch.append(tuple(row_data))
+        if not skip_row:
+            data_batch.append(tuple(row_data))
+
+    if not data_batch:
+        print(f"    Skipping {table_name} (No valid rows to insert)")
+        logger.info("Skipping %s (no valid rows to insert).", table_name)
+        return
 
     inserted_rows = 0
     try:
         cursor.executemany(sql, data_batch)
-        inserted_rows = rows_per_table
+        inserted_rows = len(data_batch)
     except Error as batch_error:
         print(f"    Batch insert failed for {table_name}: {batch_error}")
         logger.warning("Batch insert failed for %s: %s", table_name, batch_error)
@@ -311,8 +376,9 @@ def main():
             return
 
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+        fk_value_cache = {}
         for table in selected_tables:
-            populate_table(cursor, table, rows_per_table)
+            populate_table(cursor, table, rows_per_table, fk_value_cache)
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
         conn.commit()
     elif action == "3":
