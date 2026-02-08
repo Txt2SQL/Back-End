@@ -1,6 +1,6 @@
-import glob
-import os
-import random
+import glob, sys, os, random
+# Add parent directory to Python path for development
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dotenv import load_dotenv
 from faker import Faker
@@ -10,8 +10,9 @@ from src.logging_utils import setup_single_project_logger, setup_logger
 
 
 # Configuration
-SQL_DIR = './existing_ddl'
-ROWS_PER_TABLE = 100  # How many fake rows to generate per table
+BASE_DIR = os.path.dirname(__file__)
+SQL_DIR = os.path.join(BASE_DIR, 'input', 'existing_ddl')
+DEFAULT_ROWS_PER_TABLE = 100  # How many fake rows to generate per table
 
 fake = Faker()
 setup_single_project_logger()
@@ -48,6 +49,15 @@ def create_database(cursor, db_name):
         raise
 
 
+def database_exists(cursor, db_name):
+    """Check if database exists."""
+    cursor.execute(
+        "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = %s",
+        (db_name,)
+    )
+    return cursor.fetchone() is not None
+
+
 def execute_sql_file(cursor, file_path):
     """Read SQL file and execute commands."""
     print(f"[*] Executing DDL from {file_path}...")
@@ -74,14 +84,43 @@ def get_table_schema(cursor, table_name):
     for row in cursor.fetchall():
         col_name = row[0]
         col_type = row[1]
+        is_nullable = row[2]
         extra = row[5]  # auto_increment
 
         columns.append({
             'name': col_name,
             'type': col_type,
-            'is_auto_increment': 'auto_increment' in extra.lower()
+            'is_auto_increment': 'auto_increment' in extra.lower(),
+            'is_nullable': is_nullable.upper() == 'YES'
         })
     return columns
+
+
+def get_foreign_key_map(cursor, table_name):
+    """Return mapping of column name -> (referenced_table, referenced_column)."""
+    cursor.execute(
+        """
+        SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = %s
+          AND REFERENCED_TABLE_NAME IS NOT NULL
+        """,
+        (table_name,)
+    )
+    return {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
+
+
+def get_existing_values(cursor, table_name, column_name, cache):
+    """Return cached list of existing values for a referenced column."""
+    cache_key = (table_name, column_name)
+    if cache_key not in cache:
+        cursor.execute(
+            f"SELECT {quote_identifier(column_name)} FROM {quote_identifier(table_name)} "
+            f"WHERE {quote_identifier(column_name)} IS NOT NULL"
+        )
+        cache[cache_key] = [row[0] for row in cursor.fetchall()]
+    return cache[cache_key]
 
 
 def generate_fake_value(col_type, col_name):
@@ -113,10 +152,11 @@ def generate_fake_value(col_type, col_name):
     return "test"
 
 
-def populate_table(cursor, table_name):
+def populate_table(cursor, table_name, rows_per_table, fk_value_cache):
     """Generate and insert fake data with fallback when batch insert fails."""
     logger.info("Populating table: %s", table_name)
     columns = get_table_schema(cursor, table_name)
+    fk_map = get_foreign_key_map(cursor, table_name)
 
     # Filter out auto_increment columns (database handles them)
     insert_cols = [c for c in columns if not c['is_auto_increment']]
@@ -133,17 +173,52 @@ def populate_table(cursor, table_name):
     sql = f"INSERT INTO {quote_identifier(table_name)} ({col_names_str}) VALUES ({placeholders})"
 
     data_batch = []
-    for _ in range(ROWS_PER_TABLE):
+    missing_fk_logged = set()
+    for _ in range(rows_per_table):
         row_data = []
+        skip_row = False
         for col in insert_cols:
-            val = generate_fake_value(col['type'], col['name'])
+            fk_target = fk_map.get(col['name'])
+            if fk_target:
+                ref_table, ref_column = fk_target
+                available_values = get_existing_values(
+                    cursor,
+                    ref_table,
+                    ref_column,
+                    fk_value_cache
+                )
+                if available_values:
+                    val = random.choice(available_values)
+                elif col['is_nullable']:
+                    val = None
+                else:
+                    skip_row = True
+                    missing_key = (table_name, col['name'])
+                    if missing_key not in missing_fk_logged:
+                        logger.warning(
+                            "Missing referenced values for %s.%s -> %s.%s; skipping rows.",
+                            table_name,
+                            col['name'],
+                            ref_table,
+                            ref_column
+                        )
+                        missing_fk_logged.add(missing_key)
+                    break
+            else:
+                val = generate_fake_value(col['type'], col['name'])
             row_data.append(val)
-        data_batch.append(tuple(row_data))
+        if not skip_row:
+            data_batch.append(tuple(row_data))
+
+    if not data_batch:
+        print(f"    Skipping {table_name} (No valid rows to insert)")
+        logger.info("Skipping %s (no valid rows to insert).", table_name)
+        return
 
     inserted_rows = 0
     try:
         cursor.executemany(sql, data_batch)
-        inserted_rows = ROWS_PER_TABLE
+        inserted_rows = len(data_batch)
     except Error as batch_error:
         print(f"    Batch insert failed for {table_name}: {batch_error}")
         logger.warning("Batch insert failed for %s: %s", table_name, batch_error)
@@ -155,8 +230,46 @@ def populate_table(cursor, table_name):
             except Error:
                 continue
 
-    print(f"    Inserted {inserted_rows}/{ROWS_PER_TABLE} rows into {table_name}")
-    logger.info("Inserted %s/%s rows into %s.", inserted_rows, ROWS_PER_TABLE, table_name)
+    print(f"    Inserted {inserted_rows}/{rows_per_table} rows into {table_name}")
+    logger.info("Inserted %s/%s rows into %s.", inserted_rows, rows_per_table, table_name)
+
+
+def select_tables(tables, action_label):
+    if not tables:
+        print("Nessuna tabella trovata nel database selezionato.")
+        logger.info("No tables found while selecting tables for %s.", action_label)
+        return []
+
+    table_choice = None
+    while table_choice not in {"1", "2"}:
+        print(f"\nVuoi {action_label} in tutte le tabelle o in una specifica?")
+        print("1) tutte le tabelle")
+        print("2) una tabella specifica")
+        table_choice = input("Seleziona un'opzione (1/2): ").strip()
+
+    if table_choice == "1":
+        return tables
+
+    print("\nTabelle disponibili:")
+    for idx, table_name in enumerate(sorted(tables), start=1):
+        print(f"{idx}) {table_name}")
+
+    selected_table = None
+    sorted_tables = sorted(tables)
+    while selected_table is None:
+        choice = input("Scegli la tabella (nome o numero): ").strip()
+        if choice.isdigit():
+            index = int(choice) - 1
+            if 0 <= index < len(sorted_tables):
+                selected_table = sorted_tables[index]
+                break
+        if choice in tables:
+            selected_table = choice
+
+        if selected_table is None:
+            print("Selezione non valida. Riprova.")
+
+    return [selected_table]
 
 
 def main():
@@ -183,39 +296,101 @@ def main():
         logger.warning("No .sql files found in directory: %s", SQL_DIR)
         return
 
+    action = None
+    while action not in {"1", "2", "3"}:
+        print("\nCosa vuoi fare?")
+        print("1) crea nuovo database")
+        print("2) aggiungi nuovi record a database esistenti")
+        print("3) empty database (svuota database)")
+        action = input("Seleziona un'opzione (1/2/3): ").strip()
+
+    available_dbs = {}
     for file_path in sql_files:
-        # Extract filename to use as database name (e.g., 'users.sql' -> 'users')
         base_name = os.path.basename(file_path)
         db_name = os.path.splitext(base_name)[0]
+        available_dbs[db_name] = file_path
 
-        print(f"\n--- Processing {db_name} ---")
-        logger.info("Processing database: %s", db_name)
+    print("\nDatabase disponibili (da input/existing_ddl):")
+    for idx, db_name in enumerate(sorted(available_dbs.keys()), start=1):
+        print(f"{idx}) {db_name}")
 
-        # Create database only when missing
-        db_created = create_database(cursor, db_name)
+    selected_db = None
+    sorted_db_names = sorted(available_dbs.keys())
+    while selected_db is None:
+        choice = input("Scegli il database (nome o numero): ").strip()
+        if choice.isdigit():
+            index = int(choice) - 1
+            if 0 <= index < len(sorted_db_names):
+                selected_db = sorted_db_names[index]
+                break
+        if choice in available_dbs:
+            selected_db = choice
 
-        # Switch to the target database explicitly for this cursor/session
-        cursor.execute(f"USE {quote_identifier(db_name)}")
+        if selected_db is None:
+            print("Selezione non valida. Riprova.")
 
-        # Execute DDL only for a newly created database
-        if db_created:
-            execute_sql_file(cursor, file_path)
-            conn.commit()
-            logger.info("DDL executed and committed for %s.", db_name)
+    db_name = selected_db
+    file_path = available_dbs[db_name]
 
-        # Disable FK checks to allow random insertion order
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+    print(f"\n--- Processing {db_name} ---")
+    logger.info("Processing database: %s", db_name)
 
-        # Get list of tables in active database
-        cursor.execute("SHOW TABLES")
-        tables = [table[0] for table in cursor.fetchall()]
+    if action == "1":
+        if database_exists(cursor, db_name):
+            print(f"[=] Database '{db_name}' already exists. Skipping create/DDL.")
+            logger.info("Database '%s' already exists; skipping create/DDL.", db_name)
+            return
 
-        # Populate each table
-        for table in tables:
-            populate_table(cursor, table)
+        create_database(cursor, db_name)
+        cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+        execute_sql_file(cursor, file_path)
+        conn.commit()
+        logger.info("DDL executed and committed for %s.", db_name)
+    else:
+        if not database_exists(cursor, db_name):
+            print(f"[-] Database '{db_name}' does not exist.")
+            logger.info("Database '%s' does not exist.", db_name)
+            return
 
-        # Re-enable FK checks
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+        cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+
+    cursor.execute("SHOW TABLES") # pyright: ignore[reportOptionalMemberAccess]
+    tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
+
+    if action == "2":
+        rows_per_table = None
+        while rows_per_table is None:
+            rows_input = input(
+                f"Quanti record inserire per tabella? (default {DEFAULT_ROWS_PER_TABLE}): "
+            ).strip()
+            if not rows_input:
+                rows_per_table = DEFAULT_ROWS_PER_TABLE
+                break
+            if rows_input.isdigit() and int(rows_input) > 0:
+                rows_per_table = int(rows_input)
+                break
+            print("Inserisci un numero valido maggiore di zero.")
+
+        selected_tables = select_tables(tables, "inserire record")
+        if not selected_tables:
+            return
+
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
+        fk_value_cache = {}
+        for table in selected_tables:
+            populate_table(cursor, table, rows_per_table, fk_value_cache)
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
+        conn.commit()
+    elif action == "3":
+        selected_tables = select_tables(tables, "svuotare (empty)")
+        if not selected_tables:
+            return
+
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
+        for table in selected_tables:
+            cursor.execute(f"TRUNCATE TABLE {quote_identifier(table)}") # pyright: ignore[reportOptionalMemberAccess]
+            logger.info("Truncated table %s.", table)
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
         conn.commit()
 
     if cursor is not None:
