@@ -325,7 +325,9 @@ def format_result_line(
     )
 
 def write_test_results(
-    results: List[Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int]], float]],
+    results: List[
+        Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int, float]], float]
+    ],
     output_file: str,
 ):
     """
@@ -338,7 +340,7 @@ def write_test_results(
             for index in range(5, len(AVAILABLE_MODELS) - 1):
                 model_name = AVAILABLE_MODELS[index]
                 if model_name in model_results:
-                    sql, status, outcome, llm_feedback, attempts = model_results[model_name]
+                    sql, status, outcome, llm_feedback, attempts, model_time = model_results[model_name]
                     line = format_result_line(
                         request,
                         model_name,
@@ -378,7 +380,7 @@ def sanitize_request_filename(request: str, max_length: int = 15) -> str:
 
 def write_request_results(
     request: str,
-    model_results: Dict[str, Tuple[str, str, str | None, str | None, int]],
+    model_results: Dict[str, Tuple[str, str, str | None, str | None, int, float]],
     output_dir: Path,
     index: int,
     request_time: float,
@@ -394,7 +396,9 @@ def write_request_results(
     return str(output_file)
 
 def print_test_summary(
-    results: List[Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int]], float]],
+    results: List[
+        Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int, float]], float]
+    ],
     output_file: str,
 ):
     """Print a summary of test results."""
@@ -413,18 +417,38 @@ def print_test_summary(
     llm_feedback_counts = {}
     total_correct_feedback = 0
     total_time = 0.0
+    model_stats: Dict[str, Dict[str, float]] = {}
     
     for request, model_results, request_time in results:
         total_time += request_time
-        for model_name, (sql, status, error, llm_feedback, attempts) in model_results.items():
+        for model_name, (sql, status, error, llm_feedback, attempts, model_time) in model_results.items():
+            model_summary = model_stats.setdefault(
+                model_name,
+                {
+                    "attempts_total": 0.0,
+                    "attempts_count": 0.0,
+                    "time_total": 0.0,
+                    "time_count": 0.0,
+                    "ok": 0.0,
+                    "runtime": 0.0,
+                    "syntax": 0.0,
+                },
+            )
             total_tests += 1
             total_attempts += attempts
+            model_summary["attempts_total"] += attempts
+            model_summary["attempts_count"] += 1
+            model_summary["time_total"] += model_time
+            model_summary["time_count"] += 1
             if status == "OK":
                 passed_tests += 1
+                model_summary["ok"] += 1
             elif status == "SYNTAX_ERROR":
                 syntax_errors += 1
+                model_summary["syntax"] += 1
             elif status == "RUNTIME_ERROR":
                 runtime_errors += 1
+                model_summary["runtime"] += 1
             elif status == "TIMEOUT":
                 timeouts += 1
             else:
@@ -448,7 +472,11 @@ def print_test_summary(
         summary_lines.append(f"🧠 Most LLM feedback: {most_feedback}")
 
     if len(results) > 0:
-        summary_lines.append(f"🔁 Avg attempts per request: {total_attempts / len(results):.2f}")
+        summary_lines.append(
+            f"🔁 Avg attempts per request+model: {total_attempts / total_tests:.2f}"
+            if total_tests > 0
+            else "🔁 Avg attempts per request+model: 0.00"
+        )
         summary_lines.append(f"🔁 Total attempts: {total_attempts}")
         summary_lines.append(f"⏱️  Avg time per request: {total_time / len(results):.1f}s")
         summary_lines.append(f"⏱️  Total time: {total_time:.1f}s")
@@ -457,6 +485,94 @@ def print_test_summary(
         success_rate = (passed_tests / total_tests) * 100
         summary_lines.append(f"\n📈 Success rate: {success_rate:.1f}%")
     
+    if model_stats:
+        attempts_total_ranking = sorted(
+            model_stats.items(), key=lambda item: (item[1]["attempts_total"], item[0])
+        )
+        attempts_avg_ranking = sorted(
+            model_stats.items(),
+            key=lambda item: (
+                item[1]["attempts_total"] / item[1]["attempts_count"],
+                item[0],
+            ),
+        )
+        time_total_ranking = sorted(
+            model_stats.items(), key=lambda item: (item[1]["time_total"], item[0])
+        )
+        time_avg_ranking = sorted(
+            model_stats.items(),
+            key=lambda item: (item[1]["time_total"] / item[1]["time_count"], item[0]),
+        )
+        status_ranking = sorted(
+            model_stats.items(),
+            key=lambda item: (-item[1]["ok"], item[1]["runtime"], item[1]["syntax"], item[0]),
+        )
+
+        summary_lines.append("\n🏁 Attempts ranking (total)")
+        for position, (model_name, stats) in enumerate(attempts_total_ranking, 1):
+            avg_attempts = stats["attempts_total"] / stats["attempts_count"]
+            summary_lines.append(
+                f"{position}. {model_name}: total={stats['attempts_total']:.0f}, avg={avg_attempts:.2f}"
+            )
+
+        summary_lines.append("\n🏁 Attempts ranking (avg)")
+        for position, (model_name, stats) in enumerate(attempts_avg_ranking, 1):
+            avg_attempts = stats["attempts_total"] / stats["attempts_count"]
+            summary_lines.append(
+                f"{position}. {model_name}: avg={avg_attempts:.2f}, total={stats['attempts_total']:.0f}"
+            )
+
+        summary_lines.append("\n🏁 Status ranking (OK, RUNTIME, SYNTAX)")
+        for position, (model_name, stats) in enumerate(status_ranking, 1):
+            summary_lines.append(
+                f"{position}. {model_name}: OK={stats['ok']:.0f}, RUNTIME={stats['runtime']:.0f}, SYNTAX={stats['syntax']:.0f}"
+            )
+
+        summary_lines.append("\n🏁 Time ranking (total)")
+        for position, (model_name, stats) in enumerate(time_total_ranking, 1):
+            avg_time = stats["time_total"] / stats["time_count"]
+            summary_lines.append(
+                f"{position}. {model_name}: total={stats['time_total']:.1f}s, avg={avg_time:.1f}s"
+            )
+
+        summary_lines.append("\n🏁 Time ranking (avg)")
+        for position, (model_name, stats) in enumerate(time_avg_ranking, 1):
+            avg_time = stats["time_total"] / stats["time_count"]
+            summary_lines.append(
+                f"{position}. {model_name}: avg={avg_time:.1f}s, total={stats['time_total']:.1f}s"
+            )
+
+        attempts_avg_positions = {
+            model_name: position
+            for position, (model_name, _) in enumerate(attempts_avg_ranking, 1)
+        }
+        status_positions = {
+            model_name: position
+            for position, (model_name, _) in enumerate(status_ranking, 1)
+        }
+        time_avg_positions = {
+            model_name: position
+            for position, (model_name, _) in enumerate(time_avg_ranking, 1)
+        }
+
+        best_model = min(
+            model_stats.keys(),
+            key=lambda model_name: (
+                attempts_avg_positions[model_name]
+                + status_positions[model_name]
+                + time_avg_positions[model_name],
+                model_name,
+            ),
+        )
+        best_score = (
+            attempts_avg_positions[best_model]
+            + status_positions[best_model]
+            + time_avg_positions[best_model]
+        )
+        summary_lines.append(
+            f"\n🏆 Best model: {best_model} (score={best_score}, attempts rank={attempts_avg_positions[best_model]}, status rank={status_positions[best_model]}, time rank={time_avg_positions[best_model]})"
+        )
+
     summary_lines.append("="*60)
 
     with open(output_file, 'a', encoding='utf-8') as f:
@@ -544,7 +660,14 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                     print(f"   Error: {outcome[:200]}...")
                     logger.warning("Error output: %s", outcome[:200])
                 
-                model_results[name] = (sql_query, status, outcome, llm_feedback, attempts)
+                model_results[name] = (
+                    sql_query,
+                    status,
+                    outcome,
+                    llm_feedback,
+                    attempts,
+                    model_time,
+                )
             
             request_time = time.time() - request_start_time
             print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
