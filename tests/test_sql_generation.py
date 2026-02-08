@@ -313,10 +313,9 @@ def format_result_line(
 
     feedback_value = llm_feedback if llm_feedback else "N/A"
     return (
-        f"Request: {truncate_request(request)}\n\n"
         f"🤖 Model: {model_name}\n\n"
         "🧮 Query:\n\n\n"
-        f"{clean_sql}\n\n"
+        f"{clean_sql}\n\n\n"
         f"🏁 Status and outcome: {status_detail}\n\n"
         f"💡 LLM feedback: {feedback_value}\n\n"
         f"Attempts: {attempts}\n\n"
@@ -330,31 +329,43 @@ def write_test_results(
     output_file: str,
 ):
     """
-    Write all test results to output file following the template.
+    Write all test results grouped by request, with all models under each request.
     """
-    n = 1
-    with open(output_file, 'w', encoding='utf-8') as f:
-        for request, model_results, request_time in results:
-            # Write results for each model
-            ordered_models = [name for name in AVAILABLE_MODELS.values() if name in model_results]
-            remaining_models = [name for name in model_results if name not in ordered_models]
-            for model_name in ordered_models + remaining_models:
+    with open(output_file, "w", encoding="utf-8") as f:
+        for req_index, (request, model_results, request_time) in enumerate(results, 1):
+            # === Request header ===
+            f.write(f"{req_index}. Request: {truncate_request(request)}\n\n")
+
+            # === Models ===
+            for index in range(5, len(AVAILABLE_MODELS) - 1):
+                model_name = AVAILABLE_MODELS[index]
+
+                if model_name not in model_results:
+                    f.write(f"🤖 Model: {model_name}\n")
+                    f.write("Status and outcome: MODEL_NOT_AVAILABLE\n\n")
+                    continue
+
                 sql, status, outcome, llm_feedback, attempts, model_time = model_results[model_name]
-                line = format_result_line(
-                    request,
-                    model_name,
-                    sql,
-                    status,
-                    outcome or "",
-                    llm_feedback,
-                    attempts,
-                    model_time,
+
+                block = format_result_line(
+                    request=request,
+                    model_name=model_name,
+                    sql_query=sql,
+                    status=status,
+                    outcome=outcome or "",
+                    llm_feedback=llm_feedback,
+                    attempts=attempts,
+                    request_time=request_time,
                 )
-                f.write(f"{n}. {line}")
-                n += 1
-    
+
+                f.write(f"-"*200 + "\n\n")
+                f.write(block)
+
+            f.write("\n" + "=" * 200 + "\n\n")
+
     print(f"✅ Results written to {output_file}")
     logger.info("Results written to %s.", output_file)
+
 
 def sanitize_request_filename(request: str, max_length: int = 15) -> str:
     """
@@ -383,17 +394,40 @@ def write_request_results(
     logger.info("Request results written to %s.", output_file)
     return str(output_file)
 
+def print_table(title: str, headers: list[str], rows: list[list[str]]) -> list[str]:
+    """
+    Build an ASCII table and return it as a list of lines.
+    """
+    lines = []
+    lines.append(f"\n{title}")
+    lines.append("-" * 60)
+
+    col_widths = [
+        max(len(str(cell)) for cell in [header] + [row[i] for row in rows])
+        for i, header in enumerate(headers)
+    ]
+
+    def format_row(row):
+        return " | ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
+
+    lines.append(format_row(headers))
+    lines.append("-+-".join("-" * w for w in col_widths))
+
+    for row in rows:
+        lines.append(format_row(row))
+
+    return lines
+
 def print_test_summary(
     results: List[
         Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int, float]], float]
     ],
     output_file: str,
 ):
-    """Print a summary of test results."""
     summary_lines = []
-    summary_lines.append("\n" + LOGINFO_SEPARATOR)
+    summary_lines.append("/°" * 200 + "/\n\n")
     summary_lines.append("📊 TEST SUMMARY")
-    summary_lines.append(LOGINFO_SEPARATOR)
+    summary_lines.append("\n\n" + "/°" * 200 + "/")
     
     total_tests = 0
     passed_tests = 0
@@ -402,168 +436,135 @@ def print_test_summary(
     timeouts = 0
     other_errors = 0
     total_attempts = 0
-    llm_feedback_counts = {}
-    total_correct_feedback = 0
     total_time = 0.0
+
     model_stats: Dict[str, Dict[str, float]] = {}
-    
+
     for request, model_results, request_time in results:
         total_time += request_time
-        for model_name, (sql, status, error, llm_feedback, attempts, model_time) in model_results.items():
-            model_summary = model_stats.setdefault(
+        for model_name, (_, status, _, _, attempts, model_time) in model_results.items():
+            stats = model_stats.setdefault(
                 model_name,
-                {
-                    "attempts_total": 0.0,
-                    "attempts_count": 0.0,
-                    "time_total": 0.0,
-                    "time_count": 0.0,
-                    "ok": 0.0,
-                    "runtime": 0.0,
-                    "syntax": 0.0,
-                },
+                dict(
+                    ok=0,
+                    runtime=0,
+                    syntax=0,
+                    attempts_total=0,
+                    attempts_count=0,
+                    time_total=0,
+                    time_count=0,
+                ),
             )
+
             total_tests += 1
             total_attempts += attempts
-            model_summary["attempts_total"] += attempts
-            model_summary["attempts_count"] += 1
-            model_summary["time_total"] += model_time
-            model_summary["time_count"] += 1
+            stats["attempts_total"] += attempts
+            stats["attempts_count"] += 1
+            stats["time_total"] += model_time
+            stats["time_count"] += 1
+
             if status == "OK":
                 passed_tests += 1
-                model_summary["ok"] += 1
+                stats["ok"] += 1
             elif status == "SYNTAX_ERROR":
                 syntax_errors += 1
-                model_summary["syntax"] += 1
+                stats["syntax"] += 1
             elif status == "RUNTIME_ERROR":
                 runtime_errors += 1
-                model_summary["runtime"] += 1
+                stats["runtime"] += 1
             elif status == "TIMEOUT":
                 timeouts += 1
             else:
                 other_errors += 1
 
-            feedback_value = llm_feedback if llm_feedback else "N/A"
-            llm_feedback_counts[feedback_value] = llm_feedback_counts.get(feedback_value, 0) + 1
-            if feedback_value == "CORRECT_QUERY":
-                total_correct_feedback += 1
-    
-    summary_lines.append(f"Total requests tested: {len(results)}")
-    summary_lines.append(f"Total model executions: {total_tests}")
-    summary_lines.append(f"✅ Successful queries: {passed_tests}")
-    summary_lines.append(f"⚠️  Syntax errors: {syntax_errors}")
-    summary_lines.append(f"❌ Runtime errors: {runtime_errors}")
-    summary_lines.append(f"⏰ Timeouts: {timeouts}")
-    summary_lines.append(f"🔧 Other errors: {other_errors}")
-    summary_lines.append(f"🧠 Total LLM feedback = CORRECT_QUERY: {total_correct_feedback}")
-    if llm_feedback_counts:
-        most_feedback = max(llm_feedback_counts.items(), key=lambda item: item[1])[0]
-        summary_lines.append(f"🧠 Most LLM feedback: {most_feedback}")
+    # === GLOBAL STATS ===
+    summary_lines.extend([
+        "",
+        f"Total requests tested : {len(results)}",
+        f"Total model executions: {total_tests}",
+        f"✅ Successful queries : {passed_tests}",
+        f"⚠️  Syntax errors     : {syntax_errors}",
+        f"❌ Runtime errors    : {runtime_errors}",
+        f"⏰ Timeouts          : {timeouts}",
+        f"🔧 Other errors      : {other_errors}",
+        f"🔁 Total attempts    : {total_attempts}",
+        f"⏱️  Total time        : {total_time:.1f}s",
+        "",
+    ])
 
-    if len(results) > 0:
-        summary_lines.append(
-            f"🔁 Avg attempts per request+model: {total_attempts / total_tests:.2f}"
-            if total_tests > 0
-            else "🔁 Avg attempts per request+model: 0.00"
+    # === BUILD RANKINGS ===
+    attempts_avg = sorted(
+        model_stats.items(),
+        key=lambda x: x[1]["attempts_total"] / x[1]["attempts_count"],
+    )
+
+    time_avg = sorted(
+        model_stats.items(),
+        key=lambda x: x[1]["time_total"] / x[1]["time_count"],
+    )
+
+    status_rank = sorted(
+        model_stats.items(),
+        key=lambda x: (-x[1]["ok"], x[1]["runtime"], x[1]["syntax"]),
+    )
+
+    # === TABLES ===
+    summary_lines.extend(
+        print_table(
+            "🏁 Attempts ranking (avg)",
+            ["Rank", "Model", "Avg Attempts", "Total Attempts"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    f"{stats['attempts_total'] / stats['attempts_count']:.2f}",
+                    f"{stats['attempts_total']:.0f}",
+                ]
+                for i, (model, stats) in enumerate(attempts_avg)
+            ],
         )
-        summary_lines.append(f"🔁 Total attempts: {total_attempts}")
-        summary_lines.append(f"⏱️  Avg time per request: {total_time / len(results):.1f}s")
-        summary_lines.append(f"⏱️  Total time: {total_time:.1f}s")
-    
-    if total_tests > 0:
-        success_rate = (passed_tests / total_tests) * 100
-        summary_lines.append(f"\n📈 Success rate: {success_rate:.1f}%")
-    
-    if model_stats:
-        attempts_total_ranking = sorted(
-            model_stats.items(), key=lambda item: (item[1]["attempts_total"], item[0])
+    )
+
+    summary_lines.extend(
+        print_table(
+            "🏁 Time ranking (avg)",
+            ["Rank", "Model", "Avg Time (s)", "Total Time (s)"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    f"{stats['time_total'] / stats['time_count']:.2f}",
+                    f"{stats['time_total']:.1f}",
+                ]
+                for i, (model, stats) in enumerate(time_avg)
+            ],
         )
-        attempts_avg_ranking = sorted(
-            model_stats.items(),
-            key=lambda item: (
-                item[1]["attempts_total"] / item[1]["attempts_count"],
-                item[0],
-            ),
+    )
+
+    summary_lines.extend(
+        print_table(
+            "🏁 Status ranking",
+            ["Rank", "Model", "OK", "RUNTIME", "SYNTAX"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    str(int(stats["ok"])),
+                    str(int(stats["runtime"])),
+                    str(int(stats["syntax"])),
+                ]
+                for i, (model, stats) in enumerate(status_rank)
+            ],
         )
-        time_total_ranking = sorted(
-            model_stats.items(), key=lambda item: (item[1]["time_total"], item[0])
-        )
-        time_avg_ranking = sorted(
-            model_stats.items(),
-            key=lambda item: (item[1]["time_total"] / item[1]["time_count"], item[0]),
-        )
-        status_ranking = sorted(
-            model_stats.items(),
-            key=lambda item: (-item[1]["ok"], item[1]["runtime"], item[1]["syntax"], item[0]),
-        )
+    )
 
-        summary_lines.append("\n🏁 Attempts ranking (total)")
-        for position, (model_name, stats) in enumerate(attempts_total_ranking, 1):
-            avg_attempts = stats["attempts_total"] / stats["attempts_count"]
-            summary_lines.append(
-                f"{position}. {model_name}: total={stats['attempts_total']:.0f}, avg={avg_attempts:.2f}"
-            )
+    # === BEST MODEL ===
+    best_model = status_rank[0][0] if status_rank else "N/A"
+    summary_lines.append(f"\n🏆 Best overall model: {best_model}")
+    summary_lines.append("=" * 60)
 
-        summary_lines.append("\n🏁 Attempts ranking (avg)")
-        for position, (model_name, stats) in enumerate(attempts_avg_ranking, 1):
-            avg_attempts = stats["attempts_total"] / stats["attempts_count"]
-            summary_lines.append(
-                f"{position}. {model_name}: avg={avg_attempts:.2f}, total={stats['attempts_total']:.0f}"
-            )
-
-        summary_lines.append("\n🏁 Status ranking (OK, RUNTIME, SYNTAX)")
-        for position, (model_name, stats) in enumerate(status_ranking, 1):
-            summary_lines.append(
-                f"{position}. {model_name}: OK={stats['ok']:.0f}, RUNTIME={stats['runtime']:.0f}, SYNTAX={stats['syntax']:.0f}"
-            )
-
-        summary_lines.append("\n🏁 Time ranking (total)")
-        for position, (model_name, stats) in enumerate(time_total_ranking, 1):
-            avg_time = stats["time_total"] / stats["time_count"]
-            summary_lines.append(
-                f"{position}. {model_name}: total={stats['time_total']:.1f}s, avg={avg_time:.1f}s"
-            )
-
-        summary_lines.append("\n🏁 Time ranking (avg)")
-        for position, (model_name, stats) in enumerate(time_avg_ranking, 1):
-            avg_time = stats["time_total"] / stats["time_count"]
-            summary_lines.append(
-                f"{position}. {model_name}: avg={avg_time:.1f}s, total={stats['time_total']:.1f}s"
-            )
-
-        attempts_avg_positions = {
-            model_name: position
-            for position, (model_name, _) in enumerate(attempts_avg_ranking, 1)
-        }
-        status_positions = {
-            model_name: position
-            for position, (model_name, _) in enumerate(status_ranking, 1)
-        }
-        time_avg_positions = {
-            model_name: position
-            for position, (model_name, _) in enumerate(time_avg_ranking, 1)
-        }
-
-        best_model = min(
-            model_stats.keys(),
-            key=lambda model_name: (
-                attempts_avg_positions[model_name]
-                + status_positions[model_name]
-                + time_avg_positions[model_name],
-                model_name,
-            ),
-        )
-        best_score = (
-            attempts_avg_positions[best_model]
-            + status_positions[best_model]
-            + time_avg_positions[best_model]
-        )
-        summary_lines.append(
-            f"\n🏆 Best model: {best_model} (score={best_score}, attempts rank={attempts_avg_positions[best_model]}, status rank={status_positions[best_model]}, time rank={time_avg_positions[best_model]})"
-        )
-
-    summary_lines.append("="*60)
-
-    with open(output_file, 'a', encoding='utf-8') as f:
+    # === OUTPUT ===
+    with open(output_file, "a", encoding="utf-8") as f:
         for line in summary_lines:
             print(line)
             f.write(line + "\n")
@@ -654,7 +655,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                     outcome,
                     llm_feedback,
                     attempts,
-                    model_time,
+                    model_time
                 )
             
             request_time = time.time() - request_start_time
