@@ -1,7 +1,8 @@
 import os
 import logging
 from datetime import datetime
-
+from pathlib import Path
+from src.config.settings import MAX_OUTPUT_LENGTH, LOGINFO_SEPARATOR
 from langchain_chroma import Chroma
 
 # Global variable to track if the single log file has been configured
@@ -111,7 +112,33 @@ def get_logger(name: str) -> logging.Logger:
     """Get a logger for a specific module (convenience function)."""
     return setup_logger(name)
 
+def add_request_log_handler(log_file: Path) -> logging.FileHandler:
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_file, encoding="utf-8")
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d] - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logging.getLogger().addHandler(handler)
+    return handler
+
+
+def remove_request_log_handler(handler: logging.FileHandler) -> None:
+    root_logger = logging.getLogger()
+    root_logger.removeHandler(handler)
+    handler.close()
+
 logger = setup_logger(__name__)
+
+def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
+    """Truncate long requests for cleaner output."""
+    logger.debug("Truncating request. Original length: %s, Max length: %s", len(request), max_length)
+    if len(request) <= max_length:
+        return request
+    truncated = request[:max_length] + "..."
+    logger.debug("Request truncated to: %s", truncated)
+    return truncated
 
 def print_query_vector_store(store: Chroma):
     """
@@ -151,15 +178,15 @@ def print_llm_prompt(prompt_text: str) -> None:
     Logs the final prompt that will be sent to the LLM.
     Useful for debugging and understanding what context the model receives.
     """
-    logger.info("\n" + "=" * 80)
+    logger.info(LOGINFO_SEPARATOR)
     logger.info("📋 FINAL PROMPT SENT TO LLM")
-    logger.info("=" * 80)
+    logger.info(LOGINFO_SEPARATOR)
     logger.info(prompt_text)
-    logger.info("=" * 80 + "\n")
+    logger.info(LOGINFO_SEPARATOR)
     
 def print_schema_context(schema_context: str):
     """Prints the schema context in a readable format."""
-    logger.info("\n====================  SCHEMA CONTEXT ====================")
+    logger.info("====================  SCHEMA CONTEXT ====================")
     if schema_context.strip():
         logger.info(schema_context)
     else:

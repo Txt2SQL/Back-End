@@ -9,11 +9,12 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
 from src.mysql_linker import execute_sql_query
-from src.config.settings import AVAILABLE_MODELS, AZURE_MODELS, ERROR_CATEGORIES
+from src.config.settings import AVAILABLE_MODELS, AZURE_MODELS, ERROR_CATEGORIES, LOGINFO_SEPARATOR
 from src.logging_utils import (
     setup_logger,
     print_llm_prompt,
-    print_query_vector_store
+    print_query_vector_store,
+    truncate_request
 )
 from src.retriver_utils import (
     store_query_feedback,
@@ -119,7 +120,7 @@ def get_context(user_request: str, vector_store: Chroma) -> str:
     Uses light query-intent heuristics to tune retrieval depth,
     removes duplicate chunks, and groups output by table.
     """
-    logger.info("Retrieving schema context for request: '%s'", user_request)
+    logger.info("Retrieving schema context for request: '%s'", truncate_request(truncate_request(user_request)))
 
     # ------------------------------------------------------------------
     # SCHEMA RETRIEVAL (RAG)
@@ -194,7 +195,7 @@ def get_context(user_request: str, vector_store: Chroma) -> str:
     )
 
     if not schema_context:
-        logger.warning("No schema context retrieved for request: %s", user_request)
+        logger.warning("No schema context retrieved for request: %s", truncate_request(user_request))
 
     return schema_context
 
@@ -255,9 +256,9 @@ def infer_relationships(schema: dict) -> list[str]:
     return unique_relationships
 
 def build_join_hints(schema: dict) -> str:
-    logger.info("=" * 50)
+    logger.info(LOGINFO_SEPARATOR)
     logger.info("🧠 Building join hints from schema...")
-    logger.info("=" * 50)
+    logger.info(LOGINFO_SEPARATOR)
     
     relations = infer_relationships(schema)
 
@@ -273,9 +274,9 @@ def build_join_hints(schema: dict) -> str:
 
     result = "\n".join(lines)
     
-    logger.info("\n" + "=" * 50)
+    logger.info(LOGINFO_SEPARATOR)
     logger.info("✅ Join hints generated successfully!")
-    logger.info("=" * 50)
+    logger.info(LOGINFO_SEPARATOR)
     
     return result
 
@@ -387,7 +388,7 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
     """
     Add penalty section based on failed queries.
     """
-    logger.info("Adding penalty section for request: '%s'", user_request)
+    logger.info("Adding penalty section for request: '%s'", truncate_request(user_request))
     
     # Negative examples → pattern penalization
     failed_queries = retrieve_failed_queries(user_request, query_vs)
@@ -495,8 +496,6 @@ def generate_sql_query(
     - past successful queries (positive examples)
     - past failed queries (negative / penalized patterns)
     """
-    logger.info(f"🚀 Starting SQL generation with model: {model}")
-
     # Log the final prompt
     print_llm_prompt(template)
     
@@ -534,35 +533,6 @@ def extract_llm_text(response: Any) -> str:
         return str(response.content).strip()
     return str(response).strip()
 
-def explain_runtime_error(
-    llm_model: str | OllamaLLM | AzureChatOpenAI,
-    sql: str,
-    error_message: str,
-) -> str:
-    """
-    Ask the LLM to explain why a runtime error occurred.
-    """
-    if llm_model == "none":
-        logger.warning("LLM model unavailable for runtime error explanation.")
-        return "LLM unavailable for runtime error explanation."
-
-    prompt = f"""
-You are an expert SQL debugger.
-Explain why the following SQL query produced this runtime error.
-Be concise and do NOT rewrite the query.
-
---- SQL QUERY ---
-{sql}
-
---- RUNTIME ERROR ---
-{error_message}
-
-Provide a clear explanation of the cause.
-"""
-    logger.info("Requesting runtime error explanation from LLM.")
-    response = llm_model.invoke(prompt) # pyright: ignore[reportOptionalMemberAccess]
-    return extract_llm_text(response)
-
 def format_error_feedback(title: str, sql: str, details: str) -> str:
     """
     Formats error feedback with the current query and details.
@@ -580,6 +550,7 @@ def llm_feedback(
     sql: str,
     request: str,
     execution_output: list | None | str,
+    context: dict | None = None,
 ) -> str:
     """
     Uses an Azure OpenAI model to evaluate whether the SQL query
@@ -592,19 +563,12 @@ def llm_feedback(
     logger.info("Starting LLM feedback evaluation for query: '%s'", sql)
 
     # Safety guard
-    if not execution_output or isinstance(execution_output, str):
-        logger.warning("Execution output is empty or string, cannot verify correctness")
+    if not execution_output:
+        logger.warning("Execution output is empty, cannot verify correctness")
         return (
             "INCORRECT_QUERY: The query returned no results, "
             "so correctness cannot be verified."
         )
-
-    # Take only the first 20 rows to avoid token explosion
-    preview_rows = execution_output[:20]
-    logger.debug("Using first %s rows for evaluation", len(preview_rows))
-
-    # Convert rows to a readable string
-    rows_text = "\n".join(str(row) for row in preview_rows)
 
     load_dotenv(".env.azure")
     logger.debug("Loaded Azure environment variables")
@@ -617,7 +581,34 @@ def llm_feedback(
         temperature=0,
     )
 
-    evaluation_prompt = f"""
+    if isinstance(execution_output, str):
+        evaluation_prompt = f"""
+You are an expert SQL debugger.
+Explain why the following SQL query produced this runtime error.
+Be concise and do NOT rewrite the query.
+
+--- CONTEXT ---
+{context}
+
+--- SQL QUERY ---
+{sql}
+
+--- RUNTIME ERROR ---
+{execution_output}
+
+Provide a clear explanation of the cause.
+"""
+        logger.info("Requesting runtime error explanation from LLM.")
+    else:
+
+        # Take only the first 20 rows to avoid token explosion
+        preview_rows = execution_output[:20]
+        logger.debug("Using first %s rows for evaluation", len(preview_rows))
+
+        # Convert rows to a readable string
+        rows_text = "\n".join(str(row) for row in preview_rows)
+
+        evaluation_prompt = f"""
 You are an expert SQL reviewer.
 
 Your task is to evaluate whether the SQL query correctly answers
@@ -647,15 +638,12 @@ Rules:
 - Judge correctness, not syntax or performance.
 """
 
-    logger.info("🧠 Sending query result to LLM for correctness evaluation")
+        logger.info("🧠 Sending query result to LLM for correctness evaluation")
 
     response = model.invoke(evaluation_prompt)
     logger.debug("LLM evaluation response received")
 
-    if hasattr(response, "content"):
-        verdict = response.content.strip() # pyright: ignore[reportAttributeAccessIssue]
-    else:
-        verdict = str(response).strip()
+    verdict = extract_llm_text(response)
 
     logger.info(f"🧪 LLM evaluation verdict: {verdict}")
 
@@ -715,18 +703,17 @@ def evaluate_feedback_error(
     """
     Evaluate feedback and errors for SQL query.
     """
-    logger.info("Evaluating feedback error for request: '%s'", request)
+    logger.info("Evaluating feedback error for request: '%s'", truncate_request(request))
     
     syntax_status = validate_sql_syntax(sql)
-    print()
-    print(f"✅ Syntax check: {syntax_status}")
+
+    logger.info(f"✅ Syntax check: {syntax_status}")
     logger.info("Syntax check result: %s", syntax_status)
 
     error_feedback = None
     error_category = None
     if syntax_status != "OK":
         logger.warning("Syntax error detected: %s", syntax_status)
-        print("♻️ Syntax non valida: rigenero la query con feedback sull'errore...")
         error_feedback = format_error_feedback(
             "The previous SQL query caused a syntax error.",
             sql,
@@ -740,43 +727,40 @@ def evaluate_feedback_error(
         logger.info("Feedback error evaluation completed. Has error feedback: %s", False)
         return syntax_status, execution_status, execution_output, error_feedback, error_category
 
-    print()
-    print("🚀 Executing query against the database...")
-    print()
-    logger.info("Executing SQL query against database: %s", database_name)
-    execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
+    if source == "mysql":
+        logger.info("Executing SQL query against database: %s", database_name)
+        execution_status, execution_output = execute_sql_query(sql, database_name=database_name)
 
-    if execution_status != "OK":
-        logger.warning("Runtime error detected: %s", execution_output)
-        print("♻️ Runtime error: rigenero la query con feedback dell'errore di esecuzione...")
-        details = f"Runtime error: {execution_output}"
+        if execution_status != "OK":
+            logger.warning("Runtime error detected: %s", execution_output)
+            details = f"Runtime error: {execution_output}"
+            if attempt >= 2:
+                explanation = llm_feedback(sql, request, execution_output)
+                details = f"{details}\n\nExplanation:\n{explanation}"
+            error_feedback = format_error_feedback(
+                "The previous SQL query failed at runtime.",
+                sql,
+                details,
+            )
+            logger.info("Feedback error evaluation completed. Has error feedback: %s", True)
+            return syntax_status, execution_status, execution_output, error_feedback, error_category
+
+        logger.info("Using LLM feedback for correctness evaluation")
+        error_feedback = llm_feedback(sql, request, execution_output)
+        if error_feedback.startswith("CORRECT_QUERY"):
+            logger.info("Query confirmed correct by LLM.")
+            return syntax_status, execution_status, execution_output, None, "CORRECT_QUERY"
+
+        error_category, _ = classify_llm_feedback(error_feedback)
         if attempt >= 2:
-            explanation = explain_runtime_error(llm_model, sql, str(execution_output))
-            details = f"{details}\n\nExplanation:\n{explanation}"
+            retry_hint = build_targeted_retry_instruction(error_category)
+            error_feedback = f"{error_feedback}\n\n{retry_hint}"
+
         error_feedback = format_error_feedback(
-            "The previous SQL query failed at runtime.",
+            "The previous SQL query was incorrect.",
             sql,
-            details,
+            error_feedback,
         )
-        logger.info("Feedback error evaluation completed. Has error feedback: %s", True)
-        return syntax_status, execution_status, execution_output, error_feedback, error_category
-
-    logger.info("Using LLM feedback for correctness evaluation")
-    error_feedback = llm_feedback(sql, request, execution_output)
-    if error_feedback.startswith("CORRECT_QUERY"):
-        logger.info("Query confirmed correct by LLM.")
-        return syntax_status, execution_status, execution_output, None, "CORRECT_QUERY"
-
-    error_category, _ = classify_llm_feedback(error_feedback)
-    if attempt >= 2:
-        retry_hint = build_targeted_retry_instruction(error_category)
-        error_feedback = f"{error_feedback}\n\n{retry_hint}"
-
-    error_feedback = format_error_feedback(
-        "The previous SQL query was incorrect.",
-        sql,
-        error_feedback,
-    )
 
     logger.info("Feedback error evaluation completed. Has error feedback: %s", True)
     return syntax_status, execution_status, execution_output, error_feedback, error_category
@@ -830,7 +814,7 @@ def generation_loop(
     """
     Main generation loop with retry logic.
     """
-    logger.info("Starting generation loop for request: '%s'", user_request)
+    logger.info("Starting generation loop for request: '%s'", truncate_request(user_request))
     logger.info("Parameters - source: %s, database: %s", 
                 source, database_name)
     
@@ -840,7 +824,6 @@ def generation_loop(
     error_feedback = None
     syntax_status = "UNKNOWN"
     error_category = None
-    include_penalties = source == "mysql"
 
     for attempt in range(1, 4):
         template = create_prompt(
@@ -852,7 +835,7 @@ def generation_loop(
             error_feedback=error_feedback,
         )
 
-        logger.info(f"\n🔍 Generating query (attempt {attempt}/3)...")
+        logger.info(f"🔍 Generating query (attempt {attempt}/3)...")
         sql = generate_sql_query(llm_model, template)
 
         syntax_status, execution_status, execution_output, error_feedback, error_category = evaluate_feedback_error(
@@ -959,7 +942,7 @@ def main():
 
             print("\n💡 Generated SQL query:\n")
             print(sql)
-            print("\n" + "=" * 60)
+            print("\n" + LOGINFO_SEPARATOR)
 
             if execution_status == "OK":
                 pretty_print_query_preview(execution_output)
