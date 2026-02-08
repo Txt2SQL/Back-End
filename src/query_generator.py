@@ -410,7 +410,6 @@ def create_prompt(
     query_vs: Chroma,
     schema_vs: Chroma,
     error_feedback: str | None = None,
-    include_penalties: bool = True,
 ) -> str:
     """
     Create prompt for SQL generation.
@@ -456,11 +455,10 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - If using aggregates, include GROUP BY  
 """
 
-    if source == "mysql" and include_penalties:
+    if source == "mysql" and error_feedback is not None:
         template = add_penalties(template, user_request, query_vs)
         logger.info("Added penalty section for MySQL extraction schema")
-
-    if error_feedback:
+    else:
         logger.info("Adding error feedback to prompt")
         template = template + f"""
 === PREVIOUS QUERY ERROR TO FIX ===
@@ -869,9 +867,7 @@ def generation_loop(
             llm_model=llm_model,
         )
 
-        if error_category == "CORRECT_QUERY":
-            break
-        if source == "text" and syntax_status == "OK":
+        if error_category == "CORRECT_QUERY" or (source == "text" and syntax_status == "OK"):
             break
         if error_feedback:
             include_penalties = False
