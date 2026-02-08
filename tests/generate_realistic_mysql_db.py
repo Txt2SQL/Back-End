@@ -1,6 +1,6 @@
-import glob
-import os
-import random
+import glob, sys, os, random
+# Add parent directory to Python path for development
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dotenv import load_dotenv
 from faker import Faker
@@ -169,44 +169,6 @@ def populate_table(cursor, table_name, rows_per_table):
     logger.info("Inserted %s/%s rows into %s.", inserted_rows, rows_per_table, table_name)
 
 
-def select_tables(tables, action_label):
-    if not tables:
-        print("Nessuna tabella trovata nel database selezionato.")
-        logger.info("No tables found while selecting tables for %s.", action_label)
-        return []
-
-    table_choice = None
-    while table_choice not in {"1", "2"}:
-        print(f"\nVuoi {action_label} in tutte le tabelle o in una specifica?")
-        print("1) tutte le tabelle")
-        print("2) una tabella specifica")
-        table_choice = input("Seleziona un'opzione (1/2): ").strip()
-
-    if table_choice == "1":
-        return tables
-
-    print("\nTabelle disponibili:")
-    for idx, table_name in enumerate(sorted(tables), start=1):
-        print(f"{idx}) {table_name}")
-
-    selected_table = None
-    sorted_tables = sorted(tables)
-    while selected_table is None:
-        choice = input("Scegli la tabella (nome o numero): ").strip()
-        if choice.isdigit():
-            index = int(choice) - 1
-            if 0 <= index < len(sorted_tables):
-                selected_table = sorted_tables[index]
-                break
-        if choice in tables:
-            selected_table = choice
-
-        if selected_table is None:
-            print("Selezione non valida. Riprova.")
-
-    return [selected_table]
-
-
 def main():
     conn = None
     cursor = None
@@ -232,12 +194,24 @@ def main():
         return
 
     action = None
-    while action not in {"1", "2", "3"}:
+    while action not in {"1", "2"}:
         print("\nCosa vuoi fare?")
         print("1) crea nuovo database")
         print("2) aggiungi nuovi record a database esistenti")
-        print("3) svuota database")
-        action = input("Seleziona un'opzione (1/2/3): ").strip()
+        action = input("Seleziona un'opzione (1/2): ").strip()
+
+    rows_per_table = None
+    while rows_per_table is None:
+        rows_input = input(
+            f"Quanti record inserire per tabella? (default {DEFAULT_ROWS_PER_TABLE}): "
+        ).strip()
+        if not rows_input:
+            rows_per_table = DEFAULT_ROWS_PER_TABLE
+            break
+        if rows_input.isdigit() and int(rows_input) > 0:
+            rows_per_table = int(rows_input)
+            break
+        print("Inserisci un numero valido maggiore di zero.")
 
     available_dbs = {}
     for file_path in sql_files:
@@ -283,49 +257,21 @@ def main():
         logger.info("DDL executed and committed for %s.", db_name)
     else:
         if not database_exists(cursor, db_name):
-            print(f"[-] Database '{db_name}' does not exist.")
-            logger.info("Database '%s' does not exist.", db_name)
+            print(f"[-] Database '{db_name}' does not exist. Cannot add records.")
+            logger.info("Database '%s' does not exist; cannot add records.", db_name)
             return
 
         cursor.execute(f"USE {quote_identifier(db_name)}")
 
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
     cursor.execute("SHOW TABLES")
     tables = [table[0] for table in cursor.fetchall()]
 
-    if action == "2":
-        rows_per_table = None
-        while rows_per_table is None:
-            rows_input = input(
-                f"Quanti record inserire per tabella? (default {DEFAULT_ROWS_PER_TABLE}): "
-            ).strip()
-            if not rows_input:
-                rows_per_table = DEFAULT_ROWS_PER_TABLE
-                break
-            if rows_input.isdigit() and int(rows_input) > 0:
-                rows_per_table = int(rows_input)
-                break
-            print("Inserisci un numero valido maggiore di zero.")
+    for table in tables:
+        populate_table(cursor, table, rows_per_table)
 
-        selected_tables = select_tables(tables, "inserire record")
-        if not selected_tables:
-            return
-
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-        for table in selected_tables:
-            populate_table(cursor, table, rows_per_table)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-        conn.commit()
-    elif action == "3":
-        selected_tables = select_tables(tables, "svuotare")
-        if not selected_tables:
-            return
-
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-        for table in selected_tables:
-            cursor.execute(f"TRUNCATE TABLE {quote_identifier(table)}")
-            logger.info("Truncated table %s.", table)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-        conn.commit()
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+    conn.commit()
 
     if cursor is not None:
         cursor.close()
