@@ -84,12 +84,14 @@ def get_table_schema(cursor, table_name):
     for row in cursor.fetchall():
         col_name = row[0]
         col_type = row[1]
+        is_nullable = row[2]
         extra = row[5]  # auto_increment
 
         columns.append({
             'name': col_name,
             'type': col_type,
-            'is_auto_increment': 'auto_increment' in extra.lower()
+            'is_auto_increment': 'auto_increment' in extra.lower(),
+            'is_nullable': is_nullable.upper() == 'YES'
         })
     return columns
 
@@ -123,7 +125,59 @@ def generate_fake_value(col_type, col_name):
     return "test"
 
 
-def populate_table(cursor, table_name, rows_per_table):
+def get_foreign_keys(cursor, db_name):
+    """Return foreign key mappings for tables in the database."""
+    cursor.execute(
+        """
+        SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = %s AND REFERENCED_TABLE_NAME IS NOT NULL
+        """,
+        (db_name,)
+    )
+    foreign_keys = {}
+    for table_name, column_name, ref_table, ref_column in cursor.fetchall():
+        foreign_keys.setdefault(table_name, []).append({
+            'column': column_name,
+            'ref_table': ref_table,
+            'ref_column': ref_column
+        })
+    return foreign_keys
+
+
+def order_tables_by_dependencies(tables, foreign_keys):
+    """Topologically sort tables based on foreign key dependencies."""
+    dependencies = {table: set() for table in tables}
+    for table, fks in foreign_keys.items():
+        for fk in fks:
+            if fk['ref_table'] in dependencies:
+                dependencies[table].add(fk['ref_table'])
+
+    ordered = []
+    remaining = set(tables)
+
+    while remaining:
+        ready = [table for table in remaining if not dependencies[table]]
+        if not ready:
+            return tables
+        for table in ready:
+            remaining.remove(table)
+            ordered.append(table)
+            for other_table in remaining:
+                dependencies[other_table].discard(table)
+
+    return ordered
+
+
+def fetch_fk_values(cursor, table_name, column_name):
+    """Fetch existing values for a referenced column."""
+    cursor.execute(
+        f"SELECT {quote_identifier(column_name)} FROM {quote_identifier(table_name)}"
+    )
+    return [row[0] for row in cursor.fetchall()]
+
+
+def populate_table(cursor, table_name, rows_per_table, foreign_keys, fk_value_cache):
     """Generate and insert fake data with fallback when batch insert fails."""
     logger.info("Populating table: %s", table_name)
     columns = get_table_schema(cursor, table_name)
@@ -142,11 +196,30 @@ def populate_table(cursor, table_name, rows_per_table):
 
     sql = f"INSERT INTO {quote_identifier(table_name)} ({col_names_str}) VALUES ({placeholders})"
 
+    fk_map = {fk['column']: fk for fk in foreign_keys.get(table_name, [])}
+
     data_batch = []
     for _ in range(rows_per_table):
         row_data = []
         for col in insert_cols:
-            val = generate_fake_value(col['type'], col['name'])
+            fk = fk_map.get(col['name'])
+            if fk:
+                cache_key = (fk['ref_table'], fk['ref_column'])
+                if cache_key not in fk_value_cache:
+                    fk_value_cache[cache_key] = fetch_fk_values(
+                        cursor,
+                        fk['ref_table'],
+                        fk['ref_column']
+                    )
+                fk_values = fk_value_cache[cache_key]
+                if fk_values:
+                    val = random.choice(fk_values)
+                elif col['is_nullable']:
+                    val = None
+                else:
+                    val = generate_fake_value(col['type'], col['name'])
+            else:
+                val = generate_fake_value(col['type'], col['name'])
             row_data.append(val)
         data_batch.append(tuple(row_data))
 
@@ -292,40 +365,15 @@ def main():
     cursor.execute("SHOW TABLES")
     tables = [table[0] for table in cursor.fetchall()]
 
-    if action == "2":
-        rows_per_table = None
-        while rows_per_table is None:
-            rows_input = input(
-                f"Quanti record inserire per tabella? (default {DEFAULT_ROWS_PER_TABLE}): "
-            ).strip()
-            if not rows_input:
-                rows_per_table = DEFAULT_ROWS_PER_TABLE
-                break
-            if rows_input.isdigit() and int(rows_input) > 0:
-                rows_per_table = int(rows_input)
-                break
-            print("Inserisci un numero valido maggiore di zero.")
+    foreign_keys = get_foreign_keys(cursor, db_name)
+    ordered_tables = order_tables_by_dependencies(tables, foreign_keys)
+    fk_value_cache = {}
 
-        selected_tables = select_tables(tables, "inserire record")
-        if not selected_tables:
-            return
+    for table in ordered_tables:
+        populate_table(cursor, table, rows_per_table, foreign_keys, fk_value_cache)
 
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-        for table in selected_tables:
-            populate_table(cursor, table, rows_per_table)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-        conn.commit()
-    elif action == "3":
-        selected_tables = select_tables(tables, "svuotare (empty)")
-        if not selected_tables:
-            return
-
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-        for table in selected_tables:
-            cursor.execute(f"TRUNCATE TABLE {quote_identifier(table)}")
-            logger.info("Truncated table %s.", table)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-        conn.commit()
+    cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+    conn.commit()
 
     if cursor is not None:
         cursor.close()
