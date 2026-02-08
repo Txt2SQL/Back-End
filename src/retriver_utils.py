@@ -143,7 +143,7 @@ def create_metadata(
     model_index: int,
     execution_status: str | None = None,
     execution_output: Any | None = None,
-    error_category: str | None = None
+    LLM_feedback: str | None = None
 ) -> QueryMetadata:
     logger.info("📝 Creating metadata for query execution...")
 
@@ -203,8 +203,8 @@ def create_metadata(
     # ERROR CATEGORY (SECOND LLM)
     # -----------------------------
     effective_error_category = None
-    if syntax_status != "OK" and execution_status != "OK":
-        effective_error_category = error_category
+    if syntax_status == "OK" and execution_status == "OK":
+        effective_error_category = LLM_feedback
     logger.info(f"🏷️ Error category stored: {effective_error_category}")
     
     return QueryMetadata(
@@ -217,7 +217,7 @@ def create_metadata(
         error_message=error_message,
         knowledge_scope=knowledge_scope,
         error_type=error_type,
-        error_category=effective_error_category
+        LLM_feedback=effective_error_category
     )
 
 def classify_error(error_message: str | None) -> str | None:
