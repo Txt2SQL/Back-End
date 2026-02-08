@@ -336,32 +336,21 @@ def write_test_results(
     with open(output_file, 'w', encoding='utf-8') as f:
         for request, model_results, request_time in results:
             # Write results for each model
-            for index in range(5, len(AVAILABLE_MODELS) - 1):
-                model_name = AVAILABLE_MODELS[index]
-                if model_name in model_results:
-                    sql, status, outcome, llm_feedback, attempts, model_time = model_results[model_name]
-                    line = format_result_line(
-                        request,
-                        model_name,
-                        sql,
-                        status,
-                        outcome or "",
-                        llm_feedback,
-                        attempts,
-                        request_time,
-                    )
-                    f.write(f"{n}. {line}")
-                else:
-                    f.write(
-                        f"{n}. "
-                        f"Request: {truncate_request(request)}\n"
-                        f"🤖 Model: {model_name}\n"
-                        "🧮 Query:\n"
-                        "Status and outcome: MODEL_NOT_AVAILABLE/MODEL_NOT_AVAILABLE\n"
-                        "LLM feedback: N/A\n"
-                        "Attempts: 0\n"
-                        f"Request time: {request_time:.1f}s\n\n"
-                    )
+            ordered_models = [name for name in AVAILABLE_MODELS.values() if name in model_results]
+            remaining_models = [name for name in model_results if name not in ordered_models]
+            for model_name in ordered_models + remaining_models:
+                sql, status, outcome, llm_feedback, attempts, model_time = model_results[model_name]
+                line = format_result_line(
+                    request,
+                    model_name,
+                    sql,
+                    status,
+                    outcome or "",
+                    llm_feedback,
+                    attempts,
+                    model_time,
+                )
+                f.write(f"{n}. {line}")
                 n += 1
     
     print(f"✅ Results written to {output_file}")
