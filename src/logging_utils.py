@@ -1,7 +1,7 @@
 import os
 import logging
 from datetime import datetime
-
+from src.config.settings import MAX_OUTPUT_LENGTH, LOGINFO_SEPARATOR
 from langchain_chroma import Chroma
 
 # Global variable to track if the single log file has been configured
@@ -113,6 +113,15 @@ def get_logger(name: str) -> logging.Logger:
 
 logger = setup_logger(__name__)
 
+def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
+    """Truncate long requests for cleaner output."""
+    logger.debug("Truncating request. Original length: %s, Max length: %s", len(request), max_length)
+    if len(request) <= max_length:
+        return request
+    truncated = request[:max_length] + "..."
+    logger.debug("Request truncated to: %s", truncated)
+    return truncated
+
 def print_query_vector_store(store: Chroma):
     """
     Prints the 15 most recent documents stored in the query feedback vector store.
@@ -151,15 +160,15 @@ def print_llm_prompt(prompt_text: str) -> None:
     Logs the final prompt that will be sent to the LLM.
     Useful for debugging and understanding what context the model receives.
     """
-    logger.info("\n" + "=" * 80)
+    logger.info(LOGINFO_SEPARATOR)
     logger.info("📋 FINAL PROMPT SENT TO LLM")
-    logger.info("=" * 80)
+    logger.info(LOGINFO_SEPARATOR)
     logger.info(prompt_text)
-    logger.info("=" * 80 + "\n")
+    logger.info(LOGINFO_SEPARATOR)
     
 def print_schema_context(schema_context: str):
     """Prints the schema context in a readable format."""
-    logger.info("\n====================  SCHEMA CONTEXT ====================")
+    logger.info("====================  SCHEMA CONTEXT ====================")
     if schema_context.strip():
         logger.info(schema_context)
     else:

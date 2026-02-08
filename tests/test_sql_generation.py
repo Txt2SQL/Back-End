@@ -6,11 +6,12 @@ from datetime import datetime
 from langchain_chroma import Chroma
 from typing import Dict, List, Tuple
 from langchain_ollama import OllamaEmbeddings
-from src.config.settings import AVAILABLE_MODELS
+from src.config.settings import AVAILABLE_MODELS, MAX_OUTPUT_LENGTH
 from src.mysql_linker import extract_schema, get_db_connection, list_databases
 from src.logging_utils import (
     setup_single_project_logger, 
-    setup_logger
+    setup_logger,
+    truncate_request
 )
 from src.query_generator import (
     generate_sql_query,
@@ -35,7 +36,6 @@ BASE_DIR = Path(__file__).resolve().parent
 TMP_DIR = BASE_DIR / "tmp"
 INPUT_FILE = "./input/requests/test_requests.txt"
 OUTPUT_DIR = "./output"
-MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
 QVS_DIR = str(TMP_DIR / "query_vector_store")
 SVS_DIR = str(TMP_DIR / "schema_vector_store")
@@ -204,15 +204,6 @@ def load_test_requests(input_file: str) -> List[str]:
         logger.error("Input file not found: %s", input_file)
         requests = []
     return requests
-
-def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
-    """Truncate long requests for cleaner output."""
-    logger.debug("Truncating request. Original length: %s, Max length: %s", len(request), max_length)
-    if len(request) <= max_length:
-        return request
-    truncated = request[:max_length] + "..."
-    logger.debug("Request truncated to: %s", truncated)
-    return truncated
 
 def run_single_test(
     db_name: str,
@@ -412,7 +403,7 @@ def add_request_log_handler(log_file: Path) -> logging.FileHandler:
     handler = logging.FileHandler(log_file, encoding="utf-8")
     handler.setLevel(logging.INFO)
     formatter = logging.Formatter(
-        '%(asctime)s - [%(name)s] - %(levelname)s - %(message)s'
+        '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d)] - %(levelname)s - %(message)s'
     )
     handler.setFormatter(formatter)
     logging.getLogger().addHandler(handler)
@@ -531,7 +522,9 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             for index in range(1, len(AVAILABLE_MODELS) - 1):
                 name = AVAILABLE_MODELS[index]
                 print(f"\nTesting with model: {name}")
-                logger.info("Testing with model: %s", name)
+                logger.info("!#" * 100 + "\n\n")
+                logger.info("Starting Testing with model: %s\n\n", name)
+                logger.info("!#" * 100)
                 model_start_time = time.time()
                 
                 sql_query, status, outcome = run_test_with_timeout(
