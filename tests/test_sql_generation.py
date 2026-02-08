@@ -48,7 +48,7 @@ logger = setup_logger(__name__)
 
 # ==================== TEST FUNCTIONS ====================
 
-DB_OPTIONS = ["supermarket", "monica", "hacker_news", "akaunting"]
+DB_OPTIONS = list_databases()
 
 def select_test_database(args_db: str | None = None) -> str:
     """
@@ -81,58 +81,6 @@ def select_test_database(args_db: str | None = None) -> str:
             return choice
         print("❌ Invalid selection. Please choose a valid database name or number.")
         logger.info("Invalid selection entered: '%s'", choice)
-
-def ensure_database_ready(db_name: str, ddl_dir: Path) -> None:
-    """
-    Ensure the selected database exists and is populated.
-    """
-    logger.info("Checking if database '%s' is ready.", db_name)
-    existing_dbs = list_databases()
-    if db_name in existing_dbs:
-        print(f"✅ Database '{db_name}' already exists. Connecting to it...")
-        logger.info("Database '%s' already exists. Connecting.", db_name)
-        conn = get_db_connection(database_name=db_name)
-        if conn.is_connected():
-            print(f"✅ Connection to '{db_name}' established.")
-            logger.info("Connection to '%s' established.", db_name)
-        conn.close()
-        logger.info("Database '%s' is ready for use.", db_name)
-        return
-
-    print(f"🛠️  Database '{db_name}' not found. Creating and populating it...")
-    logger.info("Database '%s' not found. Creating and populating.", db_name)
-    ddl_path = ddl_dir / f"{db_name}.sql"
-    if not ddl_path.exists():
-        logger.error("DDL file not found for '%s': %s", db_name, ddl_path)
-        raise FileNotFoundError(f"❌ DDL file not found for '{db_name}': {ddl_path}")
-
-    logger.info("DDL file found at: %s", ddl_path)
-    conn = get_db_connection(database_name=None)
-    cursor = conn.cursor()
-
-    logger.info("Creating database '%s'.", db_name)
-    db_generator.create_database(cursor, db_name)
-    cursor.execute(f"USE {db_generator.quote_identifier(db_name)}")
-    
-    logger.info("Executing DDL script: %s", ddl_path)
-    db_generator.execute_sql_file(cursor, str(ddl_path))
-    conn.commit()
-
-    cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-    cursor.execute("SHOW TABLES")
-    tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType]
-    logger.info("Found %s tables to populate: %s", len(tables), tables)
-    
-    for table in tables:
-        logger.info("Populating table: %s", table)
-        db_generator.populate_table(cursor, table)
-    cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-    conn.commit()
-
-    cursor.close()
-    conn.close()
-    print(f"✅ Database '{db_name}' created and populated.")
-    logger.info("Database '%s' created and populated with %s tables.", db_name, len(tables))
 
 def configure_run_paths(db_name: str) -> Tuple[str, str]:
     """
@@ -229,7 +177,7 @@ def run_single_test(
         logger.info("LLM model initialized for model index %s.", model_index)
         
         logger.info("Entering generation loop for request.")
-        sql, syntax_status, execution_status, execution_output, LLM_feedback, attempts = generation_loop(
+        sql, syntax_status, execution_status, execution_output, LLM_feedback, attempt = generation_loop(
             user_request=request,
             source=mode,
             full_schema=full_schema,
@@ -1009,8 +957,6 @@ if __name__ == "__main__":
     if args.test == "run":        
         clear_tmp_dir(TMP_DIR)
         selected_db = select_test_database(args.db)
-        ddl_dir = Path(__file__).resolve().parent / "input" / "existing_ddl"
-        ensure_database_ready(selected_db, ddl_dir)
 
         input_file, output_file = configure_run_paths(selected_db)
         if not os.path.exists(input_file):
