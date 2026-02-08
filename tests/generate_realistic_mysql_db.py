@@ -1,6 +1,6 @@
-import glob
-import os
-import random
+import glob, sys, os, random
+# Add parent directory to Python path for development
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dotenv import load_dotenv
 from faker import Faker
