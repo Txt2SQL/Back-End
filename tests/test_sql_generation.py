@@ -228,7 +228,7 @@ def run_single_test(
             metadata.status,
             str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message,
             LLM_feedback,
-            attempts,
+            attempt,
         )
             
     except Exception as e:
@@ -308,20 +308,20 @@ def format_result_line(
         clean_error = outcome.replace('\n', ' ').strip()
         if len(clean_error) > MAX_OUTPUT_LENGTH / 4:  # Truncate long error messages
             clean_error = clean_error[:MAX_OUTPUT_LENGTH / 4] + "..."
-        status_detail = f"{status}/{clean_error}"
+        status_detail = f"{status}, {clean_error}"
     else:
-        status_detail = f"{status}/{outcome}"
+        status_detail = f"{status}, {outcome}"
 
     feedback_value = llm_feedback if llm_feedback else "N/A"
     return (
         f"Request: {truncate_request(request)}\n"
-        f"Model: {model_name}\n"
-        "Query:\n"
+        f"🤖 Model: {model_name}\n"
+        "🧮 Query:\n\n"
         f"{clean_sql}\n"
-        f"Status/Rows fetched: {status_detail}\n"
-        f"LLM feedback: {feedback_value}\n"
+        f"🏁 Status and outcome: {status_detail}\n"
+        f"💡 LLM feedback: {feedback_value}\n"
         f"Attempts: {attempts}\n"
-        f"Request time: {request_time:.1f}s\n\n"
+        f"⌚Request time: {request_time:.1f}s\n\n"
     )
 
 def write_test_results(
@@ -354,9 +354,9 @@ def write_test_results(
                     f.write(
                         f"{n}. "
                         f"Request: {truncate_request(request)}\n"
-                        f"Model: {model_name}\n"
-                        "Query:\n"
-                        "Status/Rows fetched: MODEL_NOT_AVAILABLE/MODEL_NOT_AVAILABLE\n"
+                        f"🤖 Model: {model_name}\n"
+                        "🧮 Query:\n"
+                        "Status and outcome: MODEL_NOT_AVAILABLE/MODEL_NOT_AVAILABLE\n"
                         "LLM feedback: N/A\n"
                         "Attempts: 0\n"
                         f"Request time: {request_time:.1f}s\n\n"
