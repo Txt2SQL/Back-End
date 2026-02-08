@@ -826,9 +826,7 @@ def generation_loop(
     error_category = None
     attempt = 0
 
-    attempts = 0
     for attempt in range(1, 4):
-        attempts = attempt
         template = create_prompt(
             user_request=user_request,
             source=source,

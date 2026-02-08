@@ -71,5 +71,5 @@ ERROR_CATEGORIES = {
     ],
 }
 
-LOGINFO_SEPARATOR = "=" *80
+LOGINFO_SEPARATOR = "//" *80
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output

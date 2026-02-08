@@ -6,7 +6,7 @@ from datetime import datetime
 from langchain_chroma import Chroma
 from typing import Dict, List, Tuple
 from langchain_ollama import OllamaEmbeddings
-from src.config.settings import AVAILABLE_MODELS, MAX_OUTPUT_LENGTH, AZURE_MODELS
+from src.config.settings import AVAILABLE_MODELS, MAX_OUTPUT_LENGTH, AZURE_MODELS, LOGINFO_SEPARATOR
 from src.mysql_linker import extract_schema, get_db_connection, list_databases
 from src.retriver_utils import build_vector_store
 from tests import generate_realistic_mysql_db as db_generator
@@ -310,18 +310,18 @@ def format_result_line(
             clean_error = clean_error[:MAX_OUTPUT_LENGTH / 4] + "..."
         status_detail = f"{status}, {clean_error}"
     else:
-        status_detail = f"{status}, {outcome}"
+        status_detail = f"{status}, {outcome} rows fetched"
 
     feedback_value = llm_feedback if llm_feedback else "N/A"
     return (
-        f"Request: {truncate_request(request)}\n"
-        f"🤖 Model: {model_name}\n"
-        "🧮 Query:\n\n"
-        f"{clean_sql}\n"
-        f"🏁 Status and outcome: {status_detail}\n"
-        f"💡 LLM feedback: {feedback_value}\n"
-        f"Attempts: {attempts}\n"
-        f"⌚Request time: {request_time:.1f}s\n\n"
+        f"Request: {truncate_request(request)}\n\n"
+        f"🤖 Model: {model_name}\n\n"
+        "🧮 Query:\n\n\n"
+        f"{clean_sql}\n\n"
+        f"🏁 Status and outcome: {status_detail}\n\n"
+        f"💡 LLM feedback: {feedback_value}\n\n"
+        f"Attempts: {attempts}\n\n"
+        f"⌚Request time: {request_time:.1f}s\n\n\n\n"
     )
 
 def write_test_results(
@@ -403,9 +403,9 @@ def print_test_summary(
 ):
     """Print a summary of test results."""
     summary_lines = []
-    summary_lines.append("\n" + "="*60)
+    summary_lines.append("\n" + LOGINFO_SEPARATOR)
     summary_lines.append("📊 TEST SUMMARY")
-    summary_lines.append("="*60)
+    summary_lines.append(LOGINFO_SEPARATOR)
     
     total_tests = 0
     passed_tests = 0
