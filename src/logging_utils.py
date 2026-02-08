@@ -117,7 +117,7 @@ def add_request_log_handler(log_file: Path) -> logging.FileHandler:
     handler = logging.FileHandler(log_file, encoding="utf-8")
     handler.setLevel(logging.INFO)
     formatter = logging.Formatter(
-        '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d)] - %(levelname)s - %(message)s'
+        '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d] - %(levelname)s - %(message)s'
     )
     handler.setFormatter(formatter)
     logging.getLogger().addHandler(handler)

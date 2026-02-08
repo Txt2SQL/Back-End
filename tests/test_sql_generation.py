@@ -8,6 +8,9 @@ from typing import Dict, List, Tuple
 from langchain_ollama import OllamaEmbeddings
 from src.config.settings import AVAILABLE_MODELS, MAX_OUTPUT_LENGTH
 from src.mysql_linker import extract_schema, get_db_connection, list_databases
+from src.retriver_utils import build_vector_store
+from tests import generate_realistic_mysql_db as db_generator
+from pathlib import Path
 from src.logging_utils import (
     setup_single_project_logger, 
     setup_logger,
@@ -29,9 +32,6 @@ from src.query_generator import (
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
-from src.retriver_utils import build_vector_store
-from tests import generate_realistic_mysql_db as db_generator
-from pathlib import Path
 
 # ==================== CONFIGURATION ====================
 BASE_DIR = Path(__file__).resolve().parent
@@ -282,7 +282,6 @@ def run_single_test(
         error_msg = f"GENERATION_ERROR: {str(e)}"
         logger.exception("Unexpected error during generation. Request: '%s'", truncate_request(request))
         return "", "GENERATION_ERROR", error_msg
-
 
 def run_test_with_timeout(
     db_name: str,
