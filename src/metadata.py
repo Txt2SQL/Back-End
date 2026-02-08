@@ -18,7 +18,7 @@ class QueryMetadata:
     # --- Derived / internal ---
     knowledge_scope: Optional[str] = None
     error_type: Optional[str] = None
-    error_category: Optional[str] = None
+    LLM_feedback: Optional[str] = None
     timestamp: float = field(default_factory=time.time)
     
     def to_document_metadata(self, sql_query: str) -> dict:
@@ -34,7 +34,7 @@ class QueryMetadata:
             "rows_fetched": self.rows_fetched,
             "error_type": self.error_type,
             "error_message": self.error_message,
-            "error_category": self.error_category
+            "error_category": self.LLM_feedback
         }
 
         clean = {}

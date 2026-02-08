@@ -699,13 +699,13 @@ def evaluate_feedback_error(
             logger.info("Using LLM feedback for correctness evaluation")
             error_feedback = llm_feedback(sql, request, execution_output)
             if error_feedback.startswith("INCORRECT_QUERY"):
-                error_category, _ = classify_llm_feedback(error_feedback)
                 if use_hint:
+                    error_category, _ = classify_llm_feedback(error_feedback)
                     retry_hint = build_targeted_retry_instruction(error_category)
                     error_feedback = f"{error_feedback}\n\n{retry_hint}"
 
     logger.info("Feedback error evaluation completed. Has error feedback: %s", error_feedback is not None)
-    return syntax_status,execution_status, execution_output, error_feedback, error_category
+    return syntax_status, execution_status, execution_output, error_feedback, error_category
 
 def build_targeted_retry_instruction(error_category: str) -> str:
     """
@@ -872,7 +872,7 @@ def main():
             print(f"\n🔍 Generating query")
             
             # Generate SQL query
-            sql, syntax_status, execution_status, execution_output, error_category = generation_loop(
+            sql, syntax_status, execution_status, execution_output, LLM_feedback = generation_loop(
                 llm_model=llm_model,
                 user_request=user_request,
                 source=source,
@@ -898,7 +898,7 @@ def main():
                 model_index=model_index,
                 execution_status=execution_status,
                 execution_output=execution_output,
-                error_category=error_category
+                LLM_feedback=LLM_feedback
             )
 
             store_query_feedback(

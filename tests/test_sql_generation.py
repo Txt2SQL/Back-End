@@ -236,7 +236,7 @@ def run_single_test(
         logger.info("LLM model initialized for model index %s.", model_index)
         
         logger.info("Entering generation loop for request.")
-        sql, syntax_status, execution_status, execution_output, error_category = generation_loop(
+        sql, syntax_status, execution_status, execution_output, LLM_feedback = generation_loop(
             user_request=request,
             source=mode,
             full_schema=full_schema,
@@ -245,12 +245,9 @@ def run_single_test(
             schema_vs=schema_vs,
             llm_model=llm_model
         )
-        
-        logger.info("Generation loop completed. SQL generated (truncated): %s", truncate_request(sql))
-        logger.info("Syntax status: %s, Execution status: %s", syntax_status, execution_status)
-        
+
         if mode != "mysql":
-            syntax_status, execution_status, _, _, error_category= evaluate_feedback_error(
+            syntax_status, execution_status, _, _, LLM_feedback= evaluate_feedback_error(
                 request=request,
                 sql=sql,
                 source=mode,
@@ -258,6 +255,9 @@ def run_single_test(
                 execution_output=execution_output
             )
         
+        logger.info("Generation loop completed. SQL generated (truncated): %s", truncate_request(sql))
+        logger.info("Syntax status: %s, Execution status: %s", syntax_status, execution_status)
+                
         schema_id = compute_schema_id(full_schema)
         logger.info("Creating metadata for test results. Schema ID: %s", schema_id)
         
@@ -270,7 +270,7 @@ def run_single_test(
             model_index=model_index,
             execution_status=execution_status,
             execution_output=execution_output,
-            error_category=error_category
+            LLM_feedback=LLM_feedback
         )
 
         logger.info("Storing query feedback in vector store.")
