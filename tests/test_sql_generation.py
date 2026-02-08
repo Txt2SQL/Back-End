@@ -180,7 +180,6 @@ def run_single_test(
         sql, syntax_status, execution_status, execution_output, LLM_feedback, attempt = generation_loop(
             user_request=request,
             source=mode,
-            full_schema=full_schema,
             database_name=db_name,
             query_vs=query_vs,
             schema_vs=schema_vs,
@@ -712,7 +711,7 @@ def run_full_cycle_without_llm(
     template = create_prompt(
         user_request=user_request,
         source=mode,
-        full_schema=schema,
+        database_name="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
@@ -926,7 +925,7 @@ def test_complex_prompt_creation_only(schema, vector_stores, capsys):
     create_prompt(
         user_request="Show total sales by customer",
         source="mysql",
-        full_schema=schema,
+        database_name="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
@@ -944,7 +943,7 @@ def test_simple_prompt_creation_only(schema, vector_stores, capsys):
     create_prompt(
         user_request="Show total sales by customer",
         source="text",
-        full_schema=schema,
+        database_name="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
