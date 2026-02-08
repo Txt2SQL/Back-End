@@ -163,7 +163,7 @@ def run_single_test(
     mode: str,
     query_vs: Chroma,
     schema_vs: Chroma
-) -> Tuple[str, str, str | None]:
+) -> Tuple[str, str, str | None, str | None, int]:
     """
     Run a single test: generate SQL and validate it.
     
@@ -223,13 +223,19 @@ def run_single_test(
         logger.info("Query feedback stored successfully.")
         
         logger.info("Test completed with status: %s", metadata.status)
-        return sql, metadata.status, str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message
+        return (
+            sql,
+            metadata.status,
+            str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message,
+            LLM_feedback,
+            attempts,
+        )
             
     except Exception as e:
         # Catch any unexpected errors during generation
         error_msg = f"GENERATION_ERROR: {str(e)}"
         logger.exception("Unexpected error during generation. Request: '%s'", truncate_request(request))
-        return "", "GENERATION_ERROR", error_msg
+        return "", "GENERATION_ERROR", error_msg, "GENERATION_ERROR", 0
 
 def run_test_with_timeout(
     db_name: str,
@@ -240,7 +246,7 @@ def run_test_with_timeout(
     query_vs: Chroma,
     schema_vs: Chroma,
     timeout: int = TIMEOUT_PER_MODEL
-) -> Tuple[str, str, str]:
+) -> Tuple[str, str, str, str | None, int]:
     """
     Run test with timeout to prevent hanging.
     """
@@ -258,7 +264,7 @@ def run_test_with_timeout(
             logger.debug("Worker thread completed successfully.")
         except Exception as e:
             logger.exception("Worker thread encountered exception.")
-            result_queue.put(("", "TIMEOUT_OR_ERROR", str(e)))
+            result_queue.put(("", "TIMEOUT_OR_ERROR", str(e), "TIMEOUT_OR_ERROR", 0))
     
     thread = threading.Thread(target=worker)
     thread.daemon = True
@@ -269,7 +275,7 @@ def run_test_with_timeout(
     if thread.is_alive():
         # Thread is still running - timeout occurred
         logger.warning("Test exceeded timeout of %s seconds for request: '%s'", timeout, truncate_request(request))
-        return "", "TIMEOUT", f"Test exceeded {timeout}s timeout"
+        return "", "TIMEOUT", f"Test exceeded {timeout}s timeout", "TIMEOUT", 0
     else:
         try:
             result = result_queue.get_nowait()
@@ -277,51 +283,85 @@ def run_test_with_timeout(
             return result
         except queue.Empty:
             logger.error("No result returned from worker thread. Queue is empty.")
-            return "", "UNKNOWN_ERROR", "No result returned"
+            return "", "UNKNOWN_ERROR", "No result returned", "UNKNOWN_ERROR", 0
 
-def format_result_line(model_name: str, sql_query: str, status: str, 
-                       outcome: str) -> str:
+def format_result_line(
+    request: str,
+    model_name: str,
+    sql_query: str,
+    status: str,
+    outcome: str,
+    llm_feedback: str | None,
+    attempts: int,
+    request_time: float,
+) -> str:
     """
     Format a single result line according to the template.
     """
-    # Clean up SQL query for output (remove newlines, truncate if too long)
-    clean_sql = sql_query.replace('\n', ' ').strip()
+    # Clean up SQL query for output (preserve indentation, truncate if too long)
+    clean_sql = sql_query.strip()
     if len(clean_sql) > MAX_OUTPUT_LENGTH:  # Truncate very long queries
-        clean_sql = clean_sql[:MAX_OUTPUT_LENGTH] + "..."
+        clean_sql = clean_sql[:MAX_OUTPUT_LENGTH].rstrip() + "..."
     
     if status != "OK":
         # For other errors, include the error message
         clean_error = outcome.replace('\n', ' ').strip()
-        if len(clean_error) > MAX_OUTPUT_LENGTH/4:  # Truncate long error messages
-            clean_error = clean_error[:MAX_OUTPUT_LENGTH/4] + "..."
-        return f"🤖{model_name}\n\n🧮Query: {clean_sql}\n\n⚠️Error: {clean_error}\n\n"
+        if len(clean_error) > MAX_OUTPUT_LENGTH / 4:  # Truncate long error messages
+            clean_error = clean_error[:MAX_OUTPUT_LENGTH / 4] + "..."
+        status_detail = f"{status}/{clean_error}"
     else:
-        return f"🤖{model_name}\n\n🧮Query: \n{clean_sql}\n\n💥Rows fetched: {outcome}\n\n"
+        status_detail = f"{status}/{outcome}"
 
-def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
+    feedback_value = llm_feedback if llm_feedback else "N/A"
+    return (
+        f"Request: {truncate_request(request)}\n"
+        f"Model: {model_name}\n"
+        "Query:\n"
+        f"{clean_sql}\n"
+        f"Status/Rows fetched: {status_detail}\n"
+        f"LLM feedback: {feedback_value}\n"
+        f"Attempts: {attempts}\n"
+        f"Request time: {request_time:.1f}s\n\n"
+    )
+
+def write_test_results(
+    results: List[Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int]], float]],
+    output_file: str,
+):
     """
     Write all test results to output file following the template.
     """
     n = 1
     with open(output_file, 'w', encoding='utf-8') as f:
-        for request, model_results in results:
-            # Write request
-            truncated_request = truncate_request(request)
-            f.write(f"{n}. {truncated_request}\n\n")
-            
+        for request, model_results, request_time in results:
             # Write results for each model
             for index in range(5, len(AVAILABLE_MODELS) - 1):
                 model_name = AVAILABLE_MODELS[index]
                 if model_name in model_results:
-                    sql, status, outcome = model_results[model_name]
-                    line = format_result_line(model_name, sql, status, outcome)
-                    f.write(f"{line}\n")
+                    sql, status, outcome, llm_feedback, attempts = model_results[model_name]
+                    line = format_result_line(
+                        request,
+                        model_name,
+                        sql,
+                        status,
+                        outcome or "",
+                        llm_feedback,
+                        attempts,
+                        request_time,
+                    )
+                    f.write(f"{n}. {line}")
                 else:
-                    f.write(f"{model_name} [TEST NOT RUN] MODEL_NOT_AVAILABLE\n")
-            
-            # Add blank line between requests for readability
-            f.write("\n\n\n\n")
-            n += 1
+                    f.write(
+                        f"{n}. "
+                        f"Request: {truncate_request(request)}\n"
+                        f"Model: {model_name}\n"
+                        "Query:\n"
+                        "Status/Rows fetched: MODEL_NOT_AVAILABLE/MODEL_NOT_AVAILABLE\n"
+                        "LLM feedback: N/A\n"
+                        "Attempts: 0\n"
+                        f"Request time: {request_time:.1f}s\n\n"
+                    )
+                n += 1
     
     print(f"✅ Results written to {output_file}")
     logger.info("Results written to %s.", output_file)
@@ -336,18 +376,27 @@ def sanitize_request_filename(request: str, max_length: int = 15) -> str:
         clean = "request"
     return clean[:max_length]
 
-def write_request_results(request: str, model_results: Dict, output_dir: Path, index: int) -> str:
+def write_request_results(
+    request: str,
+    model_results: Dict[str, Tuple[str, str, str | None, str | None, int]],
+    output_dir: Path,
+    index: int,
+    request_time: float,
+) -> str:
     """
     Write a single request's results to its own file.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     request_slug = sanitize_request_filename(request)
     output_file = output_dir / f"{index:03d}_{request_slug}.txt"
-    write_test_results([(request, model_results)], str(output_file))
+    write_test_results([(request, model_results, request_time)], str(output_file))
     logger.info("Request results written to %s.", output_file)
     return str(output_file)
 
-def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
+def print_test_summary(
+    results: List[Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int]], float]],
+    output_file: str,
+):
     """Print a summary of test results."""
     summary_lines = []
     summary_lines.append("\n" + "="*60)
@@ -360,10 +409,16 @@ def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     runtime_errors = 0
     timeouts = 0
     other_errors = 0
+    total_attempts = 0
+    llm_feedback_counts = {}
+    total_correct_feedback = 0
+    total_time = 0.0
     
-    for request, model_results in results:
-        for model_name, (sql, status, error) in model_results.items():
+    for request, model_results, request_time in results:
+        total_time += request_time
+        for model_name, (sql, status, error, llm_feedback, attempts) in model_results.items():
             total_tests += 1
+            total_attempts += attempts
             if status == "OK":
                 passed_tests += 1
             elif status == "SYNTAX_ERROR":
@@ -374,6 +429,11 @@ def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
                 timeouts += 1
             else:
                 other_errors += 1
+
+            feedback_value = llm_feedback if llm_feedback else "N/A"
+            llm_feedback_counts[feedback_value] = llm_feedback_counts.get(feedback_value, 0) + 1
+            if feedback_value == "CORRECT_QUERY":
+                total_correct_feedback += 1
     
     summary_lines.append(f"Total requests tested: {len(results)}")
     summary_lines.append(f"Total model executions: {total_tests}")
@@ -382,6 +442,16 @@ def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     summary_lines.append(f"❌ Runtime errors: {runtime_errors}")
     summary_lines.append(f"⏰ Timeouts: {timeouts}")
     summary_lines.append(f"🔧 Other errors: {other_errors}")
+    summary_lines.append(f"🧠 Total LLM feedback = CORRECT_QUERY: {total_correct_feedback}")
+    if llm_feedback_counts:
+        most_feedback = max(llm_feedback_counts.items(), key=lambda item: item[1])[0]
+        summary_lines.append(f"🧠 Most LLM feedback: {most_feedback}")
+
+    if len(results) > 0:
+        summary_lines.append(f"🔁 Avg attempts per request: {total_attempts / len(results):.2f}")
+        summary_lines.append(f"🔁 Total attempts: {total_attempts}")
+        summary_lines.append(f"⏱️  Avg time per request: {total_time / len(results):.1f}s")
+        summary_lines.append(f"⏱️  Total time: {total_time:.1f}s")
     
     if total_tests > 0:
         success_rate = (passed_tests / total_tests) * 100
@@ -459,7 +529,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                 logger.info("!#" * 100)
                 model_start_time = time.time()
                 
-                sql_query, status, outcome = run_test_with_timeout(
+                sql_query, status, outcome, llm_feedback, attempts = run_test_with_timeout(
                     db_name, request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
                 )
                 
@@ -474,14 +544,20 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                     print(f"   Error: {outcome[:200]}...")
                     logger.warning("Error output: %s", outcome[:200])
                 
-                model_results[name] = (sql_query, status, outcome)
+                model_results[name] = (sql_query, status, outcome, llm_feedback, attempts)
             
             request_time = time.time() - request_start_time
             print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
             logger.info("Total time for request: %.1fs", request_time)
             
-            all_results.append((request, model_results))
-            request_output_file = write_request_results(request, model_results, request_output_dir, i)
+            all_results.append((request, model_results, request_time))
+            request_output_file = write_request_results(
+                request,
+                model_results,
+                request_output_dir,
+                i,
+                request_time,
+            )
             print(f"📄 Request log saved to: {request_output_file}")
         finally:
             remove_request_log_handler(request_log_handler)
