@@ -6,11 +6,17 @@ from datetime import datetime
 from langchain_chroma import Chroma
 from typing import Dict, List, Tuple
 from langchain_ollama import OllamaEmbeddings
-from src.config.settings import AVAILABLE_MODELS
+from src.config.settings import AVAILABLE_MODELS, MAX_OUTPUT_LENGTH, AZURE_MODELS
 from src.mysql_linker import extract_schema, get_db_connection, list_databases
+from src.retriver_utils import build_vector_store
+from tests import generate_realistic_mysql_db as db_generator
+from pathlib import Path
 from src.logging_utils import (
     setup_single_project_logger, 
-    setup_logger
+    setup_logger,
+    truncate_request,
+    add_request_log_handler,
+    remove_request_log_handler,
 )
 from src.query_generator import (
     generate_sql_query,
@@ -26,16 +32,12 @@ from src.query_generator import (
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
-from src.retriver_utils import build_vector_store
-from tests import generate_realistic_mysql_db as db_generator
-from pathlib import Path
 
 # ==================== CONFIGURATION ====================
 BASE_DIR = Path(__file__).resolve().parent
 TMP_DIR = BASE_DIR / "tmp"
 INPUT_FILE = "./input/requests/test_requests.txt"
 OUTPUT_DIR = "./output"
-MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
 QVS_DIR = str(TMP_DIR / "query_vector_store")
 SVS_DIR = str(TMP_DIR / "schema_vector_store")
@@ -205,15 +207,6 @@ def load_test_requests(input_file: str) -> List[str]:
         requests = []
     return requests
 
-def truncate_request(request: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
-    """Truncate long requests for cleaner output."""
-    logger.debug("Truncating request. Original length: %s, Max length: %s", len(request), max_length)
-    if len(request) <= max_length:
-        return request
-    truncated = request[:max_length] + "..."
-    logger.debug("Request truncated to: %s", truncated)
-    return truncated
-
 def run_single_test(
     db_name: str,
     request: str, 
@@ -289,7 +282,6 @@ def run_single_test(
         error_msg = f"GENERATION_ERROR: {str(e)}"
         logger.exception("Unexpected error during generation. Request: '%s'", truncate_request(request))
         return "", "GENERATION_ERROR", error_msg
-
 
 def run_test_with_timeout(
     db_name: str,
@@ -370,7 +362,7 @@ def write_test_results(results: List[Tuple[str, Dict]], output_file: str):
             f.write(f"{n}. {truncated_request}\n\n")
             
             # Write results for each model
-            for index in range(1, len(AVAILABLE_MODELS) - 1):
+            for index in range(5, len(AVAILABLE_MODELS) - 1):
                 model_name = AVAILABLE_MODELS[index]
                 if model_name in model_results:
                     sql, status, outcome = model_results[model_name]
@@ -406,23 +398,6 @@ def write_request_results(request: str, model_results: Dict, output_dir: Path, i
     write_test_results([(request, model_results)], str(output_file))
     logger.info("Request results written to %s.", output_file)
     return str(output_file)
-
-def add_request_log_handler(log_file: Path) -> logging.FileHandler:
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    handler = logging.FileHandler(log_file, encoding="utf-8")
-    handler.setLevel(logging.INFO)
-    formatter = logging.Formatter(
-        '%(asctime)s - [%(name)s] - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
-    logging.getLogger().addHandler(handler)
-    return handler
-
-
-def remove_request_log_handler(handler: logging.FileHandler) -> None:
-    root_logger = logging.getLogger()
-    root_logger.removeHandler(handler)
-    handler.close()
 
 def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     """Print a summary of test results."""
@@ -528,10 +503,12 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             request_start_time = time.time()
             
             # Test each available model
-            for index in range(1, len(AVAILABLE_MODELS) - 1):
+            for index in range(5, len(AVAILABLE_MODELS) - 1):
                 name = AVAILABLE_MODELS[index]
-                print(f"\nTesting with model: {name}")
-                logger.info("Testing with model: %s", name)
+                print(f"\nTesting with model: {name}\n")
+                logger.info("!#" * 100 + "\n\n")
+                logger.info("Starting Testing with model: %s\n\n", name)
+                logger.info("!#" * 100)
                 model_start_time = time.time()
                 
                 sql_query, status, outcome = run_test_with_timeout(
@@ -539,12 +516,12 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                 )
                 
                 model_time = time.time() - model_start_time
-                print(f"   Status: {status} ({model_time:.1f}s)")
+                print(f"   Status: {status} ({model_time:.1f}s)\n")
                 logger.info("Model %s status: %s (%.1fs)", name, status, model_time)
                 
                 if sql_query:
-                    print(f"   Generated SQL: {sql_query}")
-                    logger.info("Generated SQL: %s", sql_query)
+                    print(f"   Generated SQL:\n\n {sql_query}")
+                    logger.info("Generated SQL: %s\n", sql_query)
                 if outcome and status not in ["OK", "SYNTAX"]:
                     print(f"   Error: {outcome[:200]}...")
                     logger.warning("Error output: %s", outcome[:200])
