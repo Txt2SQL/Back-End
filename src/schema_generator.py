@@ -6,6 +6,7 @@ from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
+from src.config.settings import LOGINFO_SEPARATOR
 from src.retriver_utils import build_vector_store
 from src.config.paths import VECTOR_STORE_DIR, SCHEMA_FILE
 from src.mysql_linker import (
@@ -110,9 +111,9 @@ def validate_schema_structure(schema: dict) -> bool:
 
 def print_schema_preview(schema: dict):
     """Prints a readable preview of the canonical schema"""
-    print("\n" + "=" * 60)
+    print("\n" +  LOGINFO_SEPARATOR)
     print("Canonical schema preview:")
-    print("=" * 60)
+    print(LOGINFO_SEPARATOR)
     
     # Print tables
     if "tables" in schema and schema["tables"]:
@@ -142,7 +143,7 @@ def print_schema_preview(schema: dict):
     else:
         print("\nNo semantic notes")
     
-    print("=" * 60)
+    print(LOGINFO_SEPARATOR)
 
 def classify_update(text: str) -> str:
     """Recognizes if the text describes a structural or semantic modification."""
