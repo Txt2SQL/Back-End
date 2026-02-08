@@ -11,7 +11,9 @@ from src.mysql_linker import extract_schema, get_db_connection, list_databases
 from src.logging_utils import (
     setup_single_project_logger, 
     setup_logger,
-    truncate_request
+    truncate_request,
+    add_request_log_handler,
+    remove_request_log_handler,
 )
 from src.query_generator import (
     generate_sql_query,
@@ -397,23 +399,6 @@ def write_request_results(request: str, model_results: Dict, output_dir: Path, i
     write_test_results([(request, model_results)], str(output_file))
     logger.info("Request results written to %s.", output_file)
     return str(output_file)
-
-def add_request_log_handler(log_file: Path) -> logging.FileHandler:
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    handler = logging.FileHandler(log_file, encoding="utf-8")
-    handler.setLevel(logging.INFO)
-    formatter = logging.Formatter(
-        '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d)] - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
-    logging.getLogger().addHandler(handler)
-    return handler
-
-
-def remove_request_log_handler(handler: logging.FileHandler) -> None:
-    root_logger = logging.getLogger()
-    root_logger.removeHandler(handler)
-    handler.close()
 
 def print_test_summary(results: List[Tuple[str, Dict]], output_file: str):
     """Print a summary of test results."""

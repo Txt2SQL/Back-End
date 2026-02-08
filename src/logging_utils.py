@@ -1,6 +1,7 @@
 import os
 import logging
 from datetime import datetime
+from pathlib import Path
 from src.config.settings import MAX_OUTPUT_LENGTH, LOGINFO_SEPARATOR
 from langchain_chroma import Chroma
 
@@ -110,6 +111,23 @@ def get_project_logger() -> logging.Logger:
 def get_logger(name: str) -> logging.Logger:
     """Get a logger for a specific module (convenience function)."""
     return setup_logger(name)
+
+def add_request_log_handler(log_file: Path) -> logging.FileHandler:
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_file, encoding="utf-8")
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d)] - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logging.getLogger().addHandler(handler)
+    return handler
+
+
+def remove_request_log_handler(handler: logging.FileHandler) -> None:
+    root_logger = logging.getLogger()
+    root_logger.removeHandler(handler)
+    handler.close()
 
 logger = setup_logger(__name__)
 
