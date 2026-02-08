@@ -824,6 +824,7 @@ def generation_loop(
     error_feedback = None
     syntax_status = "UNKNOWN"
     error_category = None
+    attempt = 0
 
     for attempt in range(1, 4):
         template = create_prompt(
@@ -852,7 +853,7 @@ def generation_loop(
         if error_category == "CORRECT_QUERY" or (source == "text" and syntax_status == "OK"):
             break
 
-    return sql, syntax_status, execution_status, execution_output, error_category
+    return sql, syntax_status, execution_status, execution_output, error_category, attempt
 
 def main():
     """Main function to handle the interactive workflow."""
@@ -930,7 +931,7 @@ def main():
             print(f"\n🔍 Generating query")
             
             # Generate SQL query
-            sql, syntax_status, execution_status, execution_output, LLM_feedback = generation_loop(
+            sql, syntax_status, execution_status, execution_output, LLM_feedback, attempt = generation_loop(
                 llm_model=llm_model,
                 user_request=user_request,
                 source=source,
@@ -940,7 +941,7 @@ def main():
                 schema_vs=schema_vs,
             )
 
-            print("\n💡 Generated SQL query:\n")
+            print(f"\n💡 Generated SQL query with {attempt} attempts:\n")
             print(sql)
             print("\n" + LOGINFO_SEPARATOR)
 
