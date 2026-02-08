@@ -1,5 +1,5 @@
 from typing import Any, Tuple
-import sqlglot, json, hashlib, os, sys
+import sqlglot, json, hashlib, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dotenv import load_dotenv
@@ -254,7 +254,7 @@ def infer_relationships(schema: dict) -> list[str]:
     logger.info("  Foreign key relationships: %s", len(unique_relationships))
     return unique_relationships
 
-def build_join_hints(schema: dict) -> str:
+def build_join_hints(schema: dict, allowed_tables: set[str] | None = None) -> str:
     logger.info("=" * 50)
     logger.info("🧠 Building join hints from schema...")
     logger.info("=" * 50)
@@ -265,7 +265,30 @@ def build_join_hints(schema: dict) -> str:
         logger.info("📭 No join relationships found")
         return ""
 
-    logger.info(f"✨ Found {len(relations)} join relationship(s)")
+    if allowed_tables:
+        filtered_relations = []
+        for relation in relations:
+            try:
+                left, right = relation.split("→")
+                left_table = left.strip().split(".", 1)[0].strip()
+                right_table = right.strip().split(".", 1)[0].strip()
+            except ValueError:
+                continue
+
+            if left_table in allowed_tables and right_table in allowed_tables:
+                filtered_relations.append(relation)
+
+        relations = filtered_relations
+        logger.info(
+            "✨ Filtered join relationships to %s based on schema context tables",
+            len(relations),
+        )
+    else:
+        logger.info("✨ Found %s join relationship(s)", len(relations))
+
+    if not relations:
+        logger.info("📭 No join relationships found after filtering")
+        return ""
     
     lines = ["=== JOIN PATH HINTS ==="]
     for i, r in enumerate(relations, 1):
@@ -278,6 +301,14 @@ def build_join_hints(schema: dict) -> str:
     logger.info("=" * 50)
     
     return result
+
+def extract_table_names_from_schema_context(schema_context: str) -> set[str]:
+    table_names = set()
+    for match in re.finditer(r"^Table:\s*([^\n]+)", schema_context, re.MULTILINE):
+        table_name = match.group(1).strip()
+        if table_name:
+            table_names.add(table_name)
+    return table_names
 
 def validate_sql_syntax(sql_query: str) -> str:
     """
@@ -435,7 +466,8 @@ using the provided tables and columns.
 """    
     if source == "mysql":
         logger.info("MySQL source detected, adding join hints")
-        join_hints = build_join_hints(full_schema)
+        allowed_tables = extract_table_names_from_schema_context(schema_context)
+        join_hints = build_join_hints(full_schema, allowed_tables)
         template = template + f"""
 {join_hints}
 """
