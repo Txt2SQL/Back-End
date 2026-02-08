@@ -70,3 +70,6 @@ ERROR_CATEGORIES = {
         "not what was asked",
     ],
 }
+
+LOGINFO_SEPARATOR = "=" *80
+MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
