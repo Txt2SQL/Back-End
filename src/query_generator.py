@@ -209,13 +209,12 @@ def compute_schema_id(full_schema: dict) -> str:
     logger.debug("Schema ID computed: %s", schema_id)
     return schema_id
 
-def infer_relationships(schema: dict) -> list[str]:
+def infer_relationships(database_name: str) -> list[str]:
     """
     Fetch join relationships directly from MySQL foreign key metadata.
     Returns human-readable join hints.
     """
     logger.info("🔍 Fetching relationship metadata from MySQL...")
-    database_name = os.getenv("DB_NAME", "")
     if not database_name:
         logger.warning("⚠️  DB_NAME is not set; cannot load foreign keys from MySQL")
         return []
@@ -255,12 +254,12 @@ def infer_relationships(schema: dict) -> list[str]:
     logger.info("  Foreign key relationships: %s", len(unique_relationships))
     return unique_relationships
 
-def build_join_hints(schema: dict, allowed_tables: set[str] | None = None) -> str:
+def build_join_hints(database_name: str, allowed_tables: set[str] | None = None) -> str:
     logger.info(LOGINFO_SEPARATOR)
     logger.info("🧠 Building join hints from schema...")
     logger.info(LOGINFO_SEPARATOR)
     
-    relations = infer_relationships(schema)
+    relations = infer_relationships(database_name)
 
     if not relations:
         logger.info("📭 No join relationships found")
@@ -438,7 +437,7 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
 def create_prompt(
     user_request: str,
     source: str,
-    full_schema: dict,
+    database_name: str,
     query_vs: Chroma,
     schema_vs: Chroma,
     error_feedback: str | None = None,
@@ -468,7 +467,7 @@ using the provided tables and columns.
     if source == "mysql":
         logger.info("MySQL source detected, adding join hints")
         allowed_tables = extract_table_names_from_schema_context(schema_context)
-        join_hints = build_join_hints(full_schema, allowed_tables)
+        join_hints = build_join_hints(database_name, allowed_tables)
         template = template + f"""
 {join_hints}
 """
@@ -837,8 +836,7 @@ def build_targeted_retry_instruction(error_category: str) -> str:
 def generation_loop(
     user_request: str,
     source: str,
-    full_schema: dict,
-    database_name: str | None,
+    database_name: str,
     query_vs: Chroma,
     schema_vs: Chroma,
     llm_model: str | OllamaLLM | AzureChatOpenAI,
@@ -862,7 +860,7 @@ def generation_loop(
         template = create_prompt(
             user_request=user_request,
             source=source,
-            full_schema=full_schema,
+            database_name=database_name,
             query_vs=query_vs,
             schema_vs=schema_vs,
             error_feedback=error_feedback,
@@ -953,7 +951,7 @@ def main():
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
             source = get_schema_source(full_schema)
-            database_name = full_schema.get("database") if source == "mysql" else None
+            database_name = full_schema.get("database")
             if source == "mysql" and not database_name:
                 logger.warning("Schema source is MySQL but no database name was found in schema JSON.")
             if model_index == 0:
@@ -967,7 +965,6 @@ def main():
                 llm_model=llm_model,
                 user_request=user_request,
                 source=source,
-                full_schema=full_schema,
                 database_name=database_name,
                 query_vs=query_vs,
                 schema_vs=schema_vs,
