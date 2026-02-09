@@ -738,10 +738,30 @@ def evaluate_feedback_error(
     execution_status: str | None = None,
     execution_output: list[Any] | str | None = None,
     attempt: int = 1,
-    ):
+):
+
     """
-    Evaluate feedback and errors for SQL query.
+    Evaluates the feedback error for a given SQL query and its execution result.
+
+    Parameters:
+        request (str): The original user request.
+        sql (str): The generated SQL query.
+        source (str): The source of the information (e.g. MySQL, text).
+        context (str): The schema context for the request.
+        database_name (str | None): The name of the database to execute the query against.
+        execution_status (str | None): The status of the query execution.
+        execution_output (list[Any] | str | None): The result of the query execution.
+        attempt (int): The number of attempts made to generate the query.
+
+    Returns:
+        (syntax_status, execution_status, execution_output, error_feedback, feedback_category)
+            syntax_status (str): The result of the syntax check on the query.
+            execution_status (str): The status of the query execution.
+            execution_output (list[Any] | str | None): The result of the query execution.
+            error_feedback (str): The feedback from the second LLM model.
+            feedback_category (str): The category of the error (CORRECT_QUERY, INCORRECT_QUERY, RUNTIME_ERROR, etc.).
     """
+    
     logger.info("*" * 80 + "\n\n")
     logger.info("Evaluating feedback error for request: '%s'\n\n", truncate_request(request))
     logger.info("*" * 80)
@@ -769,7 +789,7 @@ def evaluate_feedback_error(
         if execution_status != "OK":
             logger.warning("Runtime error detected: %s", execution_output)
             details = f"Runtime error: {execution_output}"
-            if attempt >= 2:
+            if attempt == 2:
                 explanation = llm_feedback(sql, request, context, execution_output)
                 details = f"{details}\n\nExplanation:\n{explanation}"
             error_feedback = format_error_feedback(
@@ -787,7 +807,7 @@ def evaluate_feedback_error(
             return syntax_status, execution_status, execution_output, None, "CORRECT_QUERY"
 
         error_category, _ = classify_llm_feedback(error_feedback)
-        if attempt >= 2:
+        if attempt == 2:
             retry_hint = build_targeted_retry_instruction(error_category)
             error_feedback = f"{error_feedback}\n\n{retry_hint}"
 
@@ -847,8 +867,26 @@ def generation_loop(
     schema_vs: Chroma,
     llm_model: str | OllamaLLM | AzureChatOpenAI,
 ):
+    
     """
-    Main generation loop with retry logic.
+    Generates an SQL query based on the user request and source information.
+    Uses an LLM to generate queries and evaluate their correctness.
+    If the query is incorrect, uses the LLM to generate a retry instruction.
+    Parameters:
+        user_request (str): The user's request.
+        source (str): The source of the information (e.g. MySQL, text).
+        database_name (str): The name of the database.
+        query_vs (Chroma): The query vector store.
+        schema_vs (Chroma): The schema vector store.
+        llm_model (str | OllamaLLM | AzureChatOpenAI): The LLM model to use.
+    Returns:
+        sql (str): The generated SQL query.
+        syntax_status (str): The syntax status of the query (OK or Error).
+        execution_status (str): The execution status of the query (OK or Error).
+        execution_output (list[Any] | str | None): The execution output of the query.
+        error_feedback (str): The error feedback from the LLM.
+        feedback_category (str): The category of the error (CORRECT_QUERY, INCORRECT_QUERY, RUNTIME_ERROR, etc.).
+        attempt (int): The number of attempts made to generate the query.
     """
     logger.info("=" * 80)
     logger.info("=" * 80 + "\n\n")

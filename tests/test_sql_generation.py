@@ -164,7 +164,7 @@ def run_single_test(
     mode: str,
     query_vs: Chroma,
     schema_vs: Chroma
-) -> Tuple[str, str, str | None, str | None, int]:
+):
     """
     Run a single test: generate SQL and validate it.
     
@@ -178,7 +178,7 @@ def run_single_test(
         logger.info("LLM model initialized for model index %s.", model_index)
         
         logger.info("Entering generation loop for request.")
-        sql, syntax_status, execution_status, execution_output, error_feedback, LLM_feedback, attempt = generation_loop(
+        sql, syntax_status, execution_status, execution_output, error_feedback, feedback_category, attempt = generation_loop(
             user_request=request,
             source=mode,
             database_name=db_name,
@@ -189,7 +189,7 @@ def run_single_test(
 
         if mode != "mysql":
             schema_context = get_context(request, schema_vs)
-            syntax_status, execution_status, _, _, LLM_feedback= evaluate_feedback_error(
+            syntax_status, execution_status, _, error_feedback, feedback_category = evaluate_feedback_error(
                 request=request,
                 sql=sql,
                 source=mode,
@@ -214,7 +214,7 @@ def run_single_test(
             model_index=model_index,
             execution_status=execution_status,
             execution_output=execution_output,
-            LLM_feedback=LLM_feedback
+            LLM_feedback=feedback_category
         )
 
         logger.info("Storing query feedback in vector store.")
@@ -230,7 +230,8 @@ def run_single_test(
             sql,
             metadata.status,
             str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message,
-            LLM_feedback,
+            error_feedback,
+            feedback_category,
             attempt,
         )
             
@@ -249,7 +250,7 @@ def run_test_with_timeout(
     query_vs: Chroma,
     schema_vs: Chroma,
     timeout: int = TIMEOUT_PER_MODEL
-) -> Tuple[str, str, str, str | None, int]:
+) -> Tuple[str, str, str, str | None, str, int]:
     """
     Run test with timeout to prevent hanging.
     """
@@ -278,7 +279,7 @@ def run_test_with_timeout(
     if thread.is_alive():
         # Thread is still running - timeout occurred
         logger.warning("Test exceeded timeout of %s seconds for request: '%s'", timeout, truncate_request(request))
-        return "", "TIMEOUT", f"Test exceeded {timeout}s timeout", "TIMEOUT", 0
+        return f"TIMEOUT", "Test exceeded {timeout}s timeout", "", None, "", 0
     else:
         try:
             result = result_queue.get_nowait()
@@ -286,17 +287,17 @@ def run_test_with_timeout(
             return result
         except queue.Empty:
             logger.error("No result returned from worker thread. Queue is empty.")
-            return "", "UNKNOWN_ERROR", "No result returned", "UNKNOWN_ERROR", 0
+            return "UNKNOWN_ERROR", "No result returned", "", None, "", 0
 
 def format_result_line(
-    request: str,
     model_name: str,
     sql_query: str,
     status: str,
     outcome: str,
     llm_feedback: str | None,
+    feedback_category: str,
     attempts: int,
-    request_time: float,
+    model_time: float,
 ) -> str:
     """
     Format a single result line according to the template.
@@ -315,7 +316,7 @@ def format_result_line(
     else:
         status_detail = f"{status}, {outcome} rows fetched"
 
-    feedback_value = llm_feedback if llm_feedback else "N/A"
+    feedback_value = f"{feedback_category}, {llm_feedback}" if llm_feedback else feedback_category
     return (
         f"🤖 Model: {model_name}\n\n"
         "🧮 Query:\n\n\n"
@@ -323,12 +324,12 @@ def format_result_line(
         f"🏁 Status and outcome: {status_detail}\n\n"
         f"💡 LLM feedback: {feedback_value}\n\n"
         f"Attempts: {attempts}\n\n"
-        f"⌚Request time: {request_time:.1f}s\n\n\n\n"
+        f"⌚Request time: {model_time:.1f}s\n\n\n\n"
     )
 
 def write_test_results(
     results: List[
-        Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int, float]], float]
+        Tuple[str, Dict[str, Tuple[str, str, str, str | None, str, int, float]]]
     ],
     output_file: str,
 ):
@@ -336,7 +337,7 @@ def write_test_results(
     Write all test results grouped by request, with all models under each request.
     """
     with open(output_file, "w", encoding="utf-8") as f:
-        for req_index, (request, model_results, request_time) in enumerate(results, 1):
+        for req_index, (request, model_results) in enumerate(results, 1):
             # === Request header ===
             f.write(f"{req_index}. Request: {truncate_request(request)}\n\n")
 
@@ -349,17 +350,17 @@ def write_test_results(
                     f.write("Status and outcome: MODEL_NOT_AVAILABLE\n\n")
                     continue
 
-                sql, status, outcome, llm_feedback, attempts, model_time = model_results[model_name]
+                sql, status, outcome, error_feedback, feedback_category, attempts, model_time = model_results[model_name]
 
                 block = format_result_line(
-                    request=request,
                     model_name=model_name,
                     sql_query=sql,
                     status=status,
-                    outcome=outcome or "",
-                    llm_feedback=llm_feedback,
+                    outcome=outcome,
+                    llm_feedback=error_feedback,
+                    feedback_category=feedback_category,
                     attempts=attempts,
-                    request_time=request_time,
+                    model_time=model_time,
                 )
 
                 f.write(f"-"*200 + "\n\n")
@@ -383,10 +384,9 @@ def sanitize_request_filename(request: str, max_length: int = 15) -> str:
 
 def write_request_results(
     request: str,
-    model_results: Dict[str, Tuple[str, str, str | None, str | None, int, float]],
+    model_results: Dict[str, Tuple[str, str, str, str | None, str, int, float]],
     output_dir: Path,
     index: int,
-    request_time: float,
 ) -> str:
     """
     Write a single request's results to its own file.
@@ -394,7 +394,7 @@ def write_request_results(
     output_dir.mkdir(parents=True, exist_ok=True)
     request_slug = sanitize_request_filename(request)
     output_file = output_dir / f"{index:03d}_{request_slug}.txt"
-    write_test_results([(request, model_results, request_time)], str(output_file))
+    write_test_results([(request, model_results)], str(output_file))
     logger.info("Request results written to %s.", output_file)
     return str(output_file)
 
@@ -644,7 +644,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                 logger.info("!#" * 100)
                 model_start_time = time.time()
                 
-                sql_query, status, outcome, llm_feedback, attempts = run_test_with_timeout(
+                sql_query, status, outcome, error_feedback, feedback_category, attempts = run_test_with_timeout(
                     db_name, request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
                 )
                 
@@ -663,7 +663,8 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                     sql_query,
                     status,
                     outcome,
-                    llm_feedback,
+                    error_feedback,
+                    feedback_category,
                     attempts,
                     model_time
                 )
@@ -672,13 +673,12 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
             logger.info("Total time for request: %.1fs", request_time)
             
-            all_results.append((request, model_results, request_time))
+            all_results.append((request, model_results))
             request_output_file = write_request_results(
                 request,
                 model_results,
                 request_output_dir,
                 i,
-                request_time,
             )
             print(f"📄 Request log saved to: {request_output_file}")
         finally:

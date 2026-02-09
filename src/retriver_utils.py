@@ -145,6 +145,24 @@ def create_metadata(
     execution_output: Any | None = None,
     LLM_feedback: str | None = None
 ) -> QueryMetadata:
+    
+    """
+    Creates a QueryMetadata object for storing query execution results.
+
+    Args:
+        - sql_query: the SQL query executed
+        - syntax_status: the result of the syntax check on the query
+        - schema_id: the identifier of the schema on which the query is executed
+        - schema_source: the source of the schema (e.g. database, text, etc.)
+        - user_request: the original user request
+        - model_index: the index of the model used to generate the query
+        - execution_status: the status of the query execution
+        - execution_output: the result of the query execution
+        - LLM_feedback: the feedback from the second LLM model
+
+    Returns:
+        - QueryMetadata object containing the execution results
+    """
     logger.info("📝 Creating metadata for query execution...")
 
     # -----------------------------
@@ -221,6 +239,24 @@ def create_metadata(
     )
 
 def classify_error(error_message: str | None) -> str | None:
+    """
+    Classify the error message into one of the following categories:
+
+    - UNKNOWN_COLUMN
+    - UNKNOWN_TABLE
+    - AMBIGUOUS_COLUMN
+    - SYNTAX_ERROR
+    - BAD_JOIN
+    - GENERIC_RUNTIME_ERROR
+
+    If no error message is provided, return None.
+
+    :param error_message: The error message to classify.
+    :type error_message: str | None
+    :return: The classified error category, or None if no error message is provided.
+    :rtype: str | None
+    """
+    
     if not error_message:
         logger.info("ℹ️ No error message to classify.")
         return None
