@@ -425,7 +425,11 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
     logger.debug("Retrieved %s failed queries for penalty section", len(failed_queries))
     
     penalty_section = build_penalty_section(failed_queries)
-    
+
+    if not penalty_section:
+        logger.info("No penalty section to add to template")
+        return template
+
     template = template + f"""
 
 {penalty_section}
@@ -439,16 +443,16 @@ def create_prompt(
     source: str,
     database_name: str,
     query_vs: Chroma,
-    schema_vs: Chroma,
+    schema_context: str,
+    join_hints: str | None,
     error_feedback: str | None = None,
 ) -> str:
     """
     Create prompt for SQL generation.
     """
     logger.info("Creating prompt for request: '%s', source: %s", user_request, source)
-    
-    schema_context = get_context(user_request, schema_vs)
-    logger.debug(f"Schema context retrieved: {len(schema_context)} characters")
+
+    logger.debug("Schema context length: %s characters", len(schema_context))
 
     template = f""" 
 You are an expert SQL database assistant.
@@ -466,9 +470,8 @@ using the provided tables and columns.
 """    
     if source == "mysql":
         logger.info("MySQL source detected, adding join hints")
-        allowed_tables = extract_table_names_from_schema_context(schema_context)
-        join_hints = build_join_hints(database_name, allowed_tables)
-        template = template + f"""
+        if join_hints:
+            template = template + f"""
 {join_hints}
 """
 
@@ -487,10 +490,11 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - If using aggregates, include GROUP BY  
 """
 
-    if source == "mysql" and error_feedback is not None:
+    if source == "mysql":
         template = add_penalties(template, user_request, query_vs)
         logger.info("Added penalty section for MySQL extraction schema")
-    else:
+
+    if error_feedback:
         logger.info("Adding error feedback to prompt")
         template = template + f"""
 === PREVIOUS QUERY ERROR TO FIX ===
@@ -856,13 +860,21 @@ def generation_loop(
     error_category = None
     attempt = 0
 
+    schema_context = get_context(user_request, schema_vs)
+    logger.debug("Schema context retrieved: %s characters", len(schema_context))
+    join_hints = None
+    if source == "mysql":
+        allowed_tables = extract_table_names_from_schema_context(schema_context)
+        join_hints = build_join_hints(database_name, allowed_tables)
+
     for attempt in range(1, 4):
         template = create_prompt(
             user_request=user_request,
             source=source,
             database_name=database_name,
             query_vs=query_vs,
-            schema_vs=schema_vs,
+            schema_context=schema_context,
+            join_hints=join_hints,
             error_feedback=error_feedback,
         )
 
