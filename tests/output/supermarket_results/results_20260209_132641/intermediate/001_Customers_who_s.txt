@@ -1,0 +1,178 @@
+1. Request: Customers who spent more than average. Find customers whose total spending is above the average customer spending
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: codellama:13b
+
+🧮 Query:
+
+
+SELECT c.customer_id, c.first_name, c.last_name, c.registration_date, 
+       o.order_id, o.total_amount, o.order_date, o.status,
+       od.quantity, od.unit_price,
+       AVG(o.total_amount) OVER (PARTITION BY c.customer_id) AS avg_spending 
+FROM customers c 
+JOIN orders o ON o.customer_id = c.customer_id 
+JOIN order_details od ON od.order_id = o.order_id 
+WHERE o.total_amount > AVG(o.total_amount) OVER (PARTITION BY c.customer_id);
+
+
+🏁 Status and outcome: RUNTIME_ERROR, 3593 (HY000): You cannot use the window function 'avg' in this context.'
+
+💡 LLM feedback: N/A
+
+Attempts: 3
+
+⌚Request time: 915.3s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: codestral:22b
+
+🧮 Query:
+
+
+SELECT c.customer_id, SUM(o.total_amount) AS total_spending
+   FROM customers c
+   JOIN orders o ON o.customer_id = c.customer_id
+   GROUP BY c.customer_id
+   HAVING total_spending > (SELECT AVG(total_spending) FROM (SELECT customer_id, SUM(o.total_amount) AS total_spending FROM orders o GROUP BY o.customer_id) as subquery);
+
+
+🏁 Status and outcome: OK, 317 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 1
+
+⌚Request time: 915.3s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: sqlcoder:15b
+
+🧮 Query:
+
+
+SELECT c.customer_id,
+       AVG(od.total_amount) / 100 avg_spending,
+       CONCAT(c.first_name, ' ', c.last_name) customer_name
+FROM   customers c join orders o on c.customer_id = o.customer_id
+        left outer join order_details od on o.order_id = od.order_id
+WHERE  o.order_date >= (SELECT MIN(o2.order_date) FROM orders o2
+                        ) and o.order_date <= (SELECT MAX(o3.order_date)
+                                    FROM   orders o3, customers c2
+                                            WHERE  o3.customer_id = c2.customer_id
+                                                   AND c2.email = '<EMAIL>'
+                                                )
+GROUP BY c.customer_id;
+
+
+🏁 Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'od.total_amount' in 'field list'
+
+💡 LLM feedback: N/A
+
+Attempts: 3
+
+⌚Request time: 915.3s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: deepseek-coder-v2:16b
+
+🧮 Query:
+
+
+SELECT c.customer_id, 
+       AVG(od.quantity * od.unit_price) AS avg_spending
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_details od ON o.order_id = od.order_id
+GROUP BY c.customer_id
+HAVING AVG(od.quantity * od.unit_price) > (SELECT AVG(total_amount) FROM orders);
+
+
+🏁 Status and outcome: OK, 637 rows fetched
+
+💡 LLM feedback: AGGREGATION_ERROR
+
+Attempts: 3
+
+⌚Request time: 915.3s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT customers.customer_id, 
+       customers.first_name, 
+       customers.last_name, 
+       SUM(orders.total_amount) AS total_spent
+FROM customers
+JOIN orders ON customers.customer_id = orders.customer_id
+GROUP BY customers.customer_id, customers.first_name, customers.last_name
+HAVING SUM(orders.total_amount) > 
+       (SELECT AVG(customer_spending) 
+        FROM (SELECT customer_id, SUM(total_amount) AS customer_spending 
+              FROM orders 
+              GROUP BY customer_id) AS customer_avg);
+
+
+🏁 Status and outcome: OK, 317 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 2
+
+⌚Request time: 915.3s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+SELECT
+  c.customer_id,
+  c.first_name,
+  c.last_name,
+  SUM(o.total_amount) AS total_spent
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+GROUP BY c.customer_id, c.first_name, c.last_name
+HAVING SUM(o.total_amount) > (
+  SELECT AVG(customer_total) FROM (
+    SELECT SUM(o2.total_amount) AS customer_total
+    FROM orders o2
+    GROUP BY o2.customer_id
+  ) AS customer_totals
+);
+
+
+🏁 Status and outcome: OK, 317 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 1
+
+⌚Request time: 915.3s
+
+
+
+
+========================================================================================================================================================================================================
+

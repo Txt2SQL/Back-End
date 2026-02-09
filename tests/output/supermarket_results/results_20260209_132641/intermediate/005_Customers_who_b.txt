@@ -1,0 +1,184 @@
+1. Request: Customers who bought the most popular product. Find customers who purchased the product that has been sold the most times
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: codellama:13b
+
+🧮 Query:
+
+
+SELECT 
+    c.customer_id, c.first_name, c.last_name, p.product_name, COUNT(r.review_id) AS review_count
+FROM 
+    customers c
+INNER JOIN 
+    reviews r ON c.customer_id = r.customer_id
+INNER JOIN 
+    products p ON r.product_id = p.product_id
+GROUP BY 
+    c.customer_id, c.first_name, c.last_name, p.product_name
+HAVING 
+    COUNT(r.review_id) > ALL (SELECT MAX(COUNT(*)) FROM reviews WHERE product_id = r.product_id GROUP BY product_id)
+ORDER BY 
+    review_count DESC;
+
+
+🏁 Status and outcome: RUNTIME_ERROR, 1111 (HY000): Invalid use of group function
+
+💡 LLM feedback: N/A
+
+Attempts: 3
+
+⌚Request time: 1425.2s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: codestral:22b
+
+🧮 Query:
+
+
+
+
+
+🏁 Status and outcome: TIMEOUT, Test exceeded 600s timeout
+
+💡 LLM feedback: TIMEOUT
+
+Attempts: 0
+
+⌚Request time: 1425.2s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: sqlcoder:15b
+
+🧮 Query:
+
+
+SELECT DISTINCT ON (c.customer_id, p.product_name)
+    c.customer_id,
+    c.first_name,
+    c.last_name,
+    p.product_name
+FROM   customers c
+        INNER JOIN reviews r on c.customer_id = r.customer_id
+        INNER JOIN products p on r.product_id = p.product_id
+ORDER BY c.customer_id, p.product_name desc;
+
+
+🏁 Status and outcome: RUNTIME_ERROR, 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'ON (c.customer_id, p.product_name)     c.customer_id,     c.first_name,     c.la' at line 1
+
+💡 LLM feedback: N/A
+
+Attempts: 3
+
+⌚Request time: 1425.2s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: deepseek-coder-v2:16b
+
+🧮 Query:
+
+
+SELECT c.customer_id, c.first_name, c.last_name
+FROM customers c
+JOIN reviews r ON c.customer_id = r.customer_id
+WHERE r.product_id IN (
+    SELECT r2.product_id
+    FROM reviews r2
+    GROUP BY r2.product_id
+    ORDER BY COUNT(*) DESC
+    LIMIT 1
+)
+GROUP BY c.customer_id, c.first_name, c.last_name;
+
+
+🏁 Status and outcome: RUNTIME_ERROR, 1235 (42000): This version of MySQL doesn't yet support 'LIMIT & IN/ALL/ANY/SOME subquery'
+
+💡 LLM feedback: N/A
+
+Attempts: 3
+
+⌚Request time: 1425.2s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT customers.customer_id, customers.first_name, customers.last_name
+FROM customers
+JOIN reviews ON customers.customer_id = reviews.customer_id
+WHERE reviews.product_id = (
+    SELECT product_id
+    FROM reviews
+    GROUP BY product_id
+    ORDER BY COUNT(order_id) DESC
+    LIMIT 1
+)
+GROUP BY customers.customer_id, customers.first_name, customers.last_name;
+
+
+🏁 Status and outcome: OK, 4 rows fetched
+
+💡 LLM feedback: AGGREGATION_ERROR
+
+Attempts: 3
+
+⌚Request time: 1425.2s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+SELECT DISTINCT c.customer_id, c.first_name, c.last_name
+FROM customers c
+JOIN reviews r ON c.customer_id = r.customer_id
+JOIN (
+  SELECT pc.product_id
+  FROM (
+    SELECT reviews.product_id, COUNT(*) AS cnt
+    FROM reviews
+    GROUP BY reviews.product_id
+  ) pc
+  WHERE pc.cnt = (
+    SELECT MAX(s.cnt)
+    FROM (
+      SELECT COUNT(*) AS cnt
+      FROM reviews
+      GROUP BY reviews.product_id
+    ) s
+  )
+) top_p ON r.product_id = top_p.product_id;
+
+
+🏁 Status and outcome: OK, 4 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 1
+
+⌚Request time: 1425.2s
+
+
+
+
+========================================================================================================================================================================================================
+

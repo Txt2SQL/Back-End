@@ -441,7 +441,6 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
 def create_prompt(
     user_request: str,
     source: str,
-    database_name: str,
     query_vs: Chroma,
     schema_context: str,
     join_hints: str | None,
@@ -585,9 +584,9 @@ DETAILS:
 def llm_feedback(
     sql: str,
     request: str,
+    context: str,
     execution_output: list | None | str,
-    context: dict | None = None,
-) -> str:
+):
     """
     Uses an Azure OpenAI model to evaluate whether the SQL query
     correctly answers the user's request based on execution results.
@@ -597,7 +596,7 @@ def llm_feedback(
         - "INCORRECT_QUERY: <suggestions>"
     """
     logger.info("°" * 80 + "\n\n")
-    logger.info("Starting LLM feedback evaluation for query: '%s'\n\n", sql)
+    logger.info("Starting LLM feedback evaluation for query: \n'%s'\n\n", sql)
     logger.info("°" * 80)
 
     # Safety guard
@@ -652,6 +651,9 @@ You are an expert SQL reviewer.
 Your task is to evaluate whether the SQL query correctly answers
 the user's request, based ONLY on the query results shown.
 
+--- CONTEXT ---
+{context}
+
 --- USER REQUEST ---
 {request}
 
@@ -688,16 +690,13 @@ Rules:
     logger.info(f"🧪 LLM evaluation verdict: {verdict}")
 
     # Hard validation to avoid silent failures
-    if not verdict.startswith(("CORRECT_QUERY", "INCORRECT_QUERY")):
+    if not verdict.startswith(("CORRECT_QUERY", "INCORRECT_QUERY")) and not isinstance(execution_output, str):
         logger.warning("⚠️ Unexpected LLM feedback format: %s", verdict)
-        return (
-            "INCORRECT_QUERY: Unable to confidently evaluate correctness "
-            "from the query results."
-        )
+        return "INCORRECT_QUERY: Unable to confidently evaluate correctness from the query results."
 
     return verdict
 
-def classify_llm_feedback(feedback: str | None) -> tuple[str, str | None]:
+def classify_llm_feedback(feedback: str | None) -> str:
     """
     Classifies an INCORRECT_QUERY LLM feedback string.
 
@@ -708,12 +707,12 @@ def classify_llm_feedback(feedback: str | None) -> tuple[str, str | None]:
     
     if not feedback:
         logger.debug("No feedback provided, returning NO_ERROR")
-        return ("NO_ERROR", None)
+        return ("NO_ERROR")
 
     feedback_lower = feedback.lower()
     if not feedback_lower.startswith("incorrect_query"):
         logger.debug("Feedback is not incorrect_query, returning NO_ERROR")
-        return ("NO_ERROR", None)
+        return ("NO_ERROR")
 
     # Strip prefix
     explanation = feedback.split(":", 1)[-1].strip()
@@ -724,21 +723,21 @@ def classify_llm_feedback(feedback: str | None) -> tuple[str, str | None]:
         for kw in keywords:
             if kw.lower() in explanation_lower:
                 logger.info("Feedback classified as: %s", category)
-                return (category, explanation)
+                return (f"{category}: " + "{explanation}")
 
     # Fallback if nothing matches
     logger.warning("Feedback did not match any known error category, classifying as UNKNOWN_ERROR")
-    return ("UNKNOWN_ERROR", explanation)
+    return "UNKNOWN_ERROR"
 
 def evaluate_feedback_error(
     request: str,
     sql: str, 
     source: str, 
+    context: str,
     database_name: str | None = None, 
     execution_status: str | None = None,
     execution_output: list[Any] | str | None = None,
     attempt: int = 1,
-    llm_model: str | OllamaLLM | AzureChatOpenAI = "none",
     ):
     """
     Evaluate feedback and errors for SQL query.
@@ -752,7 +751,7 @@ def evaluate_feedback_error(
     logger.info("Syntax check result: %s", syntax_status)
 
     error_feedback = None
-    error_category = None
+    feedback_category = None
     if syntax_status != "OK":
         logger.warning("Syntax error detected: %s", syntax_status)
         error_feedback = format_error_feedback(
@@ -761,12 +760,7 @@ def evaluate_feedback_error(
             f"Syntax status: {syntax_status}.",
         )
         logger.info("Feedback error evaluation completed. Has error feedback: %s", True)
-        return syntax_status, execution_status, execution_output, error_feedback, error_category
-
-    if source != "mysql":
-        logger.info("Non-MySQL source detected; skipping execution and LLM feedback.")
-        logger.info("Feedback error evaluation completed. Has error feedback: %s", False)
-        return syntax_status, execution_status, execution_output, error_feedback, error_category
+        return syntax_status, execution_status, execution_output, error_feedback, feedback_category
 
     if source == "mysql":
         logger.info("Executing SQL query against database: %s", database_name)
@@ -776,7 +770,7 @@ def evaluate_feedback_error(
             logger.warning("Runtime error detected: %s", execution_output)
             details = f"Runtime error: {execution_output}"
             if attempt >= 2:
-                explanation = llm_feedback(sql, request, execution_output)
+                explanation = llm_feedback(sql, request, context, execution_output)
                 details = f"{details}\n\nExplanation:\n{explanation}"
             error_feedback = format_error_feedback(
                 "The previous SQL query failed at runtime.",
@@ -784,10 +778,10 @@ def evaluate_feedback_error(
                 details,
             )
             logger.info("Feedback error evaluation completed. Has error feedback: %s", True)
-            return syntax_status, execution_status, execution_output, error_feedback, error_category
+            return syntax_status, execution_status, execution_output, error_feedback, "RUNTIME_ERROR"
 
         logger.info("Using LLM feedback for correctness evaluation")
-        error_feedback = llm_feedback(sql, request, execution_output)
+        error_feedback = llm_feedback(sql, request, context, execution_output)
         if error_feedback.startswith("CORRECT_QUERY"):
             logger.info("Query confirmed correct by LLM.")
             return syntax_status, execution_status, execution_output, None, "CORRECT_QUERY"
@@ -802,9 +796,11 @@ def evaluate_feedback_error(
             sql,
             error_feedback,
         )
-
-    logger.info("Feedback error evaluation completed. Has error feedback: %s", True)
-    return syntax_status, execution_status, execution_output, error_feedback, error_category
+        return syntax_status, execution_status, execution_output, error_feedback, "INCORRECT_QUERY"
+    else:
+        logger.info("Non-MySQL source detected; skipping execution and LLM feedback.")
+        logger.info("Feedback error evaluation completed. Has error feedback: %s", False)
+        return syntax_status, execution_status, execution_output, error_feedback, feedback_category
 
 def build_targeted_retry_instruction(error_category: str) -> str:
     """
@@ -867,7 +863,7 @@ def generation_loop(
     execution_output = None
     error_feedback = None
     syntax_status = "UNKNOWN"
-    error_category = None
+    feedback_category = None
     attempt = 0
 
     schema_context = get_context(user_request, schema_vs)
@@ -887,7 +883,6 @@ def generation_loop(
         template = create_prompt(
             user_request=user_request,
             source=source,
-            database_name=database_name,
             query_vs=query_vs,
             schema_context=schema_context,
             join_hints=join_hints,
@@ -897,18 +892,18 @@ def generation_loop(
         sql = generate_sql_query(llm_model, template)
 
         logger.info("🔎 Evaluating query syntax and semantics...")
-        syntax_status, execution_status, execution_output, error_feedback, error_category = evaluate_feedback_error(
+        syntax_status, execution_status, execution_output, error_feedback, feedback_category = evaluate_feedback_error(
             user_request,
             sql,
             source,
+            schema_context,
             database_name,
             execution_status,
             execution_output,
             attempt=attempt,
-            llm_model=llm_model,
         )
 
-        if error_category == "CORRECT_QUERY" or (source == "text" and syntax_status == "OK"):
+        if feedback_category == "CORRECT_QUERY" or (source == "text" and syntax_status == "OK"):
             logger.info("Query confirmed correct by LLM.")
             break
         else:
@@ -920,7 +915,7 @@ def generation_loop(
     logger.info("=" * 80)
     logger.info("=" * 80)
     
-    return sql, syntax_status, execution_status, execution_output, error_category, attempt
+    return sql, syntax_status, execution_status, execution_output, error_feedback, feedback_category, attempt
 
 def main():
     """Main function to handle the interactive workflow."""
@@ -998,7 +993,7 @@ def main():
             print(f"\n🔍 Generating query")
             
             # Generate SQL query
-            sql, syntax_status, execution_status, execution_output, LLM_feedback, attempt = generation_loop(
+            sql, syntax_status, execution_status, execution_output, error_feedback, LLM_feedback, attempt = generation_loop(
                 llm_model=llm_model,
                 user_request=user_request,
                 source=source,
