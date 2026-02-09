@@ -337,7 +337,7 @@ def write_test_results(
             f.write(f"{req_index}. Request: {truncate_request(request)}\n\n")
 
             # === Models ===
-            for index in range(5, len(AVAILABLE_MODELS) - 1):
+            for index in range(1, len(AVAILABLE_MODELS) - 1):
                 model_name = AVAILABLE_MODELS[index]
 
                 if model_name not in model_results:
@@ -626,7 +626,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             request_start_time = time.time()
             
             # Test each available model
-            for index in range(5, len(AVAILABLE_MODELS) - 1):
+            for index in range(1, len(AVAILABLE_MODELS) - 1):
                 name = AVAILABLE_MODELS[index]
                 print(f"\nTesting with model: {name}\n")
                 logger.info("!#" * 100 + "\n\n")

@@ -318,9 +318,9 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache, pk_cache,
                 pk_index = col_names.index(pk_col)
                 pk_values.append(row_data[pk_index])
             pk_tuple = tuple(pk_values)
-            if pk_tuple in existing_pk_tuples:
+            if pk_tuple in existing_pk_tuples: # pyright: ignore[reportOperatorIssue]
                 continue
-            existing_pk_tuples.add(pk_tuple)
+            existing_pk_tuples.add(pk_tuple) # pyright: ignore[reportOptionalMemberAccess]
         data_batch.append(tuple(row_data))
 
     if not data_batch:

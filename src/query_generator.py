@@ -601,7 +601,7 @@ def llm_feedback(
             "so correctness cannot be verified."
         )
 
-    load_dotenv(".env.azure")
+    load_dotenv("../.env.azure")
     logger.debug("Loaded Azure environment variables")
 
     model = AzureChatOpenAI(

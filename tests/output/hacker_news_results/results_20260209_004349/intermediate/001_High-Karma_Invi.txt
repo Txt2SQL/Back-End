@@ -1,0 +1,67 @@
+1. Request: High-Karma Inviters. Find users with the highest karma who have actively invited other users, including a count of successful signups.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT 
+    accounts_customuser.id AS user_id, 
+    accounts_customuser.username, 
+    accounts_customuser.karma, 
+    COUNT(accounts_invitation.id) AS successful_signups
+FROM 
+    accounts_customuser
+JOIN 
+    accounts_invitation 
+ON 
+    accounts_customuser.id = accounts_invitation.inviting_user_id
+GROUP BY 
+    accounts_customuser.id, accounts_customuser.username, accounts_customuser.karma
+ORDER BY 
+    accounts_customuser.karma DESC;
+
+
+🏁 Status and outcome: OK, 17655 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 1
+
+⌚Request time: 12.7s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+SELECT accounts_customuser.id,
+       accounts_customuser.username,
+       accounts_customuser.karma,
+       COALESCE(SUM(accounts_invitation.num_signups), 0) AS successful_signups
+FROM accounts_customuser
+JOIN accounts_invitation ON accounts_invitation.inviting_user_id = accounts_customuser.id
+GROUP BY accounts_customuser.id, accounts_customuser.username, accounts_customuser.karma
+HAVING COALESCE(SUM(accounts_invitation.num_signups), 0) > 0
+ORDER BY accounts_customuser.karma DESC;
+
+
+🏁 Status and outcome: OK, 17655 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 1
+
+⌚Request time: 12.7s
+
+
+
+
+========================================================================================================================================================================================================
+

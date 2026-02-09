@@ -7,4 +7,3 @@ data/schema/schema_canonical.json
 .env*
 tests/tmp
 codex.patch
-tests/output/*
