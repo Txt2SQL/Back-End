@@ -490,11 +490,10 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - If using aggregates, include GROUP BY  
 """
 
-    if source == "mysql":
+    if source == "mysql" and not error_feedback:
         template = add_penalties(template, user_request, query_vs)
         logger.info("Added penalty section for MySQL extraction schema")
-
-    if error_feedback:
+    elif source == "mysql" and error_feedback:
         logger.info("Adding error feedback to prompt")
         template = template + f"""
 === PREVIOUS QUERY ERROR TO FIX ===
@@ -519,6 +518,10 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
 
     logger.info("Prompt created successfully. Total length: %s characters", len(template))
+
+    # Log the final prompt
+    print_llm_prompt(template)
+
     return template
 
 def generate_sql_query(
@@ -531,8 +534,6 @@ def generate_sql_query(
     - past successful queries (positive examples)
     - past failed queries (negative / penalized patterns)
     """
-    # Log the final prompt
-    print_llm_prompt(template)
     
     if model == "none":
         logger.info("Using sample query file: %s", SAMPLE_QUERY_FILE)
@@ -595,7 +596,9 @@ def llm_feedback(
         - "CORRECT_QUERY"
         - "INCORRECT_QUERY: <suggestions>"
     """
-    logger.info("Starting LLM feedback evaluation for query: '%s'", sql)
+    logger.info("°" * 80 + "\n\n")
+    logger.info("Starting LLM feedback evaluation for query: '%s'\n\n", sql)
+    logger.info("°" * 80)
 
     # Safety guard
     if not execution_output:
@@ -675,6 +678,8 @@ Rules:
 
         logger.info("🧠 Sending query result to LLM for correctness evaluation")
 
+    print_llm_prompt(evaluation_prompt)
+
     response = model.invoke(evaluation_prompt)
     logger.debug("LLM evaluation response received")
 
@@ -738,8 +743,9 @@ def evaluate_feedback_error(
     """
     Evaluate feedback and errors for SQL query.
     """
-    logger.info("Evaluating feedback error for request: '%s'", truncate_request(request))
-    
+    logger.info("*" * 80 + "\n\n")
+    logger.info("Evaluating feedback error for request: '%s'\n\n", truncate_request(request))
+    logger.info("*" * 80)
     syntax_status = validate_sql_syntax(sql)
 
     logger.info(f"✅ Syntax check: {syntax_status}")
@@ -848,9 +854,13 @@ def generation_loop(
     """
     Main generation loop with retry logic.
     """
+    logger.info("=" * 80)
+    logger.info("=" * 80 + "\n\n")
     logger.info("Starting generation loop for request: '%s'", truncate_request(user_request))
-    logger.info("Parameters - source: %s, database: %s", 
+    logger.info("Parameters - source: %s, database: %s\n\n", 
                 source, database_name)
+    logger.info("=" * 80)
+    logger.info("=" * 80)
     
     sql = ""
     execution_status = None
@@ -868,6 +878,12 @@ def generation_loop(
         join_hints = build_join_hints(database_name, allowed_tables)
 
     for attempt in range(1, 4):
+        logger.info("-" * 80)
+        logger.info("-" * 80 + "\n\n")
+        logger.info(f"🔍 Generating query (attempt {attempt}/3)...\n\n")
+        logger.info("-" * 80)
+        logger.info("-" * 80)
+        
         template = create_prompt(
             user_request=user_request,
             source=source,
@@ -877,10 +893,10 @@ def generation_loop(
             join_hints=join_hints,
             error_feedback=error_feedback,
         )
-
-        logger.info(f"🔍 Generating query (attempt {attempt}/3)...")
+        
         sql = generate_sql_query(llm_model, template)
 
+        logger.info("🔎 Evaluating query syntax and semantics...")
         syntax_status, execution_status, execution_output, error_feedback, error_category = evaluate_feedback_error(
             user_request,
             sql,
@@ -893,8 +909,17 @@ def generation_loop(
         )
 
         if error_category == "CORRECT_QUERY" or (source == "text" and syntax_status == "OK"):
+            logger.info("Query confirmed correct by LLM.")
             break
+        else:
+            logger.info("Query incorrect by LLM. Retrying...")
 
+    logger.info("=" * 80)
+    logger.info("=" * 80 + "\n\n")
+    logger.info("Generation loop completed.\n\n")
+    logger.info("=" * 80)
+    logger.info("=" * 80)
+    
     return sql, syntax_status, execution_status, execution_output, error_category, attempt
 
 def main():

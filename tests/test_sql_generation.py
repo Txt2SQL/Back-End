@@ -619,9 +619,13 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             print(f"\n{'='*60}")
             print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
             print(f"{'='*60}")
+            logger.info("/°" * 100)
+            logger.info("/°" * 100 + "\n\n")
             logger.info("Starting request %s/%s: %s", i, len(test_requests), truncate_request(request))
-            logger.info("Request log file: %s", request_log_file)
-            
+            logger.info("Request log file: %s\n\n", request_log_file)
+            logger.info("/°" * 100)
+            logger.info("/°" * 100)
+                        
             model_results = {}
             request_start_time = time.time()
             
@@ -629,8 +633,10 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
             for index in range(1, len(AVAILABLE_MODELS) - 1):
                 name = AVAILABLE_MODELS[index]
                 print(f"\nTesting with model: {name}\n")
+                logger.info("!#" * 100)
                 logger.info("!#" * 100 + "\n\n")
                 logger.info("Starting Testing with model: %s\n\n", name)
+                logger.info("!#" * 100)
                 logger.info("!#" * 100)
                 model_start_time = time.time()
                 

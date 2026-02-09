@@ -178,10 +178,10 @@ def print_llm_prompt(prompt_text: str) -> None:
     Logs the final prompt that will be sent to the LLM.
     Useful for debugging and understanding what context the model receives.
     """
-    logger.info(LOGINFO_SEPARATOR)
-    logger.info("📋 FINAL PROMPT SENT TO LLM")
-    logger.info(LOGINFO_SEPARATOR)
-    logger.info(prompt_text)
+    logger.info(LOGINFO_SEPARATOR + "\n\n")
+    logger.info("📋 FINAL PROMPT SENT TO LLM\n\n")
+    logger.info(LOGINFO_SEPARATOR + "\n")
+    logger.info(prompt_text + "\n")
     logger.info(LOGINFO_SEPARATOR)
     
 def print_schema_context(schema_context: str):
