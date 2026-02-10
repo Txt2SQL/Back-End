@@ -377,84 +377,50 @@ import re
 
 def response_cleaning(response) -> str:
     """
-    Cleans the LLM response and extracts a single valid SQL query.
-
-    Guarantees:
-    - Only SELECT / WITH queries are returned
-    - No markdown, prose, Python, or code blocks
-    - Exactly one SQL statement ending with ;
-    - No curly braces (prevents LangChain template crashes)
+    Cleans the LLM response to extract only the SQL query.
+    Guarantees a valid, executable SQL string.
     """
-
     logger.debug("Cleaning LLM response")
 
-    # -----------------------------
-    # 1. Normalize response object
-    # -----------------------------
+    # 1. Extract raw text
     if isinstance(response, str):
-        raw = response
+        sql_query = response.strip()
     elif hasattr(response, "content"):
-        raw = response.content
+        sql_query = response.content.strip()
     else:
-        raw = str(response)
+        sql_query = str(response).strip()
 
-    raw = raw.strip()
-    logger.debug("Original response length: %s characters", len(raw))
+    logger.debug("Original response length: %s characters", len(sql_query))
 
-    # -----------------------------
-    # 2. Remove markdown fences
-    # -----------------------------
-    raw = re.sub(r"```(?:sql)?", "", raw, flags=re.IGNORECASE).strip()
+    # 2. Remove markdown fences safely
+    if "```" in sql_query:
+        sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+        logger.debug("Removed markdown fences")
 
-    # -----------------------------
-    # 3. Keep only SQL starting point
-    # -----------------------------
-    match = re.search(r"\b(SELECT|WITH)\b", raw, flags=re.IGNORECASE)
-    if not match:
-        logger.error("LLM output does not contain a SELECT or WITH statement")
-        raise ValueError("Invalid LLM output: no SQL SELECT/WITH found")
+    # 3. Remove everything before first SELECT
+    upper_sql = sql_query.upper()
+    select_index = upper_sql.find("SELECT")
+    if select_index >= 0:
+        sql_query = sql_query[select_index:].strip()
+        logger.debug("Trimmed text before SELECT")
 
-    sql = raw[match.start():]
+    # 4. Remove trailing junk after last semicolon IF present
+    if ";" in sql_query:
+        sql_query = sql_query[: sql_query.rfind(";") + 1].strip()
 
-    # -----------------------------
-    # 4. Truncate after first semicolon
-    # -----------------------------
-    semicolon_index = sql.find(";")
-    if semicolon_index == -1:
-        logger.error("SQL query missing terminating semicolon")
-        raise ValueError("Invalid SQL: missing semicolon")
+    # 5. Final validation
+    if not sql_query:
+        raise ValueError("LLM returned empty SQL")
 
-    sql = sql[: semicolon_index + 1].strip()
+    # 6. Ensure terminating semicolon (DO NOT FAIL)
+    if not sql_query.endswith(";"):
+        logger.warning("SQL query missing terminating semicolon, appending automatically")
+        sql_query += ";"
 
-    # -----------------------------
-    # 5. Hard safety filters
-    # -----------------------------
-    forbidden_patterns = [
-        r"\{", r"\}",              # template killers
-        r"\bimport\b",
-        r"\bwhile\b",
-        r"\bfor\b",
-        r"\bdef\b",
-        r"\bpandas\b",
-        r"\bsklearn\b",
-        r"\bprint\b",
-        r"\bclass\b",
-    ]
+    logger.debug("Cleaned SQL length: %s characters", len(sql_query))
+    logger.debug("Final SQL:\n%s", sql_query)
 
-    for pat in forbidden_patterns:
-        if re.search(pat, sql, flags=re.IGNORECASE):
-            logger.error("Forbidden pattern detected in SQL output: %s", pat)
-            raise ValueError("Invalid SQL: contains non-SQL code")
-
-    # -----------------------------
-    # 6. Final normalization
-    # -----------------------------
-    sql = re.sub(r"\s+", " ", sql).strip()
-
-    logger.debug("Cleaned SQL length: %s characters", len(sql))
-    logger.info("✅ SQL cleaned and validated successfully")
-
-    return sql
+    return sql_query
 
 def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
     """

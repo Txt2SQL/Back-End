@@ -202,7 +202,7 @@ def create_metadata(
     # ERROR TYPE
     # -----------------------------
     error_type = None
-    if error_message is "RUNTIME_ERROR":
+    if error_message == "RUNTIME_ERROR":
         error_type = classify_error(error_message)
         logger.info(f"🐛 Error type classified as: {error_type}")
 
