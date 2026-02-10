@@ -561,7 +561,7 @@ def print_test_summary(
 
 # ==================== MAIN TEST FUNCTION ====================
 
-def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path, model_index: int | None = None):
+def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     """
     Main function to run comprehensive tests.
     """
@@ -597,33 +597,23 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path, model_ind
     print(f"✅ Loaded vector stores from {QVS_DIR} and {SVS_DIR}")
     logger.info("Loaded vector stores from %s and %s.", QVS_DIR, SVS_DIR)
     
-    # 4. Select one model and initialize it outside worker threads
-    selected_model_index = model_index
-    if selected_model_index is None:
-        selected_model_index = next(
-            (
-                idx
-                for idx, model_name in AVAILABLE_MODELS.items()
-                if idx != 0 and "embed" not in model_name.lower()
-            ),
-            None,
-        )
-
-    if selected_model_index is None:
+    # 4. Select all SQL-capable models and initialize them outside worker threads
+    testable_models = [
+        (idx, model_name)
+        for idx, model_name in AVAILABLE_MODELS.items()
+        if idx != 0 and "embed" not in model_name.lower()
+    ]
+    if not testable_models:
         raise RuntimeError("❌ No testable model found in AVAILABLE_MODELS")
-    if selected_model_index not in AVAILABLE_MODELS:
-        raise ValueError(f"❌ Invalid model index: {selected_model_index}")
 
-    selected_model_name = AVAILABLE_MODELS[selected_model_index]
-    if selected_model_index == 0 or "embed" in selected_model_name.lower():
-        raise ValueError(f"❌ Model index {selected_model_index} is not valid for SQL generation tests")
-    llm_model = get_llm_model(selected_model_index)
-    print(f"✅ Selected model for this run: {selected_model_name}")
-    logger.info(
-        "Selected model for all requests: %s (index=%s)",
-        selected_model_name,
-        selected_model_index,
-    )
+    llm_models = {}
+    for idx, model_name in testable_models:
+        llm_models[idx] = get_llm_model(idx)
+        logger.info("Initialized model '%s' (index=%s) for test run.", model_name, idx)
+
+    selected_model_names = ", ".join(model_name for _, model_name in testable_models)
+    print(f"✅ Models selected for this run: {selected_model_names}")
+    logger.info("Models selected for this run: %s", selected_model_names)
 
     # 5. Run tests for each request using the selected model
     all_results = []
@@ -647,46 +637,47 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path, model_ind
             model_results = {}
             request_start_time = time.time()
 
-            print(f"\nTesting with model: {selected_model_name}\n")
-            logger.info("!#" * 100)
-            logger.info("!#" * 100 + "\n\n\n")
-            logger.info("Starting Testing with model: %s\n\n\n", selected_model_name)
-            logger.info("!#" * 100)
-            logger.info("!#" * 100)
-            model_start_time = time.time()
+            for model_idx, model_name in testable_models:
+                print(f"\nTesting with model: {model_name}\n")
+                logger.info("!#" * 100)
+                logger.info("!#" * 100 + "\n\n\n")
+                logger.info("Starting Testing with model: %s\n\n\n", model_name)
+                logger.info("!#" * 100)
+                logger.info("!#" * 100)
+                model_start_time = time.time()
 
-            sql_query, status, outcome, feedback_category, attempts = run_test_with_timeout(
-                db_name,
-                request,
-                selected_model_index,
-                llm_model,
-                full_schema,
-                mode,
-                query_vs,
-                schema_vs,
-                TIMEOUT_PER_MODEL,
-            )
+                sql_query, status, outcome, feedback_category, attempts = run_test_with_timeout(
+                    db_name,
+                    request,
+                    model_idx,
+                    llm_models[model_idx],
+                    full_schema,
+                    mode,
+                    query_vs,
+                    schema_vs,
+                    TIMEOUT_PER_MODEL,
+                )
 
-            model_time = time.time() - model_start_time
-            print(f"   Status: {status} ({model_time:.1f}s)\n")
-            logger.info("Model %s status: %s (%.1fs)", selected_model_name, status, model_time)
+                model_time = time.time() - model_start_time
+                print(f"   Status: {status} ({model_time:.1f}s)\n")
+                logger.info("Model %s status: %s (%.1fs)", model_name, status, model_time)
 
-            if sql_query:
-                print(f"   Generated SQL:\n\n {sql_query}")
-                logger.info("Generated SQL: %s\n", sql_query)
-            if outcome and status not in ["OK", "SYNTAX"]:
-                print(f"   Error: {outcome[:200]}...")
-                logger.warning("Error output: %s", outcome[:200])
+                if sql_query:
+                    print(f"   Generated SQL:\n\n {sql_query}")
+                    logger.info("Generated SQL: %s\n", sql_query)
+                if outcome and status not in ["OK", "SYNTAX"]:
+                    print(f"   Error: {outcome[:200]}...")
+                    logger.warning("Error output: %s", outcome[:200])
 
-            model_results[selected_model_name] = (
-                sql_query,
-                status,
-                outcome,
-                feedback_category,
-                attempts,
-                model_time
-            )
-            
+                model_results[model_name] = (
+                    sql_query,
+                    status,
+                    outcome,
+                    feedback_category,
+                    attempts,
+                    model_time
+                )
+
             request_time = time.time() - request_start_time
             print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
             logger.info("Total time for request: %.1fs", request_time)
@@ -1091,8 +1082,6 @@ if __name__ == "__main__":
     parser.add_argument("--output", default=False, help="Output file for results")
     parser.add_argument("--timeout", type=int, default=TIMEOUT_PER_MODEL,
                        help="Timeout per model per request (seconds)")
-    parser.add_argument("--model", type=int, default=None,
-                       help="Optional model index to run for all requests")
     
     args = parser.parse_args()
     
@@ -1111,7 +1100,7 @@ if __name__ == "__main__":
         TIMEOUT_PER_MODEL = args.timeout
         
         # Run the comprehensive tests
-        run_comprehensive_tests(args.mode, db_name=selected_db, output_dir=output_dir, model_index=args.model)
+        run_comprehensive_tests(args.mode, db_name=selected_db, output_dir=output_dir)
     elif args.test == "execute":
         if not args.input:
             raise ValueError("❌ --test execute requires --input <sql_file>")
