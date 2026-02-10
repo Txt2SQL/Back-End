@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from dotenv import load_dotenv
 from langchain_ollama.llms import OllamaLLM
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import AzureChatOpenAI
@@ -373,46 +373,88 @@ def get_schema_source(full_schema: dict) -> str:
         logger.info("ℹ️  Schema source detected: Text input.")
         return "text"
 
+import re
+
 def response_cleaning(response) -> str:
     """
-    Cleans the LLM response to extract only the SQL query.
-    - Removes text before the first SELECT
-    - Removes text after the first semicolon
-    - Removes markdown fences
-    Returns only the SQL code.
+    Cleans the LLM response and extracts a single valid SQL query.
+
+    Guarantees:
+    - Only SELECT / WITH queries are returned
+    - No markdown, prose, Python, or code blocks
+    - Exactly one SQL statement ending with ;
+    - No curly braces (prevents LangChain template crashes)
     """
+
     logger.debug("Cleaning LLM response")
+
+    # -----------------------------
+    # 1. Normalize response object
+    # -----------------------------
     if isinstance(response, str):
-        sql_query = response.strip()
+        raw = response
     elif hasattr(response, "content"):
-        sql_query = response.content.strip()
+        raw = response.content
     else:
-        sql_query = str(response).strip()
+        raw = str(response)
 
-    logger.debug("Original response length: %s characters", len(sql_query))
+    raw = raw.strip()
+    logger.debug("Original response length: %s characters", len(raw))
 
-    # Remove markdown fences if present
-    if sql_query.startswith("```"):
-        sql_query = sql_query.split("```")[1]
-        logger.debug("Removed markdown fence from response")
-    
-    sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+    # -----------------------------
+    # 2. Remove markdown fences
+    # -----------------------------
+    raw = re.sub(r"```(?:sql)?", "", raw, flags=re.IGNORECASE).strip()
 
-    # Remove everything before the first SELECT (case-insensitive)
-    select_index = sql_query.upper().find("SELECT")
-    if select_index > 0:
-        sql_query = sql_query[select_index:]
-        logger.debug("Removed text before SELECT statement")
-    
-    # Remove everything after the first semicolon (inclusive)
-    semicolon_index = sql_query.find(";")
-    if semicolon_index >= 0:
-        sql_query = sql_query[:semicolon_index + 1]
-    
-    sql_query = sql_query.strip()
-    
-    logger.debug("Cleaned response length: %s characters", len(sql_query))
-    return sql_query
+    # -----------------------------
+    # 3. Keep only SQL starting point
+    # -----------------------------
+    match = re.search(r"\b(SELECT|WITH)\b", raw, flags=re.IGNORECASE)
+    if not match:
+        logger.error("LLM output does not contain a SELECT or WITH statement")
+        raise ValueError("Invalid LLM output: no SQL SELECT/WITH found")
+
+    sql = raw[match.start():]
+
+    # -----------------------------
+    # 4. Truncate after first semicolon
+    # -----------------------------
+    semicolon_index = sql.find(";")
+    if semicolon_index == -1:
+        logger.error("SQL query missing terminating semicolon")
+        raise ValueError("Invalid SQL: missing semicolon")
+
+    sql = sql[: semicolon_index + 1].strip()
+
+    # -----------------------------
+    # 5. Hard safety filters
+    # -----------------------------
+    forbidden_patterns = [
+        r"\{", r"\}",              # template killers
+        r"\bimport\b",
+        r"\bwhile\b",
+        r"\bfor\b",
+        r"\bdef\b",
+        r"\bpandas\b",
+        r"\bsklearn\b",
+        r"\bprint\b",
+        r"\bclass\b",
+    ]
+
+    for pat in forbidden_patterns:
+        if re.search(pat, sql, flags=re.IGNORECASE):
+            logger.error("Forbidden pattern detected in SQL output: %s", pat)
+            raise ValueError("Invalid SQL: contains non-SQL code")
+
+    # -----------------------------
+    # 6. Final normalization
+    # -----------------------------
+    sql = re.sub(r"\s+", " ", sql).strip()
+
+    logger.debug("Cleaned SQL length: %s characters", len(sql))
+    logger.info("✅ SQL cleaned and validated successfully")
+
+    return sql
 
 def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
     """
@@ -437,6 +479,29 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
 """
     logger.info("Penalty section added to template")
     return template
+
+def extract_llm_text(response: Any) -> str:
+    """
+    Extracts text content from an LLM response.
+    """
+    if isinstance(response, str):
+        return response.strip()
+    if hasattr(response, "content"):
+        return str(response.content).strip()
+    return str(response).strip()
+
+def format_error_feedback(title: str, sql: str, details: str) -> str:
+    """
+    Formats error feedback with the current query and details.
+    """
+    return f"""{title}
+
+SQL QUERY:
+{sql}
+
+DETAILS:
+{details}
+"""
 
 def create_prompt(
     user_request: str,
@@ -543,7 +608,10 @@ def generate_sql_query(
                     sql_query)
     else:
         logger.info("Sending request to LLM...")
-        prompt = ChatPromptTemplate.from_template(template)
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(template)
+        ])
+
         chain = prompt | model # pyright: ignore[reportOperatorIssue]
 
         response = chain.invoke({})
@@ -557,29 +625,6 @@ def generate_sql_query(
         logger.debug("Generated SQL: %s", sql_query)
 
     return sql_query
-
-def extract_llm_text(response: Any) -> str:
-    """
-    Extracts text content from an LLM response.
-    """
-    if isinstance(response, str):
-        return response.strip()
-    if hasattr(response, "content"):
-        return str(response.content).strip()
-    return str(response).strip()
-
-def format_error_feedback(title: str, sql: str, details: str) -> str:
-    """
-    Formats error feedback with the current query and details.
-    """
-    return f"""{title}
-
-SQL QUERY:
-{sql}
-
-DETAILS:
-{details}
-"""
 
 def llm_feedback(
     sql: str,
@@ -696,7 +741,7 @@ Rules:
 
     return verdict
 
-def classify_llm_feedback(feedback: str | None) -> str:
+def classify_llm_feedback(feedback: str | None) -> tuple[str, str | None]:
     """
     Classifies an INCORRECT_QUERY LLM feedback string.
 
@@ -707,12 +752,12 @@ def classify_llm_feedback(feedback: str | None) -> str:
     
     if not feedback:
         logger.debug("No feedback provided, returning NO_ERROR")
-        return ("NO_ERROR")
+        return ("NO_ERROR", None)
 
     feedback_lower = feedback.lower()
     if not feedback_lower.startswith("incorrect_query"):
         logger.debug("Feedback is not incorrect_query, returning NO_ERROR")
-        return ("NO_ERROR")
+        return ("NO_ERROR", None)
 
     # Strip prefix
     explanation = feedback.split(":", 1)[-1].strip()
@@ -723,11 +768,11 @@ def classify_llm_feedback(feedback: str | None) -> str:
         for kw in keywords:
             if kw.lower() in explanation_lower:
                 logger.info("Feedback classified as: %s", category)
-                return (f"{category}: " + "{explanation}")
+                return (category, explanation)
 
     # Fallback if nothing matches
     logger.warning("Feedback did not match any known error category, classifying as UNKNOWN_ERROR")
-    return "UNKNOWN_ERROR"
+    return ("UNKNOWN_ERROR", explanation)
 
 def evaluate_feedback_error(
     request: str,
@@ -806,15 +851,16 @@ def evaluate_feedback_error(
             logger.info("Query confirmed correct by LLM.")
             return syntax_status, execution_status, execution_output, None, "CORRECT_QUERY"
 
-        error_category, _ = classify_llm_feedback(error_feedback)
+        error_category, error_explanation = classify_llm_feedback(error_feedback)
+        error_details = f"Error type: {error_category}\nExplanation: {error_explanation}"
         if attempt == 2:
             retry_hint = build_targeted_retry_instruction(error_category)
-            error_feedback = f"{error_feedback}\n\n{retry_hint}"
+            error_feedback = f"{error_details}\n\n{retry_hint}"
 
         error_feedback = format_error_feedback(
             "The previous SQL query was incorrect.",
             sql,
-            error_feedback,
+            error_details,
         )
         return syntax_status, execution_status, execution_output, error_feedback, "INCORRECT_QUERY"
     else:
@@ -953,7 +999,7 @@ def generation_loop(
     logger.info("=" * 80)
     logger.info("=" * 80)
     
-    return sql, syntax_status, execution_status, execution_output, error_feedback, feedback_category, attempt
+    return sql, syntax_status, execution_status, execution_output, feedback_category, attempt
 
 def main():
     """Main function to handle the interactive workflow."""
@@ -1031,7 +1077,7 @@ def main():
             print(f"\n🔍 Generating query")
             
             # Generate SQL query
-            sql, syntax_status, execution_status, execution_output, error_feedback, LLM_feedback, attempt = generation_loop(
+            sql, syntax_status, execution_status, execution_output, LLM_feedback, attempt = generation_loop(
                 llm_model=llm_model,
                 user_request=user_request,
                 source=source,

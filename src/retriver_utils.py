@@ -169,7 +169,10 @@ def create_metadata(
     # STATUS
     # -----------------------------
     if syntax_status != "OK":
-        status = syntax_status
+        if not sql_query.strip().upper().startswith("SELECT"):
+            status = "SKIP"
+        else:
+            status = syntax_status
     elif schema_source == "text":
         status = "UNKNOWN"
     else:
@@ -184,8 +187,6 @@ def create_metadata(
         error_message = "Query failed syntactic check"
     elif status == "RUNTIME_ERROR":
         error_message = execution_output
-    elif status == "OK":
-        error_message = "All good"
 
     # -----------------------------
     # ROWS FETCHED
@@ -200,11 +201,10 @@ def create_metadata(
     # -----------------------------
     # ERROR TYPE
     # -----------------------------
-    if error_message is None:
-        error_type = None
-    else:
+    error_type = None
+    if error_message is "RUNTIME_ERROR":
         error_type = classify_error(error_message)
-    logger.info(f"🐛 Error type classified as: {error_type}")
+        logger.info(f"🐛 Error type classified as: {error_type}")
 
     # -----------------------------
     # KNOWLEDGE SCOPE
@@ -220,10 +220,10 @@ def create_metadata(
     # -----------------------------
     # ERROR CATEGORY (SECOND LLM)
     # -----------------------------
-    effective_error_category = None
+    feedback_category = None
     if syntax_status == "OK" and execution_status == "OK":
-        effective_error_category = LLM_feedback
-    logger.info(f"🏷️ Error category stored: {effective_error_category}")
+        feedback_category = LLM_feedback
+    logger.info(f"🏷️ Error category stored: {feedback_category}")
     
     return QueryMetadata(
         schema_id=schema_id,
@@ -235,7 +235,7 @@ def create_metadata(
         error_message=error_message,
         knowledge_scope=knowledge_scope,
         error_type=error_type,
-        LLM_feedback=effective_error_category
+        LLM_feedback=feedback_category
     )
 
 def classify_error(error_message: str | None) -> str | None:
@@ -299,6 +299,10 @@ def store_query_feedback(
     qm: QueryMetadata
 ) -> None:
     logger.info(f"💾 Storing feedback for query")
+
+    if qm.status == "SKIP":
+        logger.info("ℹ️ Query status is SKIP. Skipping insert.")
+        return
 
     if query_already_exists(store, sql_query, qm.model_index):
         logger.info("ℹ️ Query already present. Skipping insert.")

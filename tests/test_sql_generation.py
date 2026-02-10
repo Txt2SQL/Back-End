@@ -178,7 +178,7 @@ def run_single_test(
         logger.info("LLM model initialized for model index %s.", model_index)
         
         logger.info("Entering generation loop for request.")
-        sql, syntax_status, execution_status, execution_output, error_feedback, feedback_category, attempt = generation_loop(
+        sql, syntax_status, execution_status, execution_output, feedback_category, attempt = generation_loop(
             user_request=request,
             source=mode,
             database_name=db_name,
@@ -189,7 +189,7 @@ def run_single_test(
 
         if mode != "mysql":
             schema_context = get_context(request, schema_vs)
-            syntax_status, execution_status, _, error_feedback, feedback_category = evaluate_feedback_error(
+            syntax_status, execution_status, _, _, feedback_category = evaluate_feedback_error(
                 request=request,
                 sql=sql,
                 source=mode,
@@ -230,7 +230,6 @@ def run_single_test(
             sql,
             metadata.status,
             str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message,
-            error_feedback,
             feedback_category,
             attempt,
         )
@@ -279,7 +278,7 @@ def run_test_with_timeout(
     if thread.is_alive():
         # Thread is still running - timeout occurred
         logger.warning("Test exceeded timeout of %s seconds for request: '%s'", timeout, truncate_request(request))
-        return f"TIMEOUT", "Test exceeded {timeout}s timeout", "", None, "", 0
+        return "TIMEOUT", f"Test exceeded {timeout}s timeout", "", None, "", 0
     else:
         try:
             result = result_queue.get_nowait()
@@ -294,7 +293,6 @@ def format_result_line(
     sql_query: str,
     status: str,
     outcome: str,
-    llm_feedback: str | None,
     feedback_category: str,
     attempts: int,
     model_time: float,
@@ -316,20 +314,19 @@ def format_result_line(
     else:
         status_detail = f"{status}, {outcome} rows fetched"
 
-    feedback_value = f"{feedback_category}, {llm_feedback}" if llm_feedback else feedback_category
     return (
         f"🤖 Model: {model_name}\n\n"
         "🧮 Query:\n\n\n"
         f"{clean_sql}\n\n\n"
         f"🏁 Status and outcome: {status_detail}\n\n"
-        f"💡 LLM feedback: {feedback_value}\n\n"
+        f"💡 LLM feedback: {feedback_category}\n\n"
         f"Attempts: {attempts}\n\n"
         f"⌚Request time: {model_time:.1f}s\n\n\n\n"
     )
 
 def write_test_results(
     results: List[
-        Tuple[str, Dict[str, Tuple[str, str, str, str | None, str, int, float]]]
+        Tuple[str, Dict[str, Tuple[str, str, str, str, int, float]]]
     ],
     output_file: str,
 ):
@@ -350,14 +347,13 @@ def write_test_results(
                     f.write("Status and outcome: MODEL_NOT_AVAILABLE\n\n")
                     continue
 
-                sql, status, outcome, error_feedback, feedback_category, attempts, model_time = model_results[model_name]
+                sql, status, outcome, feedback_category, attempts, model_time = model_results[model_name]
 
                 block = format_result_line(
                     model_name=model_name,
                     sql_query=sql,
                     status=status,
                     outcome=outcome,
-                    llm_feedback=error_feedback,
                     feedback_category=feedback_category,
                     attempts=attempts,
                     model_time=model_time,
@@ -384,7 +380,7 @@ def sanitize_request_filename(request: str, max_length: int = 15) -> str:
 
 def write_request_results(
     request: str,
-    model_results: Dict[str, Tuple[str, str, str, str | None, str, int, float]],
+    model_results: Dict[str, Tuple[str, str, str, str, int, float]],
     output_dir: Path,
     index: int,
 ) -> str:
@@ -644,7 +640,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                 logger.info("!#" * 100)
                 model_start_time = time.time()
                 
-                sql_query, status, outcome, error_feedback, feedback_category, attempts = run_test_with_timeout(
+                sql_query, status, outcome, feedback_category, attempts = run_test_with_timeout(
                     db_name, request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
                 )
                 
@@ -663,7 +659,6 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                     sql_query,
                     status,
                     outcome,
-                    error_feedback,
                     feedback_category,
                     attempts,
                     model_time
