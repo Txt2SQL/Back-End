@@ -615,29 +615,44 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     print(f"✅ Models selected for this run: {selected_model_names}")
     logger.info("Models selected for this run: %s", selected_model_names)
 
-    # 5. Run tests for each request using the selected model
-    all_results = []
+    # 5. Run tests model-first: for each model, execute all requests
+    all_results_map = {
+        i: {
+            "request": request,
+            "model_results": {},
+            "request_time": 0.0,
+        }
+        for i, request in enumerate(test_requests, 1)
+    }
     request_output_dir = output_dir / "intermediate"
-    
-    for i, request in enumerate(test_requests, 1):
-        request_slug = sanitize_request_filename(request)
-        request_log_file = request_output_dir / "logs" / f"{i:03d}_{request_slug}.log"
-        request_log_handler = add_request_log_handler(request_log_file)
-        try:
-            print(f"\n{'='*60}")
-            print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
-            print(f"{'='*60}")
-            logger.info("/°" * 100)
-            logger.info("/°" * 100 + "\n\n\n\n")
-            logger.info("Starting request %s/%s: %s", i, len(test_requests), truncate_request(request))
-            logger.info("Request log file: %s\n\n\n\n", request_log_file)
-            logger.info("/°" * 100)
-            logger.info("/°" * 100)
-                        
-            model_results = {}
-            request_start_time = time.time()
 
-            for model_idx, model_name in testable_models:
+    for model_idx, model_name in testable_models:
+        print(f"\n{'#' * 60}")
+        print(f"🤖 Running all requests with model: {model_name}")
+        print(f"{'#' * 60}")
+        logger.info("Running all requests for model: %s (index=%s)", model_name, model_idx)
+
+        for i, request in enumerate(test_requests, 1):
+            request_slug = sanitize_request_filename(request)
+            request_log_file = request_output_dir / "logs" / f"{i:03d}_{request_slug}.log"
+            request_log_handler = add_request_log_handler(request_log_file)
+            try:
+                print(f"\n{'='*60}")
+                print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
+                print(f"{'='*60}")
+                logger.info("/°" * 100)
+                logger.info("/°" * 100 + "\n\n\n\n")
+                logger.info(
+                    "Starting request %s/%s for model %s: %s",
+                    i,
+                    len(test_requests),
+                    model_name,
+                    truncate_request(request),
+                )
+                logger.info("Request log file: %s\n\n\n\n", request_log_file)
+                logger.info("/°" * 100)
+                logger.info("/°" * 100)
+
                 print(f"\nTesting with model: {model_name}\n")
                 logger.info("!#" * 100)
                 logger.info("!#" * 100 + "\n\n\n")
@@ -669,30 +684,44 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                     print(f"   Error: {outcome[:200]}...")
                     logger.warning("Error output: %s", outcome[:200])
 
-                model_results[model_name] = (
+                req_entry = all_results_map[i]
+                req_entry["model_results"][model_name] = (
                     sql_query,
                     status,
                     outcome,
                     feedback_category,
                     attempts,
-                    model_time
+                    model_time,
+                )
+                req_entry["request_time"] += model_time
+
+                print(f"\n⏱️  Aggregated time for this request: {req_entry['request_time']:.1f}s")
+                logger.info(
+                    "Aggregated request time for request %s after model %s: %.1fs",
+                    i,
+                    model_name,
+                    req_entry["request_time"],
                 )
 
-            request_time = time.time() - request_start_time
-            print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
-            logger.info("Total time for request: %.1fs", request_time)
-            
-            all_results.append((request, model_results, request_time))
-            request_output_file = write_request_results(
-                request,
-                model_results,
-                request_output_dir,
-                i,
-            )
-            print(f"📄 Request log saved to: {request_output_file}")
-        finally:
-            remove_request_log_handler(request_log_handler)
-    
+                request_output_file = write_request_results(
+                    request,
+                    req_entry["model_results"],
+                    request_output_dir,
+                    i,
+                )
+                print(f"📄 Request log saved to: {request_output_file}")
+            finally:
+                remove_request_log_handler(request_log_handler)
+
+    all_results = [
+        (
+            data["request"],
+            data["model_results"],
+            data["request_time"],
+        )
+        for _, data in sorted(all_results_map.items())
+    ]
+
     # 6. Write final aggregated results
     write_test_results(all_results, OUTPUT_FILE)
     
