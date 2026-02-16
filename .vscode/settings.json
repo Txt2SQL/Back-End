@@ -15,4 +15,5 @@
         "Ollama",
         "sqlcoder"
     ],
+    "terminal.integrated.fontFamily": "RobotoMono Nerd Font",
 }

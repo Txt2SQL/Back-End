@@ -1,4 +1,5 @@
 import sqlglot, json, hashlib, os, re, sys
+import lmstudio as lms
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from typing import Any
@@ -333,6 +334,14 @@ def get_llm_model(choice: int) -> str | OllamaLLM | AzureChatOpenAI:
         logger.info("Selected 'none' model (no LLM)")
         return "none"
     elif choice < 5:
+        # load_dotenv("../.env.lms")        
+
+        # SERVER_API_HOST = os.getenv("SERVER_API_HOST")
+
+        # lms.configure_default_client(SERVER_API_HOST)
+        
+        # model =  lms.llm("https://chat.bears.disi.unitn.it/?model=omnisql-7b")
+
         model_name = AVAILABLE_MODELS[choice]
         logger.info("Selected Ollama model: %s", model_name)
         return OllamaLLM(model=model_name)
@@ -340,7 +349,7 @@ def get_llm_model(choice: int) -> str | OllamaLLM | AzureChatOpenAI:
         model_name = AVAILABLE_MODELS[choice]
         logger.info("Selected Azure OpenAI model: %s", model_name)
         
-        load_dotenv("../.env.azure")
+        load_dotenv("../.env.azure")        
 
         # === Load Azure environment ===
         AZURE_API_KEY = os.getenv("AZURE_API_KEY")
