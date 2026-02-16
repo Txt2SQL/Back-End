@@ -1,7 +1,7 @@
-from typing import Any, Tuple
 import sqlglot, json, hashlib, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from typing import Any
 from dotenv import load_dotenv
 from langchain_ollama.llms import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
@@ -373,8 +373,6 @@ def get_schema_source(full_schema: dict) -> str:
         logger.info("ℹ️  Schema source detected: Text input.")
         return "text"
 
-import re
-
 def response_cleaning(response) -> str:
     """
     Cleans the LLM response to extract only the SQL query.
@@ -396,13 +394,6 @@ def response_cleaning(response) -> str:
     if "```" in sql_query:
         sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
         logger.debug("Removed markdown fences")
-
-    # 3. Remove everything before first SELECT
-    upper_sql = sql_query.upper()
-    select_index = upper_sql.find("SELECT")
-    if select_index >= 0:
-        sql_query = sql_query[select_index:].strip()
-        logger.debug("Trimmed text before SELECT")
 
     # 4. Remove trailing junk after last semicolon IF present
     if ";" in sql_query:
@@ -554,10 +545,7 @@ SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 
     return template
 
-def generate_sql_query(
-    model: str | OllamaLLM | AzureChatOpenAI, 
-    template: str,
-) -> str:
+def generate_sql_query(model: str | OllamaLLM | AzureChatOpenAI, template: str,) -> str:
     """
     Generates a SQL query using:
     - canonical schema RAG
@@ -592,12 +580,7 @@ def generate_sql_query(
 
     return sql_query
 
-def llm_feedback(
-    sql: str,
-    request: str,
-    context: str,
-    execution_output: list | None | str,
-):
+def llm_feedback(sql: str, request: str, context: str, execution_output: list | None | str):
     """
     Uses an Azure OpenAI model to evaluate whether the SQL query
     correctly answers the user's request based on execution results.

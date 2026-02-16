@@ -248,7 +248,7 @@ def run_test_with_timeout(
     query_vs: Chroma,
     schema_vs: Chroma,
     timeout: int = TIMEOUT_PER_MODEL
-) -> Tuple[str, str, str, str | None, str, int]:
+) -> Tuple[str, str, str, str, int]:
     """
     Run test with timeout to prevent hanging.
     """
@@ -277,7 +277,7 @@ def run_test_with_timeout(
     if thread.is_alive():
         # Thread is still running - timeout occurred
         logger.warning("Test exceeded timeout of %s seconds for request: '%s'", timeout, truncate_request(request))
-        return "TIMEOUT", f"Test exceeded {timeout}s timeout", "", None, "", 0
+        return "TIMEOUT", f"Test exceeded {timeout}s timeout", "", "", 0
     else:
         try:
             result = result_queue.get_nowait()
@@ -285,7 +285,7 @@ def run_test_with_timeout(
             return result
         except queue.Empty:
             logger.error("No result returned from worker thread. Queue is empty.")
-            return "UNKNOWN_ERROR", "No result returned", "", None, "", 0
+            return "UNKNOWN_ERROR", "No result returned", "", "", 0
 
 def format_result_line(
     model_name: str,
@@ -600,16 +600,11 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     # 4. Select all SQL-capable models and initialize them outside worker threads
     testable_models = [
         (idx, model_name)
-        for idx, model_name in AVAILABLE_MODELS.items()
+        for idx, model_name in AZURE_MODELS.items()
         if idx != 0 and "embed" not in model_name.lower()
     ]
     if not testable_models:
         raise RuntimeError("❌ No testable model found in AVAILABLE_MODELS")
-
-    llm_models = {}
-    for idx, model_name in testable_models:
-        llm_models[idx] = get_llm_model(idx)
-        logger.info("Initialized model '%s' (index=%s) for test run.", model_name, idx)
 
     selected_model_names = ", ".join(model_name for _, model_name in testable_models)
     print(f"✅ Models selected for this run: {selected_model_names}")
@@ -631,6 +626,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
         print(f"🤖 Running all requests with model: {model_name}")
         print(f"{'#' * 60}")
         logger.info("Running all requests for model: %s (index=%s)", model_name, model_idx)
+        llm_model = get_llm_model(model_idx)
 
         for i, request in enumerate(test_requests, 1):
             request_slug = sanitize_request_filename(request)
@@ -665,7 +661,7 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
                     db_name,
                     request,
                     model_idx,
-                    llm_models[model_idx],
+                    llm_model,
                     full_schema,
                     mode,
                     query_vs,
