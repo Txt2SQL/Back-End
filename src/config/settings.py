@@ -1,13 +1,17 @@
 """Project-wide settings constants."""
 
 SCHEMA_MODELS = {
-    "starchat-alpha": {
-        "provider": "openwebui",
-        "id": "huggingfaceh4_-_starchat-alpha",
-    },
+    # "starchat-alpha": {
+    #     "provider": "openwebui",
+    #     "id": "huggingfaceh4_-_starchat-alpha",
+    # },
     "Qwen2.5-Coder": {
         "provider": "openwebui",
         "id": "ollama@isarco02.MHKetbi/Qwen2.5-Coder-32B-Instruct:q4_K_S"
+    },
+    "DeepSeek-V2.5": {
+        "provider": "openwebui",
+        "id": "DeepSeek-V2.5-Q6_K-00001-of-00005.gguf",
     }
 }
 
@@ -36,10 +40,6 @@ QUERY_GENERATION_MODELS = {
         "provider": "openwebui",
         "id": "Qwen3-Coder-Next-UD-Q4_K_XL.gguf",
     },
-    "DeepSeek-V2.5": {
-        "provider": "openwebui",
-        "id": "DeepSeek-V2.5-Q6_K-00001-of-00005.gguf",
-    }
 }
 
 REQUIRED_CREDENTIAL_VARS = [

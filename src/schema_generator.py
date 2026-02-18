@@ -1,11 +1,9 @@
-import hashlib
-import json, os, re, sys
+import hashlib, json, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings
 from src.classes.llm_clients.openwebui_client import OpenWebUILLM
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_chroma import Chroma
 from src.config.settings import LOGINFO_SEPARATOR, SCHEMA_MODELS
 from src.retriver_utils import build_vector_store
@@ -40,7 +38,7 @@ def choose_schema_model() -> OpenWebUILLM:
     
     while True:
         try:
-            choice = int(input("\n👉 Select a model (0-{}): ".format(len(models))).strip())
+            choice = int(input("\n👉 Select a model (1-{}): ".format(len(models))).strip())
             
             if 1 <= choice <= len(models):
                 selected = models[choice - 1]

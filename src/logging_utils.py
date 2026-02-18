@@ -194,15 +194,15 @@ def print_schema_context(schema_context: str):
     logger.info("===========================================================\n")
 
 def print_vector_store(vector_store: Chroma):
-    logger.info("\n🔎 Current content of the vector store:")
+    print("\n🔎 Current content of the vector store:")
     all_docs = vector_store.get(include=["metadatas", "documents"])
 
     for i, (doc_text, meta) in enumerate(zip(all_docs["documents"], all_docs["metadatas"])):  # type: ignore
-        logger.info(f"\n🧱 Document #{i+1}")
-        logger.info("📘 Table:%s", meta.get("table", "N/A"))
-        logger.info("📄 Content:")
-        logger.info(doc_text)
-        logger.info("-" * 50)
+        print(f"\n🧱 Document #{i+1}")
+        print("📘 Table:%s", meta.get("table", "N/A"))
+        print("📄 Content:")
+        print(doc_text)
+        print("-" * 50)
         
         if not doc_text:
-            logger.error(f"⚠️ Document #{i+1} is empty.")
+            print(f"⚠️ Document #{i+1} is empty.")
