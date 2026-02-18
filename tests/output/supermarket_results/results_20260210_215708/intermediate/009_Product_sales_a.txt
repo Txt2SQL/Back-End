@@ -1,0 +1,97 @@
+1. Request: Product sales across categories with supplier info For each category, show: Category name, total products, total sales quantity, and the main supplier
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT
+        p.category_id,
+        p.supplier_id,
+        SUM(od.quantity) AS total_sales_quantity
+    FROM
+        products p
+    LEFT JOIN
+        order_details od ON p.product_id = od.product_id
+    GROUP BY
+        p.category_id, p.supplier_id
+),
+MainSupplierByCategory AS (
+    SELECT
+        category_id,
+        supplier_id
+    FROM (
+        SELECT
+            category_id,
+            supplier_id,
+            ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY SUM(total_sales_quantity) DESC) AS rank
+        FROM
+            CategorySupplierSales 
+        GROUP BY category_id, supplier_id
+    ) ranked_suppliers
+    WHERE rank = 1
+)
+SELECT
+    p.category_id AS category_id,
+    COUNT(p.product_id) AS total_products,
+    COALESCE(SUM(od.quantity), 0) AS total_sales_quantity,
+    s.supplier_name AS main_supplier
+FROM
+    products p
+LEFT JOIN
+    order_details od ON p.product_id = od.product_id
+LEFT JOIN
+    MainSupplierByCategory msc ON p.category_id = msc.category_id AND p.suppli...
+
+
+🏁 Status and outcome: SYNTAX_ERROR, Query failed syntactic check
+
+💡 LLM feedback: None
+
+Attempts: 3
+
+⌚Request time: 10.7s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+SELECT
+  p.category_id AS category_name,
+  COUNT(DISTINCT p.product_id) AS total_products,
+  COALESCE(SUM(od.quantity), 0) AS total_sales_quantity,
+  (
+    SELECT s2.supplier_name
+    FROM suppliers s2
+    JOIN products p2 ON p2.supplier_id = s2.supplier_id
+    LEFT JOIN order_details od2 ON od2.product_id = p2.product_id
+    WHERE p2.category_id = p.category_id
+    GROUP BY s2.supplier_id, s2.supplier_name
+    ORDER BY COALESCE(SUM(od2.quantity), 0) DESC
+    LIMIT 1
+  ) AS main_supplier
+FROM products p
+LEFT JOIN order_details od ON od.product_id = p.product_id
+GROUP BY p.category_id;
+
+
+🏁 Status and outcome: OK, 22238 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 1
+
+⌚Request time: 19.0s
+
+
+
+
+========================================================================================================================================================================================================
+

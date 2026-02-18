@@ -1,3 +1,4 @@
+import hashlib
 import json, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -32,6 +33,147 @@ logger = setup_logger(__name__)
 
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
+
+def compute_schema_id(full_schema: dict) -> str:
+    """
+    Compute a unique identifier for the schema.
+    """
+    logger.debug("Computing schema ID")
+    normalized = json.dumps(full_schema, sort_keys=True)
+    schema_id = hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    logger.debug("Schema ID computed: %s", schema_id)
+    return schema_id
+
+def acquire_schema_from_text(raw_text: str):
+
+    schema_exists = os.path.exists(SCHEMA_FILE) and os.path.getsize(SCHEMA_FILE) > 0
+    vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
+
+    if schema_exists and vector_store_exists:
+        logger.info("Existing schema and vector store detected!")
+        logger.info(f"Found: {SCHEMA_FILE}")
+        logger.info(f"Found: {DB_DIR}")
+
+        with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+            current_schema = json.load(f)
+
+        return update_schema(raw_text, current_schema)
+
+    logger.info("No existing schema found. Generating from scratch...")
+    database_name = input("DB_NAME for this schema: ").strip()
+    if not database_name:
+        logger.error("DB_NAME is required to generate the schema.")
+        return {}
+    schema = generate_schema_canonical(raw_text)
+    schema["database"] = database_name
+    schema["source"] = "text"
+    logger.info("New schema generated.")
+
+    return schema
+
+def acquire_schema_from_mysql():
+    # Ensure MySQL credentials exist
+    if not mysql_env_is_valid():
+        creds = prompt_mysql_credentials()
+        write_mysql_env(creds)
+
+    # Load the env after creation/update
+    load_dotenv(ENV_MYSQL_FILE, override=True)
+
+    databases = list_databases()
+    if not databases:
+        logger.error("No databases available for the provided MySQL credentials.")
+        return {}
+
+    print("\nAvailable databases:")
+    for i, db_name in enumerate(databases, 1):
+        print(f"{i}. {db_name}")
+
+    selected_db = ""
+    while not selected_db:
+        choice = input("\n👉 Select a database (name or number): ").strip()
+        if choice.isdigit():
+            index = int(choice) - 1
+            if 0 <= index < len(databases):
+                selected_db = databases[index]
+            else:
+                logger.error("Invalid database selection. Try again.")
+        elif choice in databases:
+            selected_db = choice
+        else:
+            logger.error("Invalid database selection. Try again.")
+
+    write_mysql_env({"DB_NAME": selected_db})
+    load_dotenv(ENV_MYSQL_FILE, override=True)
+
+    logger.info("Connecting to MySQL database to retrieve schema...")
+    schema = extract_schema(selected_db)
+    schema["source"] = "mysql"
+    schema["database"] = selected_db
+    logger.info("Generating schema from database schema...")
+    logger.info("New schema generated.")
+
+    return schema
+
+def generate_schema_canonical(raw_schema_text: str) -> dict:
+
+    logger.info("Raw schema text being sent to LLM:")
+    logger.info(f"{raw_schema_text}")
+    logger.info("="*60)
+
+    template = """
+You are an expert database schema analyzer. Your task is to convert SQL DDL statements into a structured JSON schema.
+
+IMPORTANT:
+- You MUST return ONLY valid JSON.
+- The JSON must be syntactically correct (no missing commas, braces, or quotes).
+- Every object and array must be properly closed.
+- Do NOT include comments, code blocks, or explanations.
+
+Required JSON format:
+{{
+  "tables": [
+    {{
+      "name": "table_name",
+      "columns": [
+        {{"name": "column_name", "type": "SQL_TYPE", "constraints": ["PRIMARY KEY", "NOT NULL", ...]}}
+      ]
+    }}
+  ],
+  "semantic_notes": []
+}}
+
+Rules:
+- Extract table names from CREATE TABLE statements
+- Extract column names, types, and constraints
+- Map SQL types directly (VARCHAR2 → VARCHAR2, NUMBER → NUMBER, etc.)
+- Include constraints like PRIMARY KEY, NOT NULL, UNIQUE, DEFAULT, REFERENCES
+- For foreign keys, use "REFERENCES" constraint
+
+SQL DDL to process:
+\"\"\"{raw_schema_text}\"\"\"
+
+Return ONLY the JSON object:
+"""
+
+    chain = ChatPromptTemplate.from_template(template) | model
+    response = chain.invoke({
+        "raw_schema_text": raw_schema_text,
+    })
+
+    # parsing
+    if isinstance(response, str):
+        content = response.strip()
+    elif hasattr(response, "content"):
+        content = response.content.strip()
+    else:
+        content = str(response).strip()
+
+    logger.info(f"Raw LLM response: {content}")
+
+    schema = extract_json_from_response(content)
+    
+    return schema
 
 def extract_json_from_response(content: str) -> dict:
     """Extract JSON from LLM response using multiple methods"""
@@ -178,7 +320,7 @@ Answer only with "A" or "B".
         return "semantic"
     return "unknown"
 
-def update_schema_with_existing(raw_schema_text: str, current_schema: dict | None = None) -> dict:
+def update_schema_with_existing(raw_schema_text: str, current_schema: dict) -> dict:
     """
     Uses an LLM model to generate or update the canonical schema.
     If a current schema exists, it passes it as context.
@@ -246,69 +388,6 @@ Return the UPDATED schema JSON:
 
     return schema
 
-def generate_schema_canonical(raw_schema_text: str, database_name: str) -> dict:
-
-    logger.info("Raw schema text being sent to LLM:")
-    logger.info(f"{raw_schema_text}")
-    logger.info("="*60)
-
-    template = """
-You are an expert database schema analyzer. Your task is to convert SQL DDL statements into a structured JSON schema.
-
-IMPORTANT:
-- You MUST return ONLY valid JSON.
-- The JSON must be syntactically correct (no missing commas, braces, or quotes).
-- Every object and array must be properly closed.
-- Do NOT include comments, code blocks, or explanations.
-
-Required JSON format:
-{{
-  "database": "{database_name}",
-  "tables": [
-    {{
-      "name": "table_name",
-      "columns": [
-        {{"name": "column_name", "type": "SQL_TYPE", "constraints": ["PRIMARY KEY", "NOT NULL", ...]}}
-      ]
-    }}
-  ],
-  "semantic_notes": []
-}}
-
-Rules:
-- Extract table names from CREATE TABLE statements
-- Extract column names, types, and constraints
-- Map SQL types directly (VARCHAR2 → VARCHAR2, NUMBER → NUMBER, etc.)
-- Include constraints like PRIMARY KEY, NOT NULL, UNIQUE, DEFAULT, REFERENCES
-- For foreign keys, use "REFERENCES" constraint
-
-SQL DDL to process:
-\"\"\"{raw_schema_text}\"\"\"
-
-Return ONLY the JSON object:
-"""
-
-    chain = ChatPromptTemplate.from_template(template) | model
-    response = chain.invoke({
-        "raw_schema_text": raw_schema_text,
-        "database_name": database_name,
-    })
-
-    # parsing
-    if isinstance(response, str):
-        content = response.strip()
-    elif hasattr(response, "content"):
-        content = response.content.strip()
-    else:
-        content = str(response).strip()
-
-    logger.info(f"Raw LLM response: {content}")
-
-    schema = extract_json_from_response(content)
-    
-    schema["database"] = database_name
-    return schema
-
 def update_schema(raw_text: str, current_schema: dict):
 
     with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
@@ -337,76 +416,6 @@ def update_schema(raw_text: str, current_schema: dict):
         
         return update_schema_with_existing(raw_text, current_schema)
 
-def acquire_schema_from_text(raw_text: str):
-
-    schema_exists = os.path.exists(SCHEMA_FILE) and os.path.getsize(SCHEMA_FILE) > 0
-    vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
-
-    if schema_exists and vector_store_exists:
-        logger.info("Existing schema and vector store detected!")
-        logger.info(f"Found: {SCHEMA_FILE}")
-        logger.info(f"Found: {DB_DIR}")
-
-        with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
-            current_schema = json.load(f)
-
-        return update_schema(raw_text, current_schema)
-
-    logger.info("No existing schema found. Generating from scratch...")
-    database_name = input("DB_NAME for this schema: ").strip()
-    if not database_name:
-        logger.error("DB_NAME is required to generate the schema.")
-        return {}
-    schema = generate_schema_canonical(raw_text, database_name)
-    schema["source"] = "text"
-    logger.info("New schema generated.")
-
-    return schema
-
-def acquire_schema_from_mysql():
-    # Ensure MySQL credentials exist
-    if not mysql_env_is_valid():
-        creds = prompt_mysql_credentials()
-        write_mysql_env(creds)
-
-    # Load the env after creation/update
-    load_dotenv(ENV_MYSQL_FILE, override=True)
-
-    databases = list_databases()
-    if not databases:
-        logger.error("No databases available for the provided MySQL credentials.")
-        return {}
-
-    print("\nAvailable databases:")
-    for i, db_name in enumerate(databases, 1):
-        print(f"{i}. {db_name}")
-
-    selected_db = ""
-    while not selected_db:
-        choice = input("\n👉 Select a database (name or number): ").strip()
-        if choice.isdigit():
-            index = int(choice) - 1
-            if 0 <= index < len(databases):
-                selected_db = databases[index]
-            else:
-                logger.error("Invalid database selection. Try again.")
-        elif choice in databases:
-            selected_db = choice
-        else:
-            logger.error("Invalid database selection. Try again.")
-
-    write_mysql_env({"DB_NAME": selected_db})
-    load_dotenv(ENV_MYSQL_FILE, override=True)
-
-    logger.info("Connecting to MySQL database to retrieve schema...")
-    schema = extract_schema(selected_db)
-    schema["source"] = "mysql"
-    schema["database"] = selected_db
-    logger.info("Generating schema from database schema...")
-    logger.info("New schema generated.")
-
-    return schema
-
 def save_validate_and_build(schema):
     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
         json.dump(schema, f, indent=2, ensure_ascii=False)
@@ -423,11 +432,14 @@ def save_validate_and_build(schema):
     logger.info(f"Found {len(schema.get('tables', []))} tables in schema.")
 
     logger.info("Building/recreating vector store...")
-    vector_store = build_vector_store(schema)
-    print_vector_store(vector_store) # pyright: ignore[reportArgumentType]
-
-    logger.info("Vector store built successfully!")
-    logger.info("Workflow completed successfully!")
+    try:
+        vs = build_vector_store(schema)
+        logger.info("Vector store built successfully!")
+        logger.info("Workflow completed successfully!")
+        return vs
+    except Exception as e:
+        logger.error(f"Error building vector store: {e}")
+        raise
 
 def main():
     """Main function to handle the interactive workflow."""
@@ -488,8 +500,9 @@ def main():
                 logger.error("Vector store does not exist. Please generate the schema first.")
 
         if schema:
-            save_validate_and_build(schema)
-
+            vector_store = save_validate_and_build(schema)
+            print_vector_store(vector_store) # pyright: ignore[reportArgumentType]
+            
         if method != "1":
             break
 

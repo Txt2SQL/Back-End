@@ -1,0 +1,75 @@
+1. Request: Products that are always sold together (co-purchased 100% of the time). Find pairs of products where whenever product A is purchased, product B is also in the same order, and vice versa (bidirectional relationship). Show product pairs and the number of times they appear together
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT 
+    p1.product_name AS product_a,
+    p2.product_name AS product_b,
+    COUNT(*) AS times_purchased_together
+FROM 
+    order_details od1
+JOIN 
+    order_details od2 ON od1.order_id = od2.order_id AND od1.product_id < od2.product_id
+JOIN 
+    products p1 ON od1.product_id = p1.product_id
+JOIN 
+    products p2 ON od2.product_id = p2.product_id
+GROUP BY 
+    p1.product_name, p2.product_name
+HAVING 
+    COUNT(*) = (
+        SELECT 
+            COUNT(*)
+        FROM 
+            order_details sub_od
+        WHERE 
+            sub_od.product_id = od1.product_id
+    )
+    AND COUNT(*) = (
+        SELECT 
+            COUNT(*)
+        FROM 
+            order_details sub_od
+        WHERE 
+            sub_od.product_id = od2.product_id
+    );
+
+
+🏁 Status and outcome: OK, 37159 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 34.8s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+TIMEOUT
+
+
+🏁 Status and outcome: Test exceeded 600s timeout, 
+
+💡 LLM feedback: 
+
+Attempts: 0
+
+⌚Request time: 600.0s
+
+
+
+
+========================================================================================================================================================================================================
+

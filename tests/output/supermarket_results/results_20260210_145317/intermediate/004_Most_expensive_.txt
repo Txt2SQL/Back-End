@@ -1,0 +1,185 @@
+1. Request: Most expensive product in each category. For each category, show the most expensive product and its price
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: codellama:13b
+
+🧮 Query:
+
+
+SELECT categories.category_name, products.product_name, products.price AS max_price
+FROM products INNER JOIN categories ON products.category_id = categories.category_id
+WHERE products.price = (SELECT MAX(products.price) FROM products WHERE products.category_id = categories.category_id)
+GROUP BY categories.category_name;
+
+
+🏁 Status and outcome: OK, 22238 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 210.3s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: codestral:22b
+
+🧮 Query:
+
+
+SELECT c.category_name, p.product_name, MAX(p.price) as max_price
+   FROM products p
+   INNER JOIN categories c ON p.category_id = c.category_id
+   GROUP BY c.category_id, p.product_name;
+
+
+🏁 Status and outcome: OK, 39998 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 398.5s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: sqlcoder:15b
+
+🧮 Query:
+
+
+SELECT categories.category_name,
+       products.product_name,
+       max(products.price) AS most_expensive_price
+FROM   products
+         join order_details on products.product_id = order_details.product_id
+         join categories on products.category_id = categories.category_id
+GROUP BY categories.category_name, products.product_name;
+
+
+🏁 Status and outcome: OK, 24175 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 231.5s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: deepseek-coder-v2:16b
+
+🧮 Query:
+
+
+selected along with its name and price. We can use a subquery or a window function to find the maximum price within each category and then join this information back to the products table. Here's the corrected SQL query:
+
+
+SELECT 
+    categories.category_name, 
+    most_expensive.product_name, 
+    most_expensive.max_price
+FROM 
+    categories
+INNER JOIN (
+    SELECT 
+        products.category_id, 
+        products.product_name, 
+        products.price AS max_price
+    FROM 
+        products
+) AS most_expensive ON categories.category_id = most_expensive.category_id
+WHERE 
+    most_expensive.max_price = (
+        SELECT 
+            MAX(products.price)
+        FROM 
+            products
+        WHERE 
+            products.category_id = categories.category_id
+    );
+
+
+🏁 Status and outcome: SYNTAX_ERROR, Query failed syntactic check
+
+💡 LLM feedback: None
+
+Attempts: 3
+
+⌚Request time: 66.5s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT 
+    c.category_name, 
+    p.product_name, 
+    p.price
+FROM 
+    products p
+JOIN 
+    categories c ON p.category_id = c.category_id
+WHERE 
+    p.price = (
+        SELECT MAX(p1.price) 
+        FROM products p1 
+        WHERE p1.category_id = p.category_id
+    )
+GROUP BY 
+    c.category_name, p.product_name, p.price;
+
+
+🏁 Status and outcome: OK, 22238 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 16.3s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+SELECT c.category_name, p.product_name, p.price
+FROM categories AS c
+LEFT JOIN (
+    SELECT p2.category_id, MAX(p2.price) AS max_price
+    FROM products AS p2
+    GROUP BY p2.category_id
+) AS mp ON c.category_id = mp.category_id
+LEFT JOIN products AS p ON p.category_id = mp.category_id AND p.price = mp.max_price
+ORDER BY c.category_name, p.product_name;
+
+
+🏁 Status and outcome: OK, 33123 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 40.8s
+
+
+
+
+========================================================================================================================================================================================================
+

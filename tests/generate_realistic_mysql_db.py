@@ -1,4 +1,4 @@
-import glob, sys, os, random
+import glob, sys, os, random, uuid, re
 # Add parent directory to Python path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -111,6 +111,58 @@ def get_foreign_key_map(cursor, table_name):
     return {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
 
 
+def get_primary_key_columns(cursor, table_name):
+    """Return list of primary key columns for a table."""
+    cursor.execute(
+        """
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = %s
+          AND CONSTRAINT_NAME = 'PRIMARY'
+        ORDER BY ORDINAL_POSITION
+        """,
+        (table_name,)
+    )
+    return [row[0] for row in cursor.fetchall()]
+
+
+def get_table_dependencies(cursor, tables):
+    """Return dependency mapping of table -> referenced tables."""
+    dependencies = {table: set() for table in tables}
+    for table in tables:
+        cursor.execute(
+            """
+            SELECT REFERENCED_TABLE_NAME
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = %s
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+            """,
+            (table,)
+        )
+        dependencies[table] = {row[0] for row in cursor.fetchall() if row[0] in tables}
+    return dependencies
+
+
+def order_tables_by_dependency(cursor, tables):
+    """Order tables based on FK dependencies (parents before children)."""
+    dependencies = get_table_dependencies(cursor, tables)
+    remaining = {table: set(deps) for table, deps in dependencies.items()}
+    ordered = []
+    while remaining:
+        ready = [table for table, deps in remaining.items() if not deps]
+        if not ready:
+            ordered.extend(sorted(remaining.keys()))
+            break
+        for table in sorted(ready):
+            ordered.append(table)
+            remaining.pop(table)
+        for deps in remaining.values():
+            deps.difference_update(ready)
+    return ordered
+
+
 def get_existing_values(cursor, table_name, column_name, cache):
     """Return cached list of existing values for a referenced column."""
     cache_key = (table_name, column_name)
@@ -120,6 +172,16 @@ def get_existing_values(cursor, table_name, column_name, cache):
             f"WHERE {quote_identifier(column_name)} IS NOT NULL"
         )
         cache[cache_key] = [row[0] for row in cursor.fetchall()]
+    return cache[cache_key]
+
+
+def get_existing_pk_tuples(cursor, table_name, pk_columns, cache):
+    """Return cached set of existing PK tuples for a table."""
+    cache_key = (table_name, tuple(pk_columns))
+    if cache_key not in cache:
+        cols = ", ".join(quote_identifier(col) for col in pk_columns)
+        cursor.execute(f"SELECT {cols} FROM {quote_identifier(table_name)}")
+        cache[cache_key] = {tuple(row) for row in cursor.fetchall()}
     return cache[cache_key]
 
 
@@ -143,8 +205,12 @@ def generate_fake_value(col_type, col_name):
         return random.randint(1, 100)
     if 'varchar' in col_type or 'text' in col_type or 'char' in col_type:
         return fake.word() if 'varchar(10)' in col_type else fake.sentence()
-    if 'date' in col_type or 'time' in col_type:
+    if 'datetime' in col_type or 'timestamp' in col_type:
         return fake.date_time_between(start_date='-2y', end_date='now').strftime('%Y-%m-%d %H:%M:%S')
+    if col_type.startswith('date'):
+        return fake.date_between(start_date='-2y', end_date='today').strftime('%Y-%m-%d')
+    if col_type.startswith('time'):
+        return fake.time(pattern='%H:%M:%S')
     if 'decimal' in col_type or 'float' in col_type or 'double' in col_type:
         return round(random.uniform(10.0, 500.0), 2)
 
@@ -152,11 +218,39 @@ def generate_fake_value(col_type, col_name):
     return "test"
 
 
-def populate_table(cursor, table_name, rows_per_table, fk_value_cache):
+def generate_primary_key_value(col_type, pk_counters):
+    """Generate a PK-safe value based on column type."""
+    col_type = col_type.lower()
+    if 'int' in col_type or 'tinyint' in col_type:
+        pk_counters['next'] += 1
+        return pk_counters['next']
+    if 'char' in col_type or 'text' in col_type or 'varchar' in col_type:
+        max_len = None
+        length_match = re.search(r"\((\d+)\)", col_type)
+        if length_match:
+            max_len = int(length_match.group(1))
+        value = uuid.uuid4().hex
+        return value[:max_len] if max_len else value
+    return generate_fake_value(col_type, "id")
+
+
+def populate_table(cursor, table_name, rows_per_table, fk_value_cache, pk_cache, pk_tuple_cache):
     """Generate and insert fake data with fallback when batch insert fails."""
     logger.info("Populating table: %s", table_name)
     columns = get_table_schema(cursor, table_name)
     fk_map = get_foreign_key_map(cursor, table_name)
+    pk_columns = get_primary_key_columns(cursor, table_name)
+    pk_column_set = set(pk_columns)
+    pk_columns_non_auto = [col for col in pk_columns if not next(
+        (c for c in columns if c['name'] == col and c['is_auto_increment']),
+        None
+    )]
+    pk_counters = {}
+    for col in pk_columns_non_auto:
+        col_type = next(c['type'] for c in columns if c['name'] == col)
+        if 'int' in col_type.lower() or 'tinyint' in col_type.lower():
+            existing_values = get_existing_values(cursor, table_name, col, pk_cache)
+            pk_counters[col] = {'next': max(existing_values, default=0)}
 
     # Filter out auto_increment columns (database handles them)
     insert_cols = [c for c in columns if not c['is_auto_increment']]
@@ -173,6 +267,9 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache):
     sql = f"INSERT INTO {quote_identifier(table_name)} ({col_names_str}) VALUES ({placeholders})"
 
     data_batch = []
+    existing_pk_tuples = None
+    if pk_columns_non_auto:
+        existing_pk_tuples = get_existing_pk_tuples(cursor, table_name, pk_columns_non_auto, pk_tuple_cache)
     missing_fk_logged = set()
     for _ in range(rows_per_table):
         row_data = []
@@ -205,10 +302,26 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache):
                         missing_fk_logged.add(missing_key)
                     break
             else:
-                val = generate_fake_value(col['type'], col['name'])
+                if col['name'] in pk_column_set and col['name'] in pk_columns_non_auto:
+                    col_type = col['type']
+                    pk_counter = pk_counters.get(col['name'], {'next': 0})
+                    val = generate_primary_key_value(col_type, pk_counter)
+                    pk_counters[col['name']] = pk_counter
+                else:
+                    val = generate_fake_value(col['type'], col['name'])
             row_data.append(val)
-        if not skip_row:
-            data_batch.append(tuple(row_data))
+        if skip_row:
+            continue
+        if pk_columns_non_auto:
+            pk_values = []
+            for pk_col in pk_columns_non_auto:
+                pk_index = col_names.index(pk_col)
+                pk_values.append(row_data[pk_index])
+            pk_tuple = tuple(pk_values)
+            if pk_tuple in existing_pk_tuples: # pyright: ignore[reportOperatorIssue]
+                continue
+            existing_pk_tuples.add(pk_tuple) # pyright: ignore[reportOptionalMemberAccess]
+        data_batch.append(tuple(row_data))
 
     if not data_batch:
         print(f"    Skipping {table_name} (No valid rows to insert)")
@@ -219,6 +332,9 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache):
     try:
         cursor.executemany(sql, data_batch)
         inserted_rows = len(data_batch)
+        for row in data_batch:
+            for col_idx, col_name in enumerate(col_names):
+                fk_value_cache.setdefault((table_name, col_name), []).append(row[col_idx])
     except Error as batch_error:
         print(f"    Batch insert failed for {table_name}: {batch_error}")
         logger.warning("Batch insert failed for %s: %s", table_name, batch_error)
@@ -227,6 +343,8 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache):
             try:
                 cursor.execute(sql, row)
                 inserted_rows += 1
+                for col_idx, col_name in enumerate(col_names):
+                    fk_value_cache.setdefault((table_name, col_name), []).append(row[col_idx])
             except Error:
                 continue
 
@@ -377,8 +495,11 @@ def main():
 
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
         fk_value_cache = {}
-        for table in selected_tables:
-            populate_table(cursor, table, rows_per_table, fk_value_cache)
+        pk_value_cache = {}
+        pk_tuple_cache = {}
+        ordered_tables = order_tables_by_dependency(cursor, selected_tables)
+        for table in ordered_tables:
+            populate_table(cursor, table, rows_per_table, fk_value_cache, pk_value_cache, pk_tuple_cache)
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
         conn.commit()
     elif action == "3":

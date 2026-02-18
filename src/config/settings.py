@@ -1,22 +1,45 @@
 """Project-wide settings constants."""
 
-OLLAMA_MODELS = {
-    1: "codellama:13b",
-    2: "codestral:22b",
-    3: "sqlcoder:15b",
-    4: "deepseek-coder-v2:16b",
-    7: "mxbai-embed-13b",    
+SCHEMA_MODELS = {
+    "starchat-alpha": {
+        "provider": "openwebui",
+        "id": "huggingfaceh4_-_starchat-alpha",
+    },
+    "Qwen2.5-Coder": {
+        "provider": "openwebui",
+        "id": "ollama@isarco02.MHKetbi/Qwen2.5-Coder-32B-Instruct:q4_K_S"
+    }
 }
 
-AZURE_MODELS = {
-    5: "gpt-4o",
-    6: "gpt-5-mini",
-}
-
-AVAILABLE_MODELS = {
-    0: "without_llm",
-    **OLLAMA_MODELS,
-    **AZURE_MODELS
+QUERY_GENERATION_MODELS = {
+    "gpt-4o": {
+        "provider": "azure",
+        "id": "gpt-4o",
+    },
+    "gpt-5-mini": {
+        "provider": "azure",
+        "id": "gpt-5-mini",
+    },
+    "codestral:22b": {
+        "provider": "openwebui",
+        "id": "ollama@isarco02.codestral:22b",
+    },
+    "codellama:34b": {
+        "provider": "openwebui",
+        "id": "ollama@isarco02.codellama:34b",
+    },
+    "sqlcoder:15b": {
+        "provider": "openwebui",
+        "id": "ollama@isarco02.sqlcoder:15b",
+    },
+    "OmniSQL-7b": {
+        "provider": "openwebui",
+        "id": "omnisql-7b",
+    },
+    "DeepSeek-V2.5": {
+        "provider": "openwebui",
+        "id": "DeepSeek-V2.5-Q6_K-00001-of-00005.gguf",
+    }
 }
 
 REQUIRED_CREDENTIAL_VARS = [

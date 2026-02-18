@@ -4,7 +4,5 @@ data/vector_store/schema/
 data/schema/schema_canonical.json
 **/__pycache__/
 *.log
-.env*
+*.env
 tests/tmp
-codex.patch
-tests/output/*

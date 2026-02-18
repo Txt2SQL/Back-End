@@ -8,7 +8,7 @@ class QueryMetadata:
     schema_id: Optional[str]
     schema_source: str
     user_request: str
-    model_index: int
+    model_name: str | None
     status: str  # OK | SYNTAX_ERROR | RUNTIME_ERROR
 
     # --- Execution info ---
@@ -28,7 +28,7 @@ class QueryMetadata:
             "schema_source": self.schema_source,
             "knowledge_scope": self.knowledge_scope,
             "status": self.status,
-            "model": self.model_index,
+            "model": self.model_name,
             "timestamp": time.time(),
             "sql_query": sql_query,
             "rows_fetched": self.rows_fetched,

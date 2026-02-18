@@ -5,7 +5,7 @@ from typing import Any
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from src.logging_utils import setup_logger
-from src.metadata import QueryMetadata
+from src.classes.metadata import QueryMetadata
 from src.config.paths import VECTOR_STORE_DIR
 from langchain_ollama import OllamaEmbeddings
 
@@ -109,14 +109,14 @@ def apply_time_decay(
 
     return [doc for _, doc in scored]
 
-def query_already_exists(store: Chroma, sql_query: str, model_index: int) -> bool:
+def query_already_exists(store: Chroma, sql_query: str, model_name: str | None) -> bool:
     """
     Checks if a SQL query already exists in the vector store.
     Comparison is done on metadata["sql_query"].
     """
     logger.info(f"🔍 Checking if query exists: {sql_query}")
     
-    if model_index == 0:
+    if model_name is None:
         logger.info("ℹ️ Model is 'none': testing run. Skip storing")
         return False
     
@@ -140,18 +140,39 @@ def create_metadata(
     schema_id: str,
     schema_source: str,
     user_request: str,
-    model_index: int,
+    model_name: str | None,
     execution_status: str | None = None,
     execution_output: Any | None = None,
     LLM_feedback: str | None = None
 ) -> QueryMetadata:
+    
+    """
+    Creates a QueryMetadata object for storing query execution results.
+
+    Args:
+        - sql_query: the SQL query executed
+        - syntax_status: the result of the syntax check on the query
+        - schema_id: the identifier of the schema on which the query is executed
+        - schema_source: the source of the schema (e.g. database, text, etc.)
+        - user_request: the original user request
+        - model_index: the index of the model used to generate the query
+        - execution_status: the status of the query execution
+        - execution_output: the result of the query execution
+        - LLM_feedback: the feedback from the second LLM model
+
+    Returns:
+        - QueryMetadata object containing the execution results
+    """
     logger.info("📝 Creating metadata for query execution...")
 
     # -----------------------------
     # STATUS
     # -----------------------------
     if syntax_status != "OK":
-        status = syntax_status
+        if not sql_query.strip().upper().startswith("SELECT"):
+            status = "SKIP"
+        else:
+            status = syntax_status
     elif schema_source == "text":
         status = "UNKNOWN"
     else:
@@ -166,8 +187,6 @@ def create_metadata(
         error_message = "Query failed syntactic check"
     elif status == "RUNTIME_ERROR":
         error_message = execution_output
-    elif status == "OK":
-        error_message = "All good"
 
     # -----------------------------
     # ROWS FETCHED
@@ -182,11 +201,10 @@ def create_metadata(
     # -----------------------------
     # ERROR TYPE
     # -----------------------------
-    if error_message is None:
-        error_type = None
-    else:
+    error_type = None
+    if error_message == "RUNTIME_ERROR":
         error_type = classify_error(error_message)
-    logger.info(f"🐛 Error type classified as: {error_type}")
+        logger.info(f"🐛 Error type classified as: {error_type}")
 
     # -----------------------------
     # KNOWLEDGE SCOPE
@@ -202,25 +220,43 @@ def create_metadata(
     # -----------------------------
     # ERROR CATEGORY (SECOND LLM)
     # -----------------------------
-    effective_error_category = None
+    feedback_category = None
     if syntax_status == "OK" and execution_status == "OK":
-        effective_error_category = LLM_feedback
-    logger.info(f"🏷️ Error category stored: {effective_error_category}")
+        feedback_category = LLM_feedback
+    logger.info(f"🏷️ Error category stored: {feedback_category}")
     
     return QueryMetadata(
         schema_id=schema_id,
         schema_source=schema_source,
         user_request=user_request,
-        model_index=model_index,
+        model_name=model_name,
         status=status,
         rows_fetched=rows_fetched,
         error_message=error_message,
         knowledge_scope=knowledge_scope,
         error_type=error_type,
-        LLM_feedback=effective_error_category
+        LLM_feedback=feedback_category
     )
 
 def classify_error(error_message: str | None) -> str | None:
+    """
+    Classify the error message into one of the following categories:
+
+    - UNKNOWN_COLUMN
+    - UNKNOWN_TABLE
+    - AMBIGUOUS_COLUMN
+    - SYNTAX_ERROR
+    - BAD_JOIN
+    - GENERIC_RUNTIME_ERROR
+
+    If no error message is provided, return None.
+
+    :param error_message: The error message to classify.
+    :type error_message: str | None
+    :return: The classified error category, or None if no error message is provided.
+    :rtype: str | None
+    """
+    
     if not error_message:
         logger.info("ℹ️ No error message to classify.")
         return None
@@ -264,7 +300,11 @@ def store_query_feedback(
 ) -> None:
     logger.info(f"💾 Storing feedback for query")
 
-    if query_already_exists(store, sql_query, qm.model_index):
+    if qm.status == "SKIP":
+        logger.info("ℹ️ Query status is SKIP. Skipping insert.")
+        return
+
+    if query_already_exists(store, sql_query, qm.model_name):
         logger.info("ℹ️ Query already present. Skipping insert.")
         return
 

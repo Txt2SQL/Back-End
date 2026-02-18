@@ -1,23 +1,54 @@
-"""Configuration helpers for the project."""
+"""Configuration package for the project.
+
+This package contains all project-wide configuration settings,
+including model definitions, error categories, and filesystem paths.
+"""
+import os
+from dotenv import load_dotenv
+
+from .settings import (
+    SCHEMA_MODELS,
+    QUERY_GENERATION_MODELS,
+    REQUIRED_CREDENTIAL_VARS,
+    ERROR_CATEGORIES,
+    LOGINFO_SEPARATOR,
+    MAX_OUTPUT_LENGTH,
+)
 
 from .paths import (
+    PROJECT_ROOT,
+    SRC_DIR,
     API_DIR,
     DATA_DIR,
-    PROJECT_ROOT,
-    SAMPLE_QUERY_PATH,
-    SRC_DIR,
     TESTS_DIR,
+    SAMPLE_QUERY_PATH,
     VECTOR_STORE_DIR,
+    SCHEMA_FILE,
+    ENV_DIR,
 )
-from .settings import AVAILABLE_MODELS
 
+from .loaders import (
+    load_azure_config,
+    load_openwebui_config,
+    load_mysql_config
+)
 __all__ = [
+    # Settings exports
+    "SCHEMA_MODELS",
+    "QUERY_GENERATION_MODELS",
+    "REQUIRED_CREDENTIAL_VARS",
+    "ERROR_CATEGORIES",
+    "LOGINFO_SEPARATOR",
+    "MAX_OUTPUT_LENGTH",
+    
+    # Paths exports
+    "PROJECT_ROOT",
+    "SRC_DIR",
     "API_DIR",
     "DATA_DIR",
-    "AVAILABLE_MODELS",
-    "PROJECT_ROOT",
-    "SAMPLE_QUERY_PATH",
-    "SRC_DIR",
     "TESTS_DIR",
+    "SAMPLE_QUERY_PATH",
     "VECTOR_STORE_DIR",
+    "SCHEMA_FILE",
+    "ENV_DIR",
 ]
