@@ -3,9 +3,9 @@ import json, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dotenv import load_dotenv
-from langchain_ollama import OllamaLLM, OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings
+from src.classes.llm_clients.openwebui_client import OpenWebUILLM
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from src.config.settings import LOGINFO_SEPARATOR, SCHEMA_MODELS
 from src.retriver_utils import build_vector_store
@@ -31,40 +31,25 @@ MODEL_NAME = "gemma3:12b"
 # === LOGGING SETUP ===
 logger = setup_logger(__name__)
 
-# === LLM ===
-model = OllamaLLM(model=MODEL_NAME)
-
-def choose_schema_model() -> str:
+def choose_schema_model() -> OpenWebUILLM:
     """Allow users to choose one of the configured schema generation models."""
-    if not SCHEMA_MODELS:
-        logger.warning("No SCHEMA_MODELS configured. Falling back to default model: %s", MODEL_NAME)
-        return MODEL_NAME
-
-    model_names = list(SCHEMA_MODELS.keys())
-    print("\nChoose which model to use for schema generation:")
-    for i, model_name in enumerate(model_names, 1):
-        model_id = SCHEMA_MODELS[model_name]["id"]
-        provider = SCHEMA_MODELS[model_name].get("provider", "unknown")
-        print(f"{i}. {model_name} [{provider}] -> {model_id}")
-
+    # Display numbered list of models
+    models = list(SCHEMA_MODELS.keys())
+    for idx, model_name in enumerate(models, 1):
+        print(f"   {idx}. {model_name}")
+    
     while True:
-        choice = input("\n👉 Select a model (name or number): ").strip()
-        if choice.isdigit():
-            index = int(choice) - 1
-            if 0 <= index < len(model_names):
-                selected_name = model_names[index]
-                return SCHEMA_MODELS[selected_name]["id"]
-
-        if choice in SCHEMA_MODELS:
-            return SCHEMA_MODELS[choice]["id"]
-
-        logger.error("Invalid model selection. Try again.")
-
-def set_schema_model(model_id: str):
-    """Set the global LLM instance used during schema generation."""
-    global model
-    model = OllamaLLM(model=model_id)
-    logger.info("Schema generator model selected: %s", model_id)
+        try:
+            choice = int(input("\n👉 Select a model (0-{}): ".format(len(models))).strip())
+            
+            if 1 <= choice <= len(models):
+                selected = models[choice - 1]
+                print(f"✅ Selected model: {selected}\n")
+                return OpenWebUILLM(model=SCHEMA_MODELS[selected]["id"])
+            else:
+                print(f"❌ Invalid choice. Please enter 0-{len(models)}.")
+        except ValueError:
+            print("❌ Invalid input. Please enter a number.")
 
 def compute_schema_id(full_schema: dict) -> str:
     """
@@ -77,6 +62,7 @@ def compute_schema_id(full_schema: dict) -> str:
     return schema_id
 
 def acquire_schema_from_text(raw_text: str):
+    model = choose_schema_model()
 
     schema_exists = os.path.exists(SCHEMA_FILE) and os.path.getsize(SCHEMA_FILE) > 0
     vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
@@ -89,14 +75,14 @@ def acquire_schema_from_text(raw_text: str):
         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
             current_schema = json.load(f)
 
-        return update_schema(raw_text, current_schema)
+        return update_schema(model,raw_text, current_schema)
 
     logger.info("No existing schema found. Generating from scratch...")
     database_name = input("DB_NAME for this schema: ").strip()
     if not database_name:
         logger.error("DB_NAME is required to generate the schema.")
         return {}
-    schema = generate_schema_canonical(raw_text)
+    schema = generate_schema_canonical(model, raw_text)
     schema["database"] = database_name
     schema["source"] = "text"
     logger.info("New schema generated.")
@@ -147,7 +133,7 @@ def acquire_schema_from_mysql():
 
     return schema
 
-def generate_schema_canonical(raw_schema_text: str) -> dict:
+def generate_schema_canonical(model: OpenWebUILLM, raw_schema_text: str) -> dict:
 
     logger.info("Raw schema text being sent to LLM:")
     logger.info(f"{raw_schema_text}")
@@ -188,10 +174,7 @@ SQL DDL to process:
 Return ONLY the JSON object:
 """
 
-    chain = ChatPromptTemplate.from_template(template) | model
-    response = chain.invoke({
-        "raw_schema_text": raw_schema_text,
-    })
+    response = model.generate(template.format(raw_schema_text=raw_schema_text))
 
     # parsing
     if isinstance(response, str):
@@ -319,7 +302,7 @@ def print_schema_preview(schema: dict):
     
     print(LOGINFO_SEPARATOR)
 
-def classify_update(text: str) -> str:
+def classify_update(model: OpenWebUILLM,text: str) -> str:
     """Recognizes if the text describes a structural or semantic modification."""
 
     sql_keywords = ["CREATE TABLE", "ALTER TABLE", "ADD COLUMN", "DROP TABLE", "FOREIGN KEY", "REFERENCES"]
@@ -340,8 +323,7 @@ Question: is this text
 (B) a description or semantic note?
 Answer only with "A" or "B".
 """
-    chain = ChatPromptTemplate.from_template(prompt) | model
-    response = chain.invoke({"text": text})
+    response = model.generate(prompt.format(text=text)) # pyright: ignore[reportArgumentType]
 
     content = response if isinstance(response, str) else getattr(response, "content", str(response))
     content = content.strip().upper()
@@ -352,7 +334,7 @@ Answer only with "A" or "B".
         return "semantic"
     return "unknown"
 
-def update_schema_with_existing(raw_schema_text: str, current_schema: dict) -> dict:
+def update_schema_with_existing(model: OpenWebUILLM, raw_schema_text: str, current_schema: dict) -> dict:
     """
     Uses an LLM model to generate or update the canonical schema.
     If a current schema exists, it passes it as context.
@@ -396,11 +378,7 @@ IMPORTANT RULES:
 Return the UPDATED schema JSON:
 """
 
-    chain = ChatPromptTemplate.from_template(template) | model
-    response = chain.invoke({
-        "current_schema": current_schema_text,
-        "raw_schema_text": raw_schema_text
-    })
+    response = model.generate(template.format(current_schema_str=current_schema_text, new_text=raw_schema_text)) # pyright: ignore[reportArgumentType]
 
     if isinstance(response, str):
         content = response.strip()
@@ -420,7 +398,7 @@ Return the UPDATED schema JSON:
 
     return schema
 
-def update_schema(raw_text: str, current_schema: dict):
+def update_schema(model: OpenWebUILLM, raw_text: str, current_schema: dict):
 
     with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
         current_schema = json.load(f)
@@ -429,7 +407,7 @@ def update_schema(raw_text: str, current_schema: dict):
     print_schema_preview(current_schema)
 
     logger.info("Classifying the update...")
-    update_type = classify_update(raw_text)
+    update_type = classify_update(model, raw_text)
     logger.info(f"Update type classified as: {update_type}")
 
     if update_type == "semantic":
@@ -446,7 +424,7 @@ def update_schema(raw_text: str, current_schema: dict):
     else:
         logger.info("Processing STRUCTURAL update (generating new schema)...")
         
-        return update_schema_with_existing(raw_text, current_schema)
+        return update_schema_with_existing(model, raw_text, current_schema)
 
 def save_validate_and_build(schema):
     with open(SCHEMA_FILE, "w", encoding="utf-8") as f:
@@ -495,11 +473,6 @@ def main():
     if method not in valid_choices:
         logger.error("Invalid method choice. Exiting.")
         exit(1)
-
-    if method == "1":
-        selected_model_id = choose_schema_model()
-        set_schema_model(selected_model_id)
-
     schema = []
     while True:
         if method == "1":

@@ -28,9 +28,9 @@ QUERY_GENERATION_MODELS = {
         "provider": "openwebui",
         "id": "ollama@isarco02.codellama:34b",
     },
-    "sqlcoder:15b": {
+    "sqlcoder:34b": {
         "provider": "openwebui",
-        "id": "ollama@isarco02.sqlcoder:15b",
+        "id": "sqlcoder-34b-alpha",
     },
     "Qwen3-Coder-Next": {
         "provider": "openwebui",
