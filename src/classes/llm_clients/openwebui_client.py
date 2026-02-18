@@ -28,7 +28,7 @@ class OpenWebUILLM(BaseLLM):
             **kwargs
         }
 
-        response = requests.post(f"{self.url}/api/v1/models", headers=headers, json=payload)
+        response = requests.post(f"{self.url}/api/chat/completions", headers=headers, json=payload)
         response.raise_for_status()
 
         data = response.json()

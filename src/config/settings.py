@@ -32,9 +32,9 @@ QUERY_GENERATION_MODELS = {
         "provider": "openwebui",
         "id": "ollama@isarco02.sqlcoder:15b",
     },
-    "OmniSQL-7b": {
+    "Qwen3-Coder-Next": {
         "provider": "openwebui",
-        "id": "omnisql-7b",
+        "id": "Qwen3-Coder-Next-UD-Q4_K_XL.gguf",
     },
     "DeepSeek-V2.5": {
         "provider": "openwebui",

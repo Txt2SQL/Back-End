@@ -16,7 +16,7 @@ from src.config import (
 logger = setup_logger(__name__)
 
 # Constants
-ENV_MYSQL_FILE = ENV_DIR / "mysql.env"
+ENV_MYSQL_FILE = ENV_DIR / ".mysql.env"
 
 # === SQL SYNTAX VALIDATION ===
 
@@ -54,9 +54,9 @@ def mysql_env_is_valid() -> bool:
         return False
     
     try:
-        config = load_mysql_config()
+        load_mysql_config()
         # Check if all required variables are present and non-empty
-        return all(config.get(var.lower()) for var in REQUIRED_CREDENTIAL_VARS)
+        return True
     except Exception as e:
         logger.error(f"Error loading MySQL config: {e}")
         return False

@@ -582,7 +582,7 @@ def llm_feedback(sql: str, request: str, context: str, execution_output: list | 
             "so correctness cannot be verified."
         )
 
-    model = AzureLLM("gpt-o4")  # Use a strong model for evaluation
+    model = AzureLLM("gpt-4o")  # Use a strong model for evaluation
 
     if isinstance(execution_output, str):
         evaluation_prompt = f"""

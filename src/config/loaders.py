@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from .paths import ENV_DIR
 
 def load_azure_config():
-    env_path = ENV_DIR / "azure.env"
+    env_path = ENV_DIR / ".azure.env"
     load_dotenv(env_path)
 
     return {
@@ -14,7 +14,7 @@ def load_azure_config():
 
 
 def load_openwebui_config():
-    env_path = ENV_DIR / "openwebui.env"
+    env_path = ENV_DIR / ".openwebui.env"
     load_dotenv(env_path)
 
     return {
@@ -24,7 +24,7 @@ def load_openwebui_config():
     
 def load_mysql_config():
     """Load MySQL configuration from mysql.env file."""
-    env_path = ENV_DIR / "mysql.env"
+    env_path = ENV_DIR / ".mysql.env"
     
     if not env_path.exists():
         raise ValueError(f"MySQL environment file not found at {env_path}")
