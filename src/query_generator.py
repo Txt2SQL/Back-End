@@ -208,16 +208,6 @@ def get_context(user_request: str, vector_store: Chroma) -> str:
 
     return schema_context
 
-def compute_schema_id(full_schema: dict) -> str:
-    """
-    Compute a unique identifier for the schema.
-    """
-    logger.debug("Computing schema ID")
-    normalized = json.dumps(full_schema, sort_keys=True)
-    schema_id = hashlib.sha256(normalized.encode()).hexdigest()[:16]
-    logger.debug("Schema ID computed: %s", schema_id)
-    return schema_id
-
 def infer_relationships(database_name: str) -> list[str]:
     """
     Fetch join relationships directly from MySQL foreign key metadata.
@@ -987,7 +977,7 @@ def main():
             )            
             # User request
             user_request = input("\n👉 Enter a request in natural language: ")
-            source = get_schema_source(full_schema)
+            source = full_schema.get("source")
             database_name = full_schema.get("database")
             if source == "mysql" and not database_name:
                 logger.warning("Schema source is MySQL but no database name was found in schema JSON.")
@@ -1017,7 +1007,7 @@ def main():
             metadata = create_metadata(
                 sql_query=sql,
                 syntax_status=syntax_status,
-                schema_id=compute_schema_id(full_schema),
+                schema_id=full_schema.get("schema_id"),
                 schema_source=source,
                 user_request=user_request,
                 model_name=model_name,
