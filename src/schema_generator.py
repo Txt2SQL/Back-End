@@ -7,7 +7,7 @@ from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-from src.config.settings import LOGINFO_SEPARATOR
+from src.config.settings import LOGINFO_SEPARATOR, SCHEMA_MODELS
 from src.retriver_utils import build_vector_store
 from src.config.paths import VECTOR_STORE_DIR, SCHEMA_FILE
 from src.mysql_linker import (
@@ -33,6 +33,38 @@ logger = setup_logger(__name__)
 
 # === LLM ===
 model = OllamaLLM(model=MODEL_NAME)
+
+def choose_schema_model() -> str:
+    """Allow users to choose one of the configured schema generation models."""
+    if not SCHEMA_MODELS:
+        logger.warning("No SCHEMA_MODELS configured. Falling back to default model: %s", MODEL_NAME)
+        return MODEL_NAME
+
+    model_names = list(SCHEMA_MODELS.keys())
+    print("\nChoose which model to use for schema generation:")
+    for i, model_name in enumerate(model_names, 1):
+        model_id = SCHEMA_MODELS[model_name]["id"]
+        provider = SCHEMA_MODELS[model_name].get("provider", "unknown")
+        print(f"{i}. {model_name} [{provider}] -> {model_id}")
+
+    while True:
+        choice = input("\n👉 Select a model (name or number): ").strip()
+        if choice.isdigit():
+            index = int(choice) - 1
+            if 0 <= index < len(model_names):
+                selected_name = model_names[index]
+                return SCHEMA_MODELS[selected_name]["id"]
+
+        if choice in SCHEMA_MODELS:
+            return SCHEMA_MODELS[choice]["id"]
+
+        logger.error("Invalid model selection. Try again.")
+
+def set_schema_model(model_id: str):
+    """Set the global LLM instance used during schema generation."""
+    global model
+    model = OllamaLLM(model=model_id)
+    logger.info("Schema generator model selected: %s", model_id)
 
 def compute_schema_id(full_schema: dict) -> str:
     """
@@ -463,6 +495,11 @@ def main():
     if method not in valid_choices:
         logger.error("Invalid method choice. Exiting.")
         exit(1)
+
+    if method == "1":
+        selected_model_id = choose_schema_model()
+        set_schema_model(selected_model_id)
+
     schema = []
     while True:
         if method == "1":
