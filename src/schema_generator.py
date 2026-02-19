@@ -8,6 +8,11 @@ from langchain_chroma import Chroma
 from src.config.settings import LOGINFO_SEPARATOR, SCHEMA_MODELS
 from src.retriver_utils import build_vector_store
 from src.config.paths import VECTOR_STORE_DIR, SCHEMA_FILE
+from src.prompt_factory import (
+    schema_generation_prompt,
+    schema_update_prompt,
+    update_classification_prompt
+)
 from src.mysql_linker import (
     extract_schema,
     list_databases,
@@ -137,40 +142,7 @@ def generate_schema_canonical(model: OpenWebUILLM, raw_schema_text: str) -> dict
     logger.info(f"{raw_schema_text}")
     logger.info("="*60)
 
-    template = """
-You are an expert database schema analyzer. Your task is to convert SQL DDL statements into a structured JSON schema.
-
-IMPORTANT:
-- You MUST return ONLY valid JSON.
-- The JSON must be syntactically correct (no missing commas, braces, or quotes).
-- Every object and array must be properly closed.
-- Do NOT include comments, code blocks, or explanations.
-
-Required JSON format:
-{{
-  "tables": [
-    {{
-      "name": "table_name",
-      "columns": [
-        {{"name": "column_name", "type": "SQL_TYPE", "constraints": ["PRIMARY KEY", "NOT NULL", ...]}}
-      ]
-    }}
-  ],
-  "semantic_notes": []
-}}
-
-Rules:
-- Extract table names from CREATE TABLE statements
-- Extract column names, types, and constraints
-- Map SQL types directly (VARCHAR2 → VARCHAR2, NUMBER → NUMBER, etc.)
-- Include constraints like PRIMARY KEY, NOT NULL, UNIQUE, DEFAULT, REFERENCES
-- For foreign keys, use "REFERENCES" constraint
-
-SQL DDL to process:
-\"\"\"{raw_schema_text}\"\"\"
-
-Return ONLY the JSON object:
-"""
+    template = schema_generation_prompt(raw_schema_text)
 
     response = model.generate(template.format(raw_schema_text=raw_schema_text))
 
@@ -311,16 +283,7 @@ def classify_update(model: OpenWebUILLM,text: str) -> str:
     if any(k.lower() in text.lower() for k in desc_keywords):
         return "semantic"
 
-    prompt = """
-System: You are an assistant that classifies schema updates.
-User: Text provided by the user:
-\"\"\"{text}\"\"\"
-
-Question: is this text
-(A) a structural modification (addition or change of tables/columns/types)?
-(B) a description or semantic note?
-Answer only with "A" or "B".
-"""
+    prompt = update_classification_prompt(text)
     response = model.generate(prompt.format(text=text)) # pyright: ignore[reportArgumentType]
 
     content = response if isinstance(response, str) else getattr(response, "content", str(response))
@@ -346,35 +309,7 @@ def update_schema_with_existing(model: OpenWebUILLM, raw_schema_text: str, curre
     logger.info(f"{raw_schema_text}")
     logger.info("="*60)
 
-    template = """
-You are an expert database schema analyst.
-
-You have been provided with:
-1. The CURRENT canonical schema (JSON format)
-2. NEW text describing additional tables or modifications to existing tables
-
-Your task:
-- Analyze the new text to identify any NEW tables or MODIFIED columns in existing tables
-- Preserve all existing tables and columns from the current schema
-- Add only the NEW tables or merge modifications into existing tables
-- Return a SINGLE, complete JSON schema that includes both the current schema and the updates
-
-IMPORTANT RULES:
-- Do NOT remove any existing tables or columns
-- If a table already exists, ADD new columns or UPDATE existing ones (don't duplicate)
-- Maintain the same JSON structure: {{"database": "<database_name>", "tables": [...], "semantic_notes": [...]}}
-- Return ONLY the updated JSON schema, no other text or explanations
-- Each table must have: "name", "columns" (array)
-- Each column must have: "name", "type", "constraints" (array)
-
-=== CURRENT SCHEMA ===
-{current_schema_str}
-
-=== NEW TEXT ===
-{new_text}
-
-Return the UPDATED schema JSON:
-"""
+    template = schema_update_prompt(raw_schema_text, current_schema_text)
 
     response = model.generate(template.format(current_schema_str=current_schema_text, new_text=raw_schema_text)) # pyright: ignore[reportArgumentType]
 

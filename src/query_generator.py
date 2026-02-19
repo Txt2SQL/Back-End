@@ -1,14 +1,20 @@
+from xml.dom.minidom import Document
 import sqlglot, json, hashlib, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from typing import Any
-from dotenv import load_dotenv
+from langchain_core.documents import Document
 from src.classes.llm_clients.azure_client import AzureLLM
 from src.classes.llm_clients.openwebui_client import OpenWebUILLM
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
-from src.mysql_linker import execute_sql_query, get_foreign_keys
+from src.mysql_linker import execute_sql_query, get_foreign_keys, validate_sql_syntax
 from src.config import QUERY_GENERATION_MODELS, ERROR_CATEGORIES, LOGINFO_SEPARATOR
+from src.prompt_factory import (
+    query_generation_prompt,
+    explanation_prompt,
+    evaluation_prompt
+)
 from src.logging_utils import (
     setup_logger,
     print_llm_prompt,
@@ -18,8 +24,8 @@ from src.logging_utils import (
 from src.retriver_utils import (
     store_query_feedback,
     retrieve_failed_queries,
-    build_penalty_section,
-    create_metadata
+    create_metadata,
+    get_context
 )
 from src.config.paths import (
     VECTOR_STORE_DIR,
@@ -123,91 +129,6 @@ def select_model() -> str | None:
         except ValueError:
             print("❌ Invalid input. Please enter a number.")
 
-def get_context(user_request: str, vector_store: Chroma) -> str:
-    """
-    Retrieve relevant schema fragments for the user request.
-    Uses light query-intent heuristics to tune retrieval depth,
-    removes duplicate chunks, and groups output by table.
-    """
-    logger.info("Retrieving schema context for request: '%s'", truncate_request(truncate_request(user_request)))
-
-    # ------------------------------------------------------------------
-    # SCHEMA RETRIEVAL (RAG)
-    # ------------------------------------------------------------------
-
-    request_lower = user_request.lower()
-    request_tokens = set(request_lower.replace(",", " ").replace(".", " ").split())
-
-    aggregate_terms = {
-        "avg",
-        "average",
-        "count",
-        "group",
-        "having",
-        "sum",
-        "total",
-        "min",
-        "max",
-    }
-    join_terms = {"join", "across", "between", "related", "each"}
-
-    has_aggregation = bool(request_tokens.intersection(aggregate_terms))
-    has_join_intent = bool(request_tokens.intersection(join_terms)) or " by " in f" {request_lower} "
-
-    # Start with a conservative context size and increase only when complexity suggests it.
-    k = 3
-    if has_aggregation:
-        k += 1
-        logger.debug("Request contains aggregation terms, increasing k to %s", k)
-    if has_join_intent:
-        k += 1
-        logger.debug("Request contains join intent, increasing k to %s", k)
-    
-    logger.info("Retrieval parameters - has_aggregation: %s, has_join_intent: %s, k: %s", 
-                has_aggregation, has_join_intent, k)
-
-    retriever = vector_store.as_retriever(search_kwargs={"k": k})
-    relevant_docs = retriever.invoke(user_request)
-    logger.debug("Retrieved %s relevant documents", len(relevant_docs))
-
-    seen_chunks = set()
-    grouped_chunks = {}
-
-    for doc in relevant_docs:
-        table_name = (doc.metadata or {}).get("table") or "unknown_table"
-        content = (doc.page_content or "").strip()
-
-        if not content:
-            logger.debug("Skipping empty document")
-            continue
-
-        dedup_key = (table_name, content)
-        if dedup_key in seen_chunks:
-            logger.debug("Duplicate chunk found for table '%s'", table_name)
-            continue
-
-        seen_chunks.add(dedup_key)
-        grouped_chunks.setdefault(table_name, []).append(content)
-
-    sections = []
-    for table_name, chunks in grouped_chunks.items():
-        sections.append(f"Table: {table_name}\n" + "\n".join(chunks[:2]))
-
-    schema_context = "\n\n".join(sections)
-
-    logger.info(
-        "Schema context retrieval complete: k=%s, docs=%s, unique_tables=%s, context_chars=%s",
-        k,
-        len(relevant_docs),
-        len(grouped_chunks),
-        len(schema_context),
-    )
-
-    if not schema_context:
-        logger.warning("No schema context retrieved for request: %s", truncate_request(user_request))
-
-    return schema_context
-
 def build_join_hints(database_name: str, allowed_tables: set[str] | None = None) -> str:
     logger.info(LOGINFO_SEPARATOR)
     logger.info("🧠 Building join hints from schema...")
@@ -264,23 +185,6 @@ def extract_table_names_from_schema_context(schema_context: str) -> set[str]:
             table_names.add(table_name)
     return table_names
 
-def validate_sql_syntax(sql_query: str) -> str:
-    """
-    Checks if SQL compiles syntactically.
-    Returns:
-        - "OK" if it compiles
-        - "SYNTAX_ERROR" if it fails
-    """
-    logger.debug("Validating SQL syntax for query: %s", sql_query)
-    try:
-        # Parse only, no DB execution
-        sqlglot.parse_one(sql_query)
-        logger.debug("SQL syntax validation passed")
-        return "OK"
-    except Exception as e:
-        logger.error(f"Syntax validation failed: {e}")
-        return "SYNTAX_ERROR"
-
 def get_llm_model(choice: str | None) -> AzureLLM | OpenWebUILLM | None:
     logger.info("Getting LLM model for choice: %s", choice)
     if choice is None:
@@ -310,6 +214,7 @@ def get_schema_source(full_schema: dict) -> str:
         return "text"
 
 def response_cleaning(response) -> str:
+
     """
     Cleans the LLM response to extract only the SQL query.
     Guarantees a valid, executable SQL string.
@@ -343,7 +248,39 @@ def response_cleaning(response) -> str:
 
     return sql_query
 
-def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
+def build_penalty_section(failed_queries: list[Document]) -> str:
+    if not failed_queries:
+        logger.info("ℹ️ No failed queries to build penalties.")
+        return ""
+
+    lines = []
+
+    for d in failed_queries:
+        error_type = d.metadata.get("error_type")
+        content = d.page_content
+
+        lines.append(f"""
+--- FAILURE ---
+{content}
+
+Error type: {error_type}
+""")
+
+        if error_type == "UNKNOWN_COLUMN":
+            lines.append("RULE: Do NOT use columns that are not present in the schema.")
+        elif error_type == "UNKNOWN_TABLE":
+            lines.append("RULE: Do NOT reference tables not present in the schema.")
+        elif error_type == "AMBIGUOUS_COLUMN":
+            lines.append("RULE: Always qualify column names with table aliases.")
+        elif error_type == "BAD_JOIN":
+            lines.append("RULE: Avoid unnecessary joins.")
+        else:
+            lines.append("RULE: Avoid repeating this query structure.")
+
+    logger.info(f"📋 Penalty section built for {len(failed_queries)} failures.")
+    return "\n".join(lines)
+
+def add_penalties(user_request: str, query_vs: Chroma) -> str:
     """
     Add penalty section based on failed queries.
     """
@@ -353,19 +290,7 @@ def add_penalties(template: str, user_request: str, query_vs: Chroma) -> str:
     failed_queries = retrieve_failed_queries(user_request, query_vs)
     logger.debug("Retrieved %s failed queries for penalty section", len(failed_queries))
     
-    penalty_section = build_penalty_section(failed_queries)
-
-    if not penalty_section:
-        logger.info("No penalty section to add to template")
-        return template
-
-    template = template + f"""
-
-{penalty_section}
-
-"""
-    logger.info("Penalty section added to template")
-    return template
+    return build_penalty_section(failed_queries)
 
 def extract_llm_text(response: Any) -> str:
     """
@@ -377,10 +302,17 @@ def extract_llm_text(response: Any) -> str:
         return str(response.content).strip()
     return str(response).strip()
 
-def format_error_feedback(title: str, sql: str, details: str) -> str:
+def format_error_feedback(error_type: str, sql: str, details: str) -> str:
     """
     Formats error feedback with the current query and details.
     """
+    if error_type == "SYNTAX_ERROR":
+        title = "The previous SQL query caused a syntax error."
+    elif error_type == "RUNTIME_ERROR":
+        title = "The previous SQL query failed at runtime."
+    else:
+        title = "The previous SQL query was incorrect."
+
     return f"""{title}
 
 SQL QUERY:
@@ -389,91 +321,6 @@ SQL QUERY:
 DETAILS:
 {details}
 """
-
-def create_prompt(
-    user_request: str,
-    source: str,
-    query_vs: Chroma,
-    schema_context: str,
-    join_hints: str | None,
-    error_feedback: str | None = None,
-) -> str:
-    """
-    Create prompt for SQL generation.
-    """
-    logger.info("Creating prompt for request: '%s', source: %s", user_request, source)
-
-    logger.debug("Schema context length: %s characters", len(schema_context))
-
-    template = f""" 
-You are an expert SQL database assistant.
-You will be provided with:
-1. The partial description of the database schema (only the relevant tables)
-2. The user's request in natural language.
-3. Examples of previous successful SQL queries
-
-Your task is to return a **single SQL query** that satisfies the request,
-using the provided tables and columns.
-
-=== SCHEMA ===
-{schema_context}
-  
-"""    
-    if source == "mysql":
-        logger.info("MySQL source detected, adding join hints")
-        if join_hints:
-            template = template + f"""
-{join_hints}
-"""
-
-    template = template + f"""
-
-=== REQUEST ===
-{user_request}
-
-IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
-- Do NOT use columns outside the schema
-- Do NOT invent field or table names that don't exist.
-- Always qualify columns when joining
-- Do NOT use SELECT *
-- Do NOT add WHERE clauses or conditions unless explicitly requested.
-- Do NOT join tables unless necessary for the request.
-- If using aggregates, include GROUP BY  
-"""
-
-    if source == "mysql" and not error_feedback:
-        template = add_penalties(template, user_request, query_vs)
-        logger.info("Added penalty section for MySQL extraction schema")
-    elif source == "mysql" and error_feedback:
-        logger.info("Adding error feedback to prompt")
-        template = template + f"""
-=== PREVIOUS QUERY ERROR TO FIX ===
-{error_feedback}
-
-You must correct the query considering this error.
-Do NOT repeat the same mistake.
-"""
-
-    template = template + f"""
-
-Before writing the SQL query, internally determine:
-- Which tables are required
-- How they are joined
-- Whether aggregation or grouping is required
-- Which columns are selected
-
-Do NOT output this reasoning.
-Only output the final SQL query.
-    
-SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
-"""
-
-    logger.info("Prompt created successfully. Total length: %s characters", len(template))
-
-    # Log the final prompt
-    print_llm_prompt(template)
-
-    return template
 
 def generate_sql_query(model: AzureLLM | OpenWebUILLM | None, template: str,) -> str:
     """
@@ -530,23 +377,7 @@ def llm_feedback(sql: str, request: str, context: str, execution_output: list | 
     model = AzureLLM("gpt-4o")  # Use a strong model for evaluation
 
     if isinstance(execution_output, str):
-        evaluation_prompt = f"""
-You are an expert SQL debugger.
-Explain why the following SQL query produced this runtime error.
-Be concise and do NOT rewrite the query.
-
---- CONTEXT ---
-{context}
-
---- SQL QUERY ---
-{sql}
-
---- RUNTIME ERROR ---
-{execution_output}
-
-Provide a clear explanation of the cause.
-"""
-        logger.info("Requesting runtime error explanation from LLM.")
+        prompt = explanation_prompt(sql, context, execution_output)
     else:
 
         # Take only the first 20 rows to avoid token explosion
@@ -556,44 +387,13 @@ Provide a clear explanation of the cause.
         # Convert rows to a readable string
         rows_text = "\n".join(str(row) for row in preview_rows)
 
-        evaluation_prompt = f"""
-You are an expert SQL reviewer.
-
-Your task is to evaluate whether the SQL query correctly answers
-the user's request, based ONLY on the query results shown.
-
---- CONTEXT ---
-{context}
-
---- USER REQUEST ---
-{request}
-
---- SQL QUERY ---
-{sql}
-
---- QUERY RESULT (first 20 rows) ---
-{rows_text}
-
---- INSTRUCTIONS ---
-Respond in EXACTLY one of the following formats:
-
-1) If the query is correct:
-CORRECT_QUERY
-
-2) If the query is incorrect:
-INCORRECT_QUERY: <clear explanation of what is wrong and how to fix it>
-
-Rules:
-- Do NOT rewrite the full SQL query.
-- Be concise and precise.
-- Judge correctness, not syntax or performance.
-"""
+        prompt = evaluation_prompt(sql, request, context, rows_text)
 
         logger.info("🧠 Sending query result to LLM for correctness evaluation")
 
-    print_llm_prompt(evaluation_prompt)
+    print_llm_prompt(prompt)
 
-    response = model.generate(evaluation_prompt)
+    response = model.generate(prompt)
     logger.debug("LLM evaluation response received")
 
     verdict = extract_llm_text(response)
@@ -685,11 +485,8 @@ def evaluate_feedback_error(
     feedback_category = None
     if syntax_status != "OK":
         logger.warning("Syntax error detected: %s", syntax_status)
-        error_feedback = format_error_feedback(
-            "The previous SQL query caused a syntax error.",
-            sql,
-            f"Syntax status: {syntax_status}.",
-        )
+        details = f"Syntax status: {syntax_status}."
+        error_feedback = format_error_feedback(syntax_status, sql, details)
         logger.info("Feedback error evaluation completed. Has error feedback: %s", True)
         return syntax_status, execution_status, execution_output, error_feedback, feedback_category
 
@@ -703,13 +500,9 @@ def evaluate_feedback_error(
             if attempt == 2:
                 explanation = llm_feedback(sql, request, context, execution_output)
                 details = f"{details}\n\nExplanation:\n{explanation}"
-            error_feedback = format_error_feedback(
-                "The previous SQL query failed at runtime.",
-                sql,
-                details,
-            )
+            error_feedback = format_error_feedback(execution_status, sql, details)
             logger.info("Feedback error evaluation completed. Has error feedback: %s", True)
-            return syntax_status, execution_status, execution_output, error_feedback, "RUNTIME_ERROR"
+            return syntax_status, execution_status, execution_output, error_feedback, execution_status
 
         logger.info("Using LLM feedback for correctness evaluation")
         error_feedback = llm_feedback(sql, request, context, execution_output)
@@ -718,16 +511,12 @@ def evaluate_feedback_error(
             return syntax_status, execution_status, execution_output, None, "CORRECT_QUERY"
 
         error_category, error_explanation = classify_llm_feedback(error_feedback)
-        error_details = f"Error type: {error_category}\nExplanation: {error_explanation}"
+        details = f"Error type: {error_category}\nExplanation: {error_explanation}"
         if attempt == 2:
             retry_hint = build_targeted_retry_instruction(error_category)
-            error_feedback = f"{error_details}\n\n{retry_hint}"
+            error_feedback = f"{details}\n\n{retry_hint}"
 
-        error_feedback = format_error_feedback(
-            "The previous SQL query was incorrect.",
-            sql,
-            error_details,
-        )
+        error_feedback = format_error_feedback("INCORRECT_QUERY", sql, details)
         return syntax_status, execution_status, execution_output, error_feedback, "INCORRECT_QUERY"
     else:
         logger.info("Non-MySQL source detected; skipping execution and LLM feedback.")
@@ -811,6 +600,7 @@ def generation_loop(
     sql = ""
     execution_status = None
     execution_output = None
+    penalties = None
     error_feedback = None
     syntax_status = "UNKNOWN"
     feedback_category = None
@@ -822,6 +612,7 @@ def generation_loop(
     if source == "mysql":
         allowed_tables = extract_table_names_from_schema_context(schema_context)
         join_hints = build_join_hints(database_name, allowed_tables)
+        penalties = add_penalties(user_request, query_vs)  # Get penalties to include in prompt if needed
 
     for attempt in range(1, 4):
         logger.info("-" * 80)
@@ -829,14 +620,13 @@ def generation_loop(
         logger.info(f"🔍 Generating query (attempt {attempt}/3)...\n\n")
         logger.info("-" * 80)
         logger.info("-" * 80)
-        
-        template = create_prompt(
+                
+        template = query_generation_prompt(
             user_request=user_request,
             source=source,
-            query_vs=query_vs,
             schema_context=schema_context,
-            join_hints=join_hints,
-            error_feedback=error_feedback,
+            previous_fail=error_feedback if error_feedback else penalties,
+            join_hints=join_hints
         )
         
         sql = generate_sql_query(llm_model, template)

@@ -205,3 +205,18 @@ IMPORTANT RULES:
 
 Return the UPDATED schema JSON:
 """
+
+def update_classification_prompt(text: str) -> str:
+    """
+    Create prompt for error classification.
+    """
+    return f"""
+System: You are an assistant that classifies schema updates.
+User: Text provided by the user:
+{text}
+
+Question: is this text
+(A) a structural modification (addition or change of tables/columns/types)?
+(B) a description or semantic note?
+Answer only with "A" or "B".
+"""
