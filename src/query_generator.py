@@ -7,7 +7,7 @@ from src.classes.llm_clients.azure_client import AzureLLM
 from src.classes.llm_clients.openwebui_client import OpenWebUILLM
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
-from src.mysql_linker import execute_sql_query
+from src.mysql_linker import execute_sql_query, get_foreign_keys
 from src.config import QUERY_GENERATION_MODELS, ERROR_CATEGORIES, LOGINFO_SEPARATOR
 from src.logging_utils import (
     setup_logger,
@@ -208,57 +208,12 @@ def get_context(user_request: str, vector_store: Chroma) -> str:
 
     return schema_context
 
-def infer_relationships(database_name: str) -> list[str]:
-    """
-    Fetch join relationships directly from MySQL foreign key metadata.
-    Returns human-readable join hints.
-    """
-    logger.info("🔍 Fetching relationship metadata from MySQL...")
-    if not database_name:
-        logger.warning("⚠️  DB_NAME is not set; cannot load foreign keys from MySQL")
-        return []
-
-    fk_query = f"""
-        SELECT
-            kcu.TABLE_NAME,
-            kcu.COLUMN_NAME,
-            kcu.REFERENCED_TABLE_NAME,
-            kcu.REFERENCED_COLUMN_NAME
-        FROM information_schema.KEY_COLUMN_USAGE kcu
-        WHERE kcu.TABLE_SCHEMA = '{database_name}'
-          AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-        ORDER BY kcu.TABLE_NAME, kcu.COLUMN_NAME
-    """
-
-    logger.debug("Executing foreign key query for database: %s", database_name)
-    status, rows = execute_sql_query(fk_query, database_name=database_name)
-    if status != "OK":
-        logger.warning("⚠️  Failed to query foreign key metadata: %s", rows)
-        return []
-
-    if not rows:
-        logger.info("📭 No foreign key relationships found in MySQL metadata")
-        return []
-
-    logger.info("Found %s foreign key relationship(s)", len(rows))
-    relationships = []
-    for table_name, column_name, referenced_table, referenced_column in rows:
-        relationship = (
-            f"{table_name}.{column_name} → {referenced_table}.{referenced_column}"
-        )
-        relationships.append(relationship)
-
-    unique_relationships = sorted(set(relationships))
-    logger.info("📊 Summary:")
-    logger.info("  Foreign key relationships: %s", len(unique_relationships))
-    return unique_relationships
-
 def build_join_hints(database_name: str, allowed_tables: set[str] | None = None) -> str:
     logger.info(LOGINFO_SEPARATOR)
     logger.info("🧠 Building join hints from schema...")
     logger.info(LOGINFO_SEPARATOR)
     
-    relations = infer_relationships(database_name)
+    relations = get_foreign_keys(database_name)
 
     if not relations:
         logger.info("📭 No join relationships found")
