@@ -44,14 +44,14 @@ def setup_single_project_logger():
     log_file = get_project_log_file()
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.DEBUG)
 
     # REMOVE ALL existing handlers
     root_logger.handlers.clear()
 
     # ADD FILE HANDLER ONLY
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter(
         '%(asctime)s - [%(name)s] - %(levelname)s - %(message)s'
@@ -86,7 +86,7 @@ def setup_logger(name: str) -> logging.Logger:
     
     # Create logger with the module name
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     
     # Ensure this logger doesn't add any console handlers
     for handler in logger.handlers[:]:
@@ -115,7 +115,7 @@ def get_logger(name: str) -> logging.Logger:
 def add_request_log_handler(log_file: Path) -> logging.FileHandler:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(log_file, encoding="utf-8")
-    handler.setLevel(logging.INFO)
+    handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter(
         '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d] - %(levelname)s - %(message)s'
     )

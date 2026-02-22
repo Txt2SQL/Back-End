@@ -4,8 +4,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from typing import Any
 from langchain_core.documents import Document
-from src.classes.llm_clients.azure_client import AzureLLM
-from src.classes.llm_clients.openwebui_client import OpenWebUILLM
+from src.llm_clients.azure_client import AzureLLM
+from src.llm_clients.openwebui_client import OpenWebUILLM
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from src.mysql_linker import execute_sql_query, get_foreign_keys, validate_sql_syntax
@@ -343,13 +343,13 @@ def generate_sql_query(model: AzureLLM | OpenWebUILLM | None, template: str,) ->
         response = model.generate(template)
 
         logger.debug("LLM response received")
+        logger.debug("LLM response: %s", response)
 
         # ------------------------------------------------------------------
         # 4. OUTPUT CLEANUP
         # ------------------------------------------------------------------
         sql_query = response_cleaning(response)
         logger.info(f"Generated SQL query length: {len(sql_query)} characters")
-        logger.debug("Generated SQL: %s", sql_query)
 
     return sql_query
 
@@ -474,7 +474,7 @@ def evaluate_feedback_error(
     """
     
     logger.info("*" * 80 + "\n\n")
-    logger.info("Evaluating feedback error for request: '%s'\n\n", truncate_request(request))
+    logger.info("Evaluating feedback error for query: \n'%s'\n\n", sql)
     logger.info("*" * 80)
     syntax_status = validate_sql_syntax(sql)
 
@@ -628,8 +628,11 @@ def generation_loop(
             previous_fail=error_feedback if error_feedback else penalties,
             join_hints=join_hints
         )
+        logger.info("Prompt template created for attempt %s", attempt)
+        logger.debug("Prompt template:\n%s", template)
         
         sql = generate_sql_query(llm_model, template)
+        logger.info("Generated SQL: %s", sql)
 
         logger.info("🔎 Evaluating query syntax and semantics...")
         syntax_status, execution_status, execution_output, error_feedback, feedback_category = evaluate_feedback_error(

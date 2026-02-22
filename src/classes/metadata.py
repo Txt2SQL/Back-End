@@ -21,16 +21,14 @@ class QueryMetadata:
     LLM_feedback: Optional[str] = None
     timestamp: float = field(default_factory=time.time)
     
-    def to_document_metadata(self, sql_query: str) -> dict:
+    def to_document_metadata(self) -> dict:
         raw = {
-            "request": self.user_request,
             "schema_id": self.schema_id,
             "schema_source": self.schema_source,
             "knowledge_scope": self.knowledge_scope,
             "status": self.status,
             "model": self.model_name,
             "timestamp": time.time(),
-            "sql_query": sql_query,
             "rows_fetched": self.rows_fetched,
             "error_type": self.error_type,
             "error_message": self.error_message,

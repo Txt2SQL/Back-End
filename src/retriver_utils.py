@@ -310,7 +310,7 @@ def store_query_feedback(
 
     doc = Document(
         page_content=qm.to_page_content(sql_query),
-        metadata=qm.to_document_metadata(sql_query)
+        metadata=qm.to_document_metadata()
     )
 
     store.add_documents([doc])

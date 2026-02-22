@@ -133,11 +133,11 @@ Only output the final SQL query.
 SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
 """
 
-def schema_generation_prompt(raw_schema_text: str) -> str:
+def schema_generation_prompt() -> str:
     """
     Create prompt for schema generation.
     """
-    return f"""
+    return """
 You are an expert database schema analyzer. Your task is to convert SQL DDL statements into a structured JSON schema.
 
 IMPORTANT:

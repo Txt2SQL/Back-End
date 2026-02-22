@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings
-from src.classes.llm_clients.openwebui_client import OpenWebUILLM
+from src.llm_clients.openwebui_client import OpenWebUILLM
 from langchain_chroma import Chroma
 from src.config.settings import LOGINFO_SEPARATOR, SCHEMA_MODELS
 from src.retriver_utils import build_vector_store
@@ -50,7 +50,7 @@ def choose_schema_model() -> OpenWebUILLM:
                 print(f"✅ Selected model: {selected}\n")
                 return OpenWebUILLM(model=SCHEMA_MODELS[selected]["id"])
             else:
-                print(f"❌ Invalid choice. Please enter 0-{len(models)}.")
+                print(f"❌ Invalid choice. Please enter 1-{len(models)}.")
         except ValueError:
             print("❌ Invalid input. Please enter a number.")
 
@@ -142,7 +142,7 @@ def generate_schema_canonical(model: OpenWebUILLM, raw_schema_text: str) -> dict
     logger.info(f"{raw_schema_text}")
     logger.info("="*60)
 
-    template = schema_generation_prompt(raw_schema_text)
+    template = schema_generation_prompt()
 
     response = model.generate(template.format(raw_schema_text=raw_schema_text))
 
@@ -458,18 +458,8 @@ def main():
         if choice == "0":
             print("👋 Exiting. Goodbye!")
             break
-        elif choice == "3":
-            try:
-                embeddings = OllamaEmbeddings(model="mxbai-embed-large")
-                vector_store = Chroma(
-                    collection_name=COLLECTION_NAME,
-                    persist_directory=DB_DIR,
-                    embedding_function=embeddings,
-                )
-                print_vector_store(vector_store)
-            except Exception as e:
-                logger.error(f"Error accessing vector store: {e}")
-            continue
+        else:
+            method = choice
 
 # === ENTRY POINT ===
 if __name__ == "__main__":
