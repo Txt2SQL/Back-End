@@ -3,20 +3,16 @@ from getpass import getpass
 import mysql.connector
 from src.classes.query import QuerySession
 from collections import defaultdict
-from mysql.connector.pooling import PooledMySQLConnection
-from mysql.connector.abstracts import MySQLConnectionAbstract
 from src.logging_utils import setup_logger
 from src.classes.loaders.mysql_loader import MySQLLoader
-from pathlib import Path
 
 logger = setup_logger(__name__)
 
 class DatabaseClient:
-    database: str | None = None
-    connection: PooledMySQLConnection | MySQLConnectionAbstract
     
-    def __post_init__(self):
+    def __init__(self, database: str | None = None):
         self.config = MySQLLoader().config
+        self.database = database
         
         self.set_connection()
     
@@ -29,7 +25,6 @@ class DatabaseClient:
                 "user": self.config["user"],
                 "password": self.config["password"],
             }
-            
             if self.database is not None:
                 logger.debug(f"📂 Setting database to: {self.database}")
                 connection_params["database"] = self.database
