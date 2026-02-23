@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings
-from src.llm_clients.openwebui_client import OpenWebUILLM
+from src.classes.llm_clients.openwebui_client import OpenWebUILLM
 from langchain_chroma import Chroma
 from src.config.settings import LOGINFO_SEPARATOR, SCHEMA_MODELS
 from src.retriver_utils import build_vector_store

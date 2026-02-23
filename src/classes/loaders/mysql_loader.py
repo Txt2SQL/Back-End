@@ -9,7 +9,7 @@ from pathlib import Path
 
 class MySQLLoader(Loader):
 
-    def __init__(self, env_dir: Path):
+    def __init__(self):
         values = {
             "DB_HOST": str,
             "DB_PORT": int,
@@ -17,7 +17,7 @@ class MySQLLoader(Loader):
             "DB_PASSWORD": str,
         }
 
-        super().__init__(env_dir / ".mysql.env", values)
+        super().__init__(".mysql.env", values)
 
     def _test_connection(self):
         try:

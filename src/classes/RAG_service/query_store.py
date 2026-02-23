@@ -2,8 +2,8 @@ import time
 import math
 from typing import List
 from langchain_core.documents import Document
-from classes.RAG_service.vector_store_base import VectorStore
-from classes.query import Query
+from classes.RAG_service.base_vector_store import VectorStore
+from classes.query import QuerySession
 from src.logging_utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -19,7 +19,7 @@ class QueryStore(VectorStore):
     # STORE QUERY
     # =====================================================
 
-    def store_query(self, query: Query):
+    def store_query(self, query: QuerySession):
         """
         Store a query in the vector DB if:
         - it does not already exist
@@ -154,7 +154,7 @@ class QueryStore(VectorStore):
     # CHECK EXISTENCE
     # =====================================================
 
-    def _query_exists(self, query: Query) -> bool:
+    def _query_exists(self, query: QuerySession) -> bool:
         """
         Check if same SQL query already stored.
         """
@@ -209,6 +209,6 @@ class QueryStore(VectorStore):
     # BUILD QUERY ID
     # =====================================================
 
-    def _build_query_id(self, query: Query) -> str:
+    def _build_query_id(self, query: QuerySession) -> str:
         base = f"{query.user_request}|{query.current_query}|{query.timestamp}"
         return str(abs(hash(base)))

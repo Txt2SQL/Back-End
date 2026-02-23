@@ -54,7 +54,7 @@ def setup_single_project_logger():
     file_handler.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter(
-        '%(asctime)s - [%(name)s] - %(levelname)s - %(message)s'
+        '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d] - %(levelname)s - %(message)s'
     )
     file_handler.setFormatter(formatter)
 

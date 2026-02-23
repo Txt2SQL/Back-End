@@ -4,8 +4,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from typing import Any
 from langchain_core.documents import Document
-from src.llm_clients.azure_client import AzureLLM
-from src.llm_clients.openwebui_client import OpenWebUILLM
+from src.classes.llm_clients.azure_client import AzureLLM
+from src.classes.llm_clients.openwebui_client import OpenWebUILLM
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from src.mysql_linker import execute_sql_query, get_foreign_keys, validate_sql_syntax

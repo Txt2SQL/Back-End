@@ -3,7 +3,7 @@ import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 from .base import BaseLLM
-from src.loaders.owui_loader import OWUILoader
+from src.classes.loaders.owui_loader import OWUILoader
 
 
 class OpenWebUILLM(BaseLLM):

@@ -1,5 +1,5 @@
 from typing import List
-from classes.RAG_service.vector_store_base import VectorStore
+from classes.RAG_service.base_vector_store import VectorStore
 from src.classes.schema import Schema
 from langchain_core.documents import Document
 from src.logging_utils import setup_logger, truncate_request

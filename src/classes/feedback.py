@@ -46,8 +46,6 @@ class LLMFeedback:
         if not self.error_category:
             self.error_category = "UNKNOWN_ERROR"
 
-
-
     def _build_targeted_retry_instruction(self):
         """
         Build targeted retry instruction based on error category.

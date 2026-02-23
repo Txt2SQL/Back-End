@@ -6,14 +6,14 @@ from loaders.base_loader import Loader
 
 class AzureLoader(Loader):
 
-    def __init__(self, env_dir: Path):
+    def __init__(self):
         values = {
             "AZURE_API_KEY": str,
             "AZURE_ENDPOINT": str,
             "AZURE_API_VERSION": str,
         }
 
-        super().__init__(env_dir / ".azure.env", values)
+        super().__init__(".azure.env", values)
 
     def _test_connection(self):
         try:

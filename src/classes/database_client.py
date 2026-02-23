@@ -1,13 +1,12 @@
 from getpass import getpass
 
 import mysql.connector
-from src.classes.query import Query
-from typing import Tuple, Any
+from src.classes.query import QuerySession
 from collections import defaultdict
 from mysql.connector.pooling import PooledMySQLConnection
 from mysql.connector.abstracts import MySQLConnectionAbstract
 from src.logging_utils import setup_logger
-from src.loaders.mysql_loader import MySQLLoader
+from src.classes.loaders.mysql_loader import MySQLLoader
 from pathlib import Path
 
 logger = setup_logger(__name__)
@@ -17,22 +16,9 @@ class DatabaseClient:
     connection: PooledMySQLConnection | MySQLConnectionAbstract
     
     def __post_init__(self):
-        self.config = MySQLLoader(env_dir=Path("config")).config
+        self.config = MySQLLoader().config
         
         self.set_connection()
-        
-    def save_credentials_from_cli(self):
-        """Prompt user for MySQL credentials interactively."""
-        logger.info("🔐 MySQL configuration required")
-        
-        print("\n=== MySQL Configuration ===\n")
-        
-        self.config = {
-            "host": input("DB_HOST (e.g. localhost): ").strip(),
-            "port": input("DB_PORT [3306]: ").strip() or "3306",
-            "user": input("DB_USER: ").strip(),
-            "password": getpass("DB_PASSWORD: "),
-        }
     
     def set_connection(self):
         try:
@@ -54,7 +40,7 @@ class DatabaseClient:
             logger.error(f"Error connecting to the database: {err}")
             raise
     
-    def execute_query(self, query: Query) -> Query:
+    def execute_query(self, query: QuerySession) -> QuerySession:
         logger.info(f"📌 Received SQL query:\n{query}")
 
         try:
@@ -125,7 +111,7 @@ class DatabaseClient:
             ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
         """
         
-        query = self.execute_query(Query(sql_query=schema_query))
+        query = self.execute_query(QuerySession(sql_query=schema_query))
 
         if query.execution_status != "SUCCESS":
             logger.error(f"Failed to extract schema: {query.execution_result}")
@@ -200,7 +186,7 @@ class DatabaseClient:
         """
 
         logger.debug("Executing foreign key query for database: %s", self.database)
-        query = self.execute_query(Query(sql_query=fk_query))
+        query = self.execute_query(QuerySession(sql_query=fk_query))
         
         if query.execution_status != "OK":
             logger.warning("⚠️  Failed to query foreign key metadata: %s", query.execution_result)
