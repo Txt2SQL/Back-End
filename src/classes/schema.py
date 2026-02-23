@@ -17,7 +17,7 @@ class Schema:
         self.schema_source = schema_source
         self.save_path = Path("data/schema")
 
-        self.file_path = self.save_path / f"{self.database_name}.json"
+        self.file_path = self.save_path / f"{self.database_name}_schema.json"
 
         self.tables: Optional[Dict] = None
         self.json_ready: bool = False

@@ -10,13 +10,13 @@ from loaders.base_loader import Loader
 
 class OWUILoader(Loader):
 
-    def __init__(self, env_dir: Path):
+    def __init__(self):
         values = {
             "SERVER_ADDRESS": str,
             "API_KEY": str,
         }
 
-        super().__init__(env_dir / ".openwebui.env", values)
+        super().__init__(".openwebui.env", values)
 
     def _test_connection(self):
         server_url = self.config["SERVER_ADDRESS"]

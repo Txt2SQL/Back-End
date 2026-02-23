@@ -19,8 +19,8 @@ class Loader(ABC):
     config: dict[str, Any]
     env_path: Path
 
-    def __init__(self, env_path: Path, values: dict[str, Type]):
-        self.env_path = env_path
+    def __init__(self, env_name: str, values: dict[str, Type]):
+        self.env_path = Path(os.getcwd()) / "src" / "config" / env_name
         self.values = values
         self.config = {}
 

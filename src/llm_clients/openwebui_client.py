@@ -3,12 +3,12 @@ import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 from .base import BaseLLM
-from src.config import load_openwebui_config
+from src.loaders.owui_loader import OWUILoader
 
 
 class OpenWebUILLM(BaseLLM):
     def __init__(self, model: str):
-        cfg = load_openwebui_config()
+        cfg = OWUILoader().config
         
         self.url = cfg["base_url"]
         self.api_key = cfg["api_key"]

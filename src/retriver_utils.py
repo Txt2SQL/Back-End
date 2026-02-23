@@ -238,7 +238,7 @@ def create_metadata(
         LLM_feedback=feedback_category
     )
 
-def classify_error(error_message: str | None) -> str | None:
+def classify_error(error_message: str) -> str | None:
     """
     Classify the error message into one of the following categories:
 
@@ -256,10 +256,6 @@ def classify_error(error_message: str | None) -> str | None:
     :return: The classified error category, or None if no error message is provided.
     :rtype: str | None
     """
-    
-    if not error_message:
-        logger.info("ℹ️ No error message to classify.")
-        return None
 
     msg = error_message.lower()
     logger.info(f"🔍 Classifying error: {error_message}")
@@ -466,9 +462,17 @@ def retrieve_failed_queries(
     half_life_days: int = 60
 ):
     """
-    Retrieve recent, relevant failed queries to build negative guidance.
-    Prioritizes syntax and structural failures, then fills with schema-specific
-    runtime failures when available.
+    Retrieves failed queries from the store, preferring recently-seen failures and
+    diverse failure causes when possible.
+
+    Parameters:
+        user_request (str): The user's request.
+        store (Chroma): The store to retrieve from.
+        k (int): The number of failed queries to retrieve.
+        half_life_days (int): The half-life of failures in days.
+
+    Returns:
+        list[Document]: A list of k failed queries.
     """
     logger.info(f"🔍 Retrieving failed queries for request: '{user_request}'")
 

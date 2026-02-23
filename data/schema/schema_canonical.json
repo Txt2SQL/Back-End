@@ -5,7 +5,7 @@
       "columns": [
         {
           "name": "password",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
@@ -24,29 +24,28 @@
         },
         {
           "name": "username",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
-            "NOT NULL",
-            "UNIQUE"
+            "NOT NULL"
           ]
         },
         {
           "name": "first_name",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "last_name",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "email",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
@@ -74,7 +73,7 @@
         },
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -110,10 +109,8 @@
         },
         {
           "name": "parent_id",
-          "type": "CHAR(255)",
-          "constraints": [
-            "REFERENCES `accounts_customuser`(`id`)"
-          ]
+          "type": "CHAR",
+          "constraints": []
         },
         {
           "name": "rght",
@@ -131,10 +128,8 @@
         },
         {
           "name": "used_invitation_id",
-          "type": "CHAR(255)",
-          "constraints": [
-            "REFERENCES `accounts_invitation`(`id`)"
-          ]
+          "type": "CHAR",
+          "constraints": []
         }
       ]
     },
@@ -151,18 +146,16 @@
         },
         {
           "name": "customuser_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `accounts_customuser`(`id`)"
+            "NOT NULL"
           ]
         },
         {
           "name": "group_id",
           "type": "INT",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `auth_group`(`id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -180,18 +173,16 @@
         },
         {
           "name": "customuser_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `accounts_customuser`(`id`)"
+            "NOT NULL"
           ]
         },
         {
           "name": "permission_id",
           "type": "INT",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `auth_permission`(`id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -201,7 +192,7 @@
       "columns": [
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -235,22 +226,21 @@
         },
         {
           "name": "email",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "user_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `accounts_customuser`(`id`)"
+            "NOT NULL"
           ]
         },
         {
           "name": "verification_code",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "NOT NULL"
           ]
@@ -262,7 +252,7 @@
       "columns": [
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -289,22 +279,21 @@
         },
         {
           "name": "invited_email_address",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": []
         },
         {
           "name": "invite_code",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "inviting_user_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `accounts_customuser`(`id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -314,7 +303,7 @@
       "columns": [
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -336,17 +325,16 @@
         },
         {
           "name": "verification_code",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "user_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `accounts_customuser`(`id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -364,10 +352,9 @@
         },
         {
           "name": "name",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
-            "NOT NULL",
-            "UNIQUE"
+            "NOT NULL"
           ]
         }
       ]
@@ -387,16 +374,14 @@
           "name": "group_id",
           "type": "INT",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `auth_group`(`id`)"
+            "NOT NULL"
           ]
         },
         {
           "name": "permission_id",
           "type": "INT",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `auth_permission`(`id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -414,7 +399,7 @@
         },
         {
           "name": "name",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
@@ -423,13 +408,12 @@
           "name": "content_type_id",
           "type": "INT",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `django_content_type`(`id`)"
+            "NOT NULL"
           ]
         },
         {
           "name": "codename",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
@@ -461,7 +445,7 @@
         },
         {
           "name": "object_repr",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
@@ -483,16 +467,13 @@
         {
           "name": "content_type_id",
           "type": "INT",
-          "constraints": [
-            "REFERENCES `django_content_type`(`id`)"
-          ]
+          "constraints": []
         },
         {
           "name": "user_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `accounts_customuser`(`id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -510,14 +491,14 @@
         },
         {
           "name": "app_label",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "model",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
@@ -537,14 +518,14 @@
         },
         {
           "name": "app",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "name",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
@@ -563,7 +544,7 @@
       "columns": [
         {
           "name": "session_key",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -590,7 +571,7 @@
       "columns": [
         {
           "name": "subscription_ptr_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -598,7 +579,7 @@
         },
         {
           "name": "email",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": []
         },
         {
@@ -615,17 +596,15 @@
         },
         {
           "name": "verification_code",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "logged_in_user_id",
-          "type": "CHAR(255)",
-          "constraints": [
-            "REFERENCES `accounts_customuser`(`id`)"
-          ]
+          "type": "CHAR",
+          "constraints": []
         }
       ]
     },
@@ -634,7 +613,7 @@
       "columns": [
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -656,14 +635,14 @@
         },
         {
           "name": "frequency",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "weekly_weekday",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": []
         }
       ]
@@ -681,18 +660,16 @@
         },
         {
           "name": "emaildigest_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `emaildigest_emaildigest`(`id`)"
+            "NOT NULL"
           ]
         },
         {
           "name": "story_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `news_story`(`item_ptr_id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -702,7 +679,7 @@
       "columns": [
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -724,19 +701,19 @@
         },
         {
           "name": "frequency",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "weekly_weekday",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": []
         },
         {
           "name": "verfied_email",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": []
         },
         {
@@ -753,7 +730,7 @@
       "columns": [
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -775,17 +752,14 @@
         },
         {
           "name": "from_digest_id",
-          "type": "CHAR(255)",
-          "constraints": [
-            "REFERENCES `emaildigest_emaildigest`(`id`)"
-          ]
+          "type": "CHAR",
+          "constraints": []
         },
         {
           "name": "subscription_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `emaildigest_subscription`(`id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -795,7 +769,7 @@
       "columns": [
         {
           "name": "subscription_ptr_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -803,10 +777,8 @@
         },
         {
           "name": "user_id",
-          "type": "CHAR(255)",
-          "constraints": [
-            "REFERENCES `accounts_customuser`(`id`)"
-          ]
+          "type": "CHAR",
+          "constraints": []
         }
       ]
     },
@@ -815,7 +787,7 @@
       "columns": [
         {
           "name": "item_ptr_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -830,9 +802,9 @@
         },
         {
           "name": "to_story_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "REFERENCES `news_story`(`item_ptr_id`)"
+            "NOT NULL"
           ]
         }
       ]
@@ -842,7 +814,7 @@
       "columns": [
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -920,17 +892,14 @@
         },
         {
           "name": "parent_id",
-          "type": "CHAR(255)",
-          "constraints": [
-            "REFERENCES `news_item`(`id`)"
-          ]
+          "type": "CHAR",
+          "constraints": []
         },
         {
           "name": "user_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `accounts_customuser`(`id`)"
+            "NOT NULL"
           ]
         },
         {
@@ -954,7 +923,7 @@
       "columns": [
         {
           "name": "item_ptr_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -962,7 +931,7 @@
         },
         {
           "name": "url",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": []
         },
         {
@@ -972,21 +941,19 @@
         },
         {
           "name": "title",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": [
             "NOT NULL"
           ]
         },
         {
           "name": "duplicate_of_id",
-          "type": "CHAR(255)",
-          "constraints": [
-            "REFERENCES `news_story`(`item_ptr_id`)"
-          ]
+          "type": "CHAR",
+          "constraints": []
         },
         {
           "name": "domain",
-          "type": "VARCHAR(255)",
+          "type": "VARCHAR",
           "constraints": []
         }
       ]
@@ -996,7 +963,7 @@
       "columns": [
         {
           "name": "id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
             "PRIMARY KEY",
             "NOT NULL"
@@ -1018,18 +985,16 @@
         },
         {
           "name": "item_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `news_item`(`id`)"
+            "NOT NULL"
           ]
         },
         {
           "name": "user_id",
-          "type": "CHAR(255)",
+          "type": "CHAR",
           "constraints": [
-            "NOT NULL",
-            "REFERENCES `accounts_customuser`(`id`)"
+            "NOT NULL"
           ]
         },
         {
@@ -1043,6 +1008,6 @@
     }
   ],
   "semantic_notes": [],
-  "database": "hacker_news",
-  "source": "text"
+  "source": "mysql",
+  "database": "hacker_news"
 }
