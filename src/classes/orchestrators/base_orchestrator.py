@@ -12,12 +12,10 @@ logger = setup_logger(__name__)
 class BaseOrchestrator(ABC):
     """Abstract base class for all orchestrators"""
     
-    def __init__(self, database_name: str, model_name: Optional[str] = None):
+    def __init__(self, database_name: str):
         self.database_name = database_name
-        self.model_name = model_name
-        self.llm: Optional[BaseLLM] = self._initialize_llm(model_name)
         self.prompt_builder = PromptBuilder()
     
     @abstractmethod
-    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
+    def initialize_llm(self, model_name: str | None) -> BaseLLM | None:
         pass

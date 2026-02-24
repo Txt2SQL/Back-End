@@ -21,9 +21,8 @@ class SchemaOrchestrator(BaseOrchestrator):
         self, 
         database_name: str, 
         source: str = "text",  # "mysql" or "text"
-        llm_model: Optional[str] = None,
     ):
-        super().__init__(database_name, llm_model)
+        super().__init__(database_name)
         
         self.source = source
         self.schema_store = SchemaStore()
@@ -32,10 +31,10 @@ class SchemaOrchestrator(BaseOrchestrator):
             schema_source=self.source
         )
         
-    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
-        if choice is None:
+    def initialize_llm(self, model_name: str | None) -> BaseLLM | None:
+        if model_name is None:
             return None
-        return OpenWebUILLM(model=SCHEMA_MODELS[choice]["id"])
+        self.llm = OpenWebUILLM(model=SCHEMA_MODELS[model_name]["id"])
     
     def acquire_schema(self, user_text: Optional[str] = None) -> Schema:
         """

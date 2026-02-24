@@ -26,10 +26,9 @@ class QueryOrchestrator(BaseOrchestrator):
         query_store: QueryStore,
         schema_store: SchemaStore,
         user_request: str,
-        model_name: Optional[str] = None,
         max_attempts: int = 3
     ):
-        super().__init__(database_name, model_name)
+        super().__init__(database_name)
         
         self.max_attempts = max_attempts
         self.schema_store = schema_store
@@ -47,20 +46,20 @@ class QueryOrchestrator(BaseOrchestrator):
         # Load schema for this database
         self._load_schema()
     
-    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
+    def initialize_llm(self, model_name: str | None) -> BaseLLM | None:
         """Initialize the appropriate LLM based on model name pattern"""
-        logger.info("Getting LLM model for choice: %s", choice)
-        if choice is None:
+        logger.info("Getting LLM model for choice: %s", model_name)
+        if model_name is None:
             logger.info("Selected 'none' model (no LLM)")
-            return None
-        elif QUERY_GENERATION_MODELS[choice]["provider"] == "azure":
-            model_name = QUERY_GENERATION_MODELS[choice]["id"]
+            self.llm = None
+        elif QUERY_GENERATION_MODELS[model_name]["provider"] == "azure":
+            model_name = QUERY_GENERATION_MODELS[model_name]["id"]
             logger.info("Selected Azure OpenAI model: %s", model_name)
-            return AzureLLM(model_name)
+            self.llm = AzureLLM(model_name)
         else:
-            model_name = QUERY_GENERATION_MODELS[choice]["id"]
+            model_name = QUERY_GENERATION_MODELS[model_name]["id"]
             logger.info("Selected OpenWebUI model: %s", model_name)
-            return OpenWebUILLM(model_name)
+            self.llm = OpenWebUILLM(model_name)
         
     def _load_schema(self) -> None:
         """Load the schema for this database from the json file"""

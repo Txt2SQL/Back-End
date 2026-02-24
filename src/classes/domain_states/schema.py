@@ -18,6 +18,7 @@ class Schema:
         self.file_path = self.save_path / f"{self.database_name}_schema.json"
 
         self.tables: Optional[Dict] = None
+        self.semantic_notes: list[str] = []
         self.json_ready: bool = False
         self.schema_id: Optional[str] = None
 
@@ -58,13 +59,8 @@ class Schema:
         if not normalized_note:
             raise ValueError("Semantic note cannot be empty.")
 
-        if self.tables is None:
-            self.tables = {"tables": [], "semantic_notes": []}
+        self.semantic_notes.append(normalized_note)
 
-        semantic_notes = self.tables.setdefault("semantic_notes", [])
-        semantic_notes.append(normalized_note)
-        self.json_ready = True
-        self._save_schema()
     # =====================================================
     # LOAD EXISTING
     # =====================================================
@@ -172,12 +168,11 @@ class Schema:
         if self.tables is None:
             raise ValueError("Cannot save an empty schema.")
 
-        semantic_notes = self.tables.get("semantic_notes", [])
         final_schema = {
             "database_name": self.database_name,
             "source": self.source,
             "tables": self.tables.get("tables", []),
-            "semantic_notes": semantic_notes,
+            "semantic_notes": self.semantic_notes,
             "timestamp": time.time(),
         }
         self.schema_id = self._compute_hash(final_schema)
@@ -239,4 +234,40 @@ class Schema:
         
     def to_string(self):
         return json.dumps(self.tables, indent=2)
+        
+    def print_schema_preview(self):
+        """Prints a readable preview of the canonical schema"""
+        print("\n\nCanonical schema preview:\n\n")
+        
+        if self.tables is None:
+            print("No schema loaded")
+            return
+        
+        # Print tables
+        if "tables" in self.tables and self.tables["tables"]:
+            print(f"\nFound {len(self.tables['tables'])} tables:")
+            for i, table in enumerate(self.tables["tables"], 1):
+                print(f"\n  Table #{i}: {table.get('name', 'N/A')}")
+                
+                # Print columns
+                if "columns" in table and table["columns"]:
+                    print("  Columns:")
+                    for col in table["columns"]:
+                        constraints = col.get("constraints", [])
+                        constraints_str = ", ".join(constraints) if constraints else "no constraints"
+                        print(f"    • {col.get('name', 'N/A')} ({col.get('type', 'N/A')}) - {constraints_str}")
+                else:
+                    print("  No columns defined")
+        else:
+            print("\nNo tables defined")
+        
+        # Print semantic notes
+        if len(self.semantic_notes) > 0:
+            print(f"\nFound {len(self.semantic_notes)} semantic notes:")
+            for i, note in self.semantic_notes:
+                # Show only first 100 characters for brevity
+                preview = note[:100] + "..." if len(note) > 100 else note
+                print(f"  {i}. {preview}")
+        else:
+            print("\nNo semantic notes")
         
