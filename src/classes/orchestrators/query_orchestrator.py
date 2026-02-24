@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List
 
 from classes.orchestrators.base_orchestrator import BaseOrchestrator
 from classes.llm_clients import BaseLLM, OpenWebUILLM, AzureLLM
@@ -94,6 +94,9 @@ class QueryOrchestrator(BaseOrchestrator):
         Handles the complete query lifecycle from generation to execution.
         """
         logger.info(f"Generating SQL for request: {truncate_request(user_request)}")
+
+        if self.llm is None:
+            raise ValueError("An LLM model is required for query generation")
         
         # Get relevant schema context
         self.schema_context, table_names = self.schema_store.get_context(user_request)
@@ -101,21 +104,23 @@ class QueryOrchestrator(BaseOrchestrator):
         if self.schema is None:
             raise Exception("Schema not found for database")
         
+        previous_failures = None
         if self.schema.source == "mysql":
             # Get similar failed queries for learning
             failed_queries = self.query_store.retrieve_failed_queries(user_request)
+            if failed_queries:
+                previous_failures = "\n\n".join(doc.page_content for doc in failed_queries)
             
             self.join_hints = self.database_client.get_foreign_keys(table_names)
-        
-        previous_failures = None
-        
-        while self.current_query.llm_feedback.attempt <= self.max_attempts or self.current_query.status != "SUCCESS":
+
+        attempt = 1
+        while attempt <= self.max_attempts:
 
             # Build generation prompt
             prompt = self.prompt_builder.query_generation_prompt(
                 user_request=user_request,
                 schema_context=self.schema_context,
-                previous_fail=self.current_query.format_error_feedback() or previous_failures,
+                previous_fail=(self.current_query.format_error_feedback() if self.current_query else None) or previous_failures,
                 join_hints=self.join_hints
             )
             
@@ -133,8 +138,16 @@ class QueryOrchestrator(BaseOrchestrator):
             # Evaluate the query (validate syntax, execute, etc.)
             self.current_query.evaluate()
 
-            if self.current_query.status == "SUCCESS" and self.schema.source == "mysql": 
-                self._ask_feedback(self.current_query.llm_feedback.attempt)
+            if self.current_query.status == "SUCCESS":
+                if self.schema.source == "mysql":
+                    self._ask_feedback(attempt)
+                break
+
+            if attempt >= self.max_attempts:
+                break
+
+            self._ask_feedback(attempt)
+            attempt += 1
             
         
         # Store the result
@@ -158,6 +171,8 @@ class QueryOrchestrator(BaseOrchestrator):
         """
         if self.current_query.status == "SYNTAX_ERROR":
             return
+        if self.llm is None:
+            return
         elif self.current_query.status == "SUCCESS":
             prompt = self.prompt_builder.evaluation_prompt(
                 sql=self.current_query.sql_code,
@@ -165,12 +180,14 @@ class QueryOrchestrator(BaseOrchestrator):
                 context=self.schema_context,
                 execution_output=self.current_query.execution_result
             )
-        elif self.current_query.status == "RUNTIME_ERROR" and attempt > 1:
+        elif self.current_query.status == "RUNTIME_ERROR":
             prompt = self.prompt_builder.explanation_prompt(
                 sql=self.current_query.sql_code,
-                context=self.schema.tables.to_string(),
+                context=json.dumps(self.schema.tables, ensure_ascii=False, indent=2),
                 execution_output=self.current_query.execution_result
             )
+        else:
+            return
             
         response = self.llm.generate(prompt)
         
