@@ -1,6 +1,6 @@
 from typing import Optional
 from abc import ABC
-from classes.schema import Schema
+from classes.domain_states.schema import Schema
 from src.logging_utils import setup_logger
 
 logger = setup_logger(__name__)

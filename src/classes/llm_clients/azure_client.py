@@ -20,4 +20,6 @@ class AzureLLM(BaseLLM):
             messages=[{"role": "user", "content": prompt}],
             **kwargs
         )
-        return response.choices[0].message.content
+        self.response = response.choices[0].message.content
+        
+        return self._extract_llm_text()

@@ -1,6 +1,10 @@
-from typing import Optional
 from abc import ABC
-from classes.query import QuerySession
+from classes.domain_states.query import QuerySession
+from classes.RAG_service.schema_store import SchemaStore
+from classes.RAG_service.query_store import QueryStore
+from classes.llm_clients.base import BaseLLM
+from classes.database_client import DatabaseClient
+from classes.prompt_builder import PromptBuilder
 from src.logging_utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -12,12 +16,9 @@ class QueryOrchestrator(ABC):
 
     def __init__(
         self,
-        llm_service,
-        database_client,
-        schema_store,
-        query_store,
-        prompt_builder,
-        max_attempts: int = 3,
+        llm_service: BaseLLM,
+        schema_store: SchemaStore,
+        query_store: QueryStore,
     ):
         self.llm = llm_service
         self.database_client = database_client

@@ -32,4 +32,6 @@ class OpenWebUILLM(BaseLLM):
         response.raise_for_status()
 
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        self.response = data["choices"][0]["message"]["content"]
+        
+        return self._extract_llm_text()

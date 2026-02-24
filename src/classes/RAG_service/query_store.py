@@ -3,7 +3,7 @@ import math
 from typing import List
 from langchain_core.documents import Document
 from classes.RAG_service.base_vector_store import VectorStore
-from classes.query import QuerySession
+from classes.domain_states.query import QuerySession
 from src.logging_utils import setup_logger
 
 logger = setup_logger(__name__)

@@ -1,7 +1,7 @@
 from getpass import getpass
 
 import mysql.connector
-from src.classes.query import QuerySession
+from src.classes.domain_states.query import QuerySession
 from collections import defaultdict
 from src.logging_utils import setup_logger
 from src.classes.loaders.mysql_loader import MySQLLoader
@@ -117,7 +117,7 @@ class DatabaseClient:
         rows = query.execution_result
         tables = defaultdict(list)
 
-        for row in rows:
+        for row in rows:  # type: ignore[union-attr]
             table_name = row["TABLE_NAME"] # pyright: ignore[reportArgumentType, reportCallIssue]
             column_name = row["COLUMN_NAME"] # pyright: ignore[reportArgumentType, reportCallIssue]
             data_type = row["DATA_TYPE"] # pyright: ignore[reportArgumentType, reportCallIssue]
@@ -158,10 +158,15 @@ class DatabaseClient:
 
         return schema
     
-    def get_foreign_keys(self) -> list[str]:
+    def _get_foreign_keys(self, table_names: list[str] | None = None) -> list[str]:
         """
         Fetch join relationships directly from MySQL foreign key metadata.
         Returns human-readable join hints.
+        
+        Args:
+            table_names: Optional list of table names to filter foreign keys.
+                        If provided, only returns relationships where both tables
+                        are in the list.
         """
         logger.info("🔍 Fetching relationship metadata from MySQL...")
         if not self.database:
@@ -183,7 +188,7 @@ class DatabaseClient:
         logger.debug("Executing foreign key query for database: %s", self.database)
         query = self.execute_query(QuerySession(sql_query=fk_query))
         
-        if query.execution_status != "OK":
+        if query.execution_status != "SUCCESS":
             logger.warning("⚠️  Failed to query foreign key metadata: %s", query.execution_result)
             return []
 
@@ -194,14 +199,30 @@ class DatabaseClient:
 
         logger.info("Found %s foreign key relationship(s)", len(rows))
         relationships = []
-        for table_name, column_name, referenced_table, referenced_column in rows:
+        
+        for row in rows:
+            table_name = row["TABLE_NAME"] # pyright: ignore[reportArgumentType, reportCallIssue]
+            column_name = row["COLUMN_NAME"] # pyright: ignore[reportArgumentType, reportCallIssue]
+            referenced_table = row["REFERENCED_TABLE_NAME"] # pyright: ignore[reportArgumentType, reportCallIssue]
+            referenced_column = row["REFERENCED_COLUMN_NAME"] # pyright: ignore[reportArgumentType, reportCallIssue]
+            
+            # Filter by table_names if provided
+            if table_names is not None:
+                if table_name not in table_names or referenced_table not in table_names:
+                    continue
+            
             relationship = (
                 f"{table_name}.{column_name} → {referenced_table}.{referenced_column}"
             )
             relationships.append(relationship)
 
         unique_relationships = sorted(set(relationships))
-        logger.info("📊 Summary:")
+        
+        if table_names:
+            logger.info("📊 Summary (filtered for tables: %s):", ", ".join(table_names))
+        else:
+            logger.info("📊 Summary (all relationships):")
+        
         logger.info("  Foreign key relationships: %s", len(unique_relationships))
         return unique_relationships
     
@@ -216,3 +237,40 @@ class DatabaseClient:
         if self.connection.is_connected():
             self.connection.close()
             logger.info("🔒 Database connection closed")
+
+    def build_join_hints(self, allowed_tables: list[str] | None = None) -> str:
+        """
+        Build human-readable join hints from foreign key metadata.
+        Returns a string of join hints, with each hint on a new line.
+        If allowed_tables is provided, only include join hints that reference
+        tables in the set.
+        """
+        
+        relations = self._get_foreign_keys()
+
+        if not relations:
+            return ""
+
+        if allowed_tables:
+            filtered = []
+            for relation in relations:
+                try:
+                    left, right = relation.split("→")
+                    left_table = left.strip().split(".", 1)[0].strip()
+                    right_table = right.strip().split(".", 1)[0].strip()
+                except ValueError:
+                    continue
+
+                if left_table in allowed_tables and right_table in allowed_tables:
+                    filtered.append(relation)
+
+            relations = filtered
+
+        if not relations:
+            return ""
+
+        lines = ["=== JOIN PATH HINTS ==="]
+        for i, r in enumerate(relations, 1):
+            lines.append(f"{i:2}. {r}")
+
+        return "\n".join(lines)

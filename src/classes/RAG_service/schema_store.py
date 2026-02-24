@@ -1,7 +1,7 @@
 from typing import List
 from classes.RAG_service.base_vector_store import VectorStore
-from src.classes.schema import Schema
 from langchain_core.documents import Document
+from classes.domain_states.schema import Schema
 from src.logging_utils import setup_logger, truncate_request
 
 logger = setup_logger(__name__)
@@ -37,7 +37,7 @@ class SchemaStore(VectorStore):
     # RETRIEVE CONTEXT
     # =====================================================
 
-    def get_context(self, user_request: str) -> str:
+    def get_context(self, user_request: str) -> tuple[str, list[str]]:
         """
         Retrieve relevant schema fragments for the user request.
         Uses light query-intent heuristics to tune retrieval depth,
@@ -107,6 +107,7 @@ class SchemaStore(VectorStore):
         for table_name, chunks in grouped_chunks.items():
             sections.append(f"Table: {table_name}\n" + "\n".join(chunks[:2]))
 
+        table_names = list(grouped_chunks.keys())
         schema_context = "\n\n".join(sections)
 
         logger.info(
@@ -120,4 +121,4 @@ class SchemaStore(VectorStore):
         if not schema_context:
             logger.warning("No schema context retrieved for request: %s", truncate_request(user_request))
 
-        return schema_context
+        return schema_context, table_names

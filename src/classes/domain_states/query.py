@@ -3,7 +3,7 @@ import time
 import re
 from typing import Any, List, Optional, Union
 from src.logging_utils import setup_logger
-from src.classes.feedback import LLMFeedback
+from src.classes.domain_states.feedback import LLMFeedback
 
 logger = setup_logger(__name__)
 

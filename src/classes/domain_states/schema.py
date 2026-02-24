@@ -28,7 +28,7 @@ class Schema:
         # -------------------------------------------------
         if self.file_path.exists():
             self._load_existing()
-
+            
     # =====================================================
     # LLM RESPONSE PARSING
     # =====================================================
@@ -36,6 +36,7 @@ class Schema:
     def parse_llm_response(self, text: str):
         attempts = [
             self._attempt_direct_json,
+            self._attempt_curly_braces,
             self._attempt_fenced_block,
             self._attempt_widest_json,
         ]
@@ -72,6 +73,21 @@ class Schema:
             return json.loads(text)
         except Exception:
             return None
+    
+    def _attempt_curly_braces(self, text: str):
+        try:
+            # Find the first { and last }
+            start = text.find('{')
+            end = text.rfind('}') + 1
+            
+            if start >= 0 and end > start:
+                json_str = text[start:end]
+                # Clean up common issues
+                json_str = re.sub(r',\s*}', '}', json_str)  # Remove trailing commas
+                json_str = re.sub(r',\s*]', ']', json_str)  # Remove trailing commas in arrays
+                return json.loads(json_str)
+        except (json.JSONDecodeError, ValueError):
+            pass
 
     def _attempt_fenced_block(self, text: str):
         pattern = r"```(?:json)?\s*(.*?)```"
@@ -94,6 +110,22 @@ class Schema:
             return json.loads(widest)
         except Exception:
             return None
+
+    # =====================================================
+    # UPDATE
+    # =====================================================
+    def _classify_update(self, text: str) -> str:
+        """Recognizes if the text describes a structural or semantic modification."""
+
+        sql_keywords = ["CREATE TABLE", "ALTER TABLE", "ADD COLUMN", "DROP TABLE", "FOREIGN KEY", "REFERENCES"]
+        desc_keywords = ["means", "can assume", "contains", "represents", "describes", "equivalent to"]
+
+        if any(k.lower() in text.lower() for k in sql_keywords):
+            return "structural"
+        if any(k.lower() in text.lower() for k in desc_keywords):
+            return "semantic"
+
+        return "unknown"
 
     # =====================================================
     # VALIDATION
@@ -181,3 +213,4 @@ class Schema:
                 "created_at": datetime.utcnow().isoformat(),
             },
         }
+        
