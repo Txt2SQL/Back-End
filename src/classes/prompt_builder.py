@@ -32,7 +32,7 @@ class PromptBuilder:
     Provide a clear explanation of the cause.
     """
 
-    def evaluation_prompt(self, sql: str, request: str, context: str, execution_output: str) -> str:
+    def evaluation_prompt(self, sql: str, request: str, context: str, execution_output: list) -> str:
         # Take only the first 20 rows to avoid token explosion
         preview_rows = execution_output[:20]
         logger.debug("Using first %s rows for evaluation", len(preview_rows))

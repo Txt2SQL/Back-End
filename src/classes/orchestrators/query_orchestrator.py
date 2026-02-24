@@ -39,7 +39,7 @@ class QueryOrchestrator(BaseOrchestrator):
         
         # Current session data
         self.schema: Optional[Schema] = None
-        self.current_query: Optional[QuerySession] = None
+        self.current_query: QuerySession = QuerySession(user_request=user_request)
         self.schema_context: Optional[str] = None
         
         self.join_hints: Optional[List[str]] = None
@@ -101,32 +101,33 @@ class QueryOrchestrator(BaseOrchestrator):
         if self.schema is None:
             raise Exception("Schema not found for database")
         
+        failed_queries = None
         if self.schema.source == "mysql":
             # Get similar failed queries for learning
             failed_queries = self.query_store.retrieve_failed_queries(user_request)
             
             self.join_hints = self.database_client.get_foreign_keys(table_names)
         
-        previous_failures = None
-        
         while self.current_query.llm_feedback.attempt <= self.max_attempts or self.current_query.status != "SUCCESS":
 
             # Build generation prompt
+            error_feedback = self.current_query.format_error_feedback()
             prompt = self.prompt_builder.query_generation_prompt(
                 user_request=user_request,
                 schema_context=self.schema_context,
-                previous_fail=self.current_query.format_error_feedback() or previous_failures,
+                previous_fail=failed_queries if error_feedback is None else None,
                 join_hints=self.join_hints
             )
             
-            # Generate SQL
-            response = self.llm.generate(prompt)
+            if self.llm is None:
+                # TODO: add choose of a random sample query
+                response = ""
+            else:
+                # Generate SQL
+                response = self.llm.generate(prompt)
             
             # Create query session
-            self.current_query = QuerySession(
-                user_request=user_request,
-                raw_llm_response=response
-            )
+            self.current_query.clean_sql_from_llm(response)
             
             self.current_query = self.database_client.execute_query(self.current_query)
             
@@ -136,13 +137,14 @@ class QueryOrchestrator(BaseOrchestrator):
             if self.current_query.status == "SUCCESS" and self.schema.source == "mysql": 
                 self._ask_feedback(self.current_query.llm_feedback.attempt)
             
+            self.current_query.llm_feedback.attempt += 1    
         
         # Store the result
         self.query_store.store_query(self.current_query)
         
         # Log generation result
         if self.current_query.status == "SUCCESS":
-            logger.info(f"Query generated successfully: {self.current_query.current_query}")
+            logger.info(f"Query generated successfully: {self.current_query.sql_code}")
         else:
             logger.warning(f"Query generation issue: {self.current_query.status}")
         
@@ -156,9 +158,17 @@ class QueryOrchestrator(BaseOrchestrator):
         Ask LLM for feedback on a failed query.
         Returns updated query session with feedback applied.
         """
-        if self.current_query.status == "SYNTAX_ERROR":
+        if self.current_query.sql_code is None:
+            logger.info("Skipping feedback for empty query")
             return
-        elif self.current_query.status == "SUCCESS":
+        if self.schema_context is None:
+            logger.info("Skipping feedback for empty schema context")
+            return
+        
+        if self.current_query.status == "SUCCESS":
+            if self.current_query.execution_result is None or not isinstance(self.current_query.execution_result, list) or len(self.current_query.execution_result) == 0:
+                logger.info("Skipping feedback for empty execution result")
+                return
             prompt = self.prompt_builder.evaluation_prompt(
                 sql=self.current_query.sql_code,
                 request=self.request,
@@ -166,12 +176,19 @@ class QueryOrchestrator(BaseOrchestrator):
                 execution_output=self.current_query.execution_result
             )
         elif self.current_query.status == "RUNTIME_ERROR" and attempt > 1:
+            if self.current_query.execution_result is None or not isinstance(self.current_query.execution_result, str) or len(self.current_query.execution_result) == 0:
+                logger.info("Skipping feedback for empty execution result")
+                return
             prompt = self.prompt_builder.explanation_prompt(
                 sql=self.current_query.sql_code,
-                context=self.schema.tables.to_string(),
+                context=self.schema_context,
                 execution_output=self.current_query.execution_result
             )
+        else:
+            logger.info("Skipping feedback for other type of query")
+            return
             
-        response = self.llm.generate(prompt)
-        
-        self.current_query.apply_llm_feedback(response)
+        if self.llm is not None:
+            response = self.llm.generate(prompt)
+
+            self.current_query.apply_llm_feedback(response)

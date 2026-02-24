@@ -13,15 +13,13 @@ class QuerySession:
     def __init__(
         self,
         user_request: Optional[str] = None,
-        raw_llm_response: Optional[str] = None,
         sql_query: Optional[str] = None,
     ):
 
-        if user_request is None and raw_llm_response is None and sql_query is None:
+        if user_request is None and sql_query is None:
             raise ValueError("At least one input must be provided")
 
         self.user_request = user_request or ""
-        self.raw_llm_response = raw_llm_response
         self.rows_fetched: Optional[int] = None
 
         self.sql_code: Optional[str] = sql_query
@@ -33,25 +31,22 @@ class QuerySession:
         self.status: str = "PENDING"
         self.error_type: Optional[str] = None
         self.knowledge_scope: Optional[str] = None
-        self.llm_feedback: Optional[LLMFeedback] = None
+        self.llm_feedback: LLMFeedback = LLMFeedback()
 
         self.timestamp = time.time()
-
-        if raw_llm_response:
-            self.clean_sql_from_llm()
 
     # --------------------------------------------------
     # 1️⃣ SQL CLEANING
     # --------------------------------------------------
 
-    def clean_sql_from_llm(self):
+    def clean_sql_from_llm(self, raw_llm_response: str):
         logger.debug("Cleaning LLM response")
         
-        if self.raw_llm_response is None:
+        if raw_llm_response is None:
             logger.warning("No LLM response to clean")
             return
         
-        sql_query = self.raw_llm_response
+        sql_query = raw_llm_response
 
         logger.debug("Original response length: %s characters", len(sql_query))
 
