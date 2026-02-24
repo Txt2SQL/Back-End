@@ -1,72 +1,126 @@
+import json
 from typing import Optional
-from abc import ABC
+from classes.orchestrators.base_orchestrator import BaseOrchestrator
+from classes.RAG_service.schema_store import SchemaStore
 from classes.domain_states.schema import Schema
+from classes.database_client import DatabaseClient
 from src.logging_utils import setup_logger
 
 logger = setup_logger(__name__)
 
 
-class SchemaOrchestrator(ABC):
+class SchemaOrchestrator(BaseOrchestrator):
     """
-    Handles full schema generation lifecycle:
-    - Extract raw schema
-    - Ask LLM to normalize it
-    - Validate and persist
-    - Store inside SchemaStore
+    Orchestrator responsible for schema acquisition and updates.
+    Handles both initial schema extraction and iterative improvements.
     """
-
+    
     def __init__(
-        self,
-        llm_service,
-        database_client,
-        schema_store,
-        prompt_builder,
+        self, 
+        database_name: str, 
+        source: str = "text",  # "mysql" or "text"
+        llm_model: Optional[str] = None,
     ):
-        self.llm = llm_service
-        self.database_client = database_client
-        self.schema_store = schema_store
-        self.prompt_builder = prompt_builder
-
-    def run(
-        self,
-        database_name: str,
-        schema_source: str = "mysql",
-        raw_text_schema: Optional[str] = None,
-    ) -> Schema:
+        # Use default model if none provided
+        model = llm_model or "default_schema_model"
+        super().__init__(database_name, model)
+        
+        self.source = source
+        self.schema_store = SchemaStore()
+        self.schema: Schema = Schema(
+            database_name=self.database_name,
+            schema_source=self.source
+        )
+    
+    def acquire_schema(self, user_text: Optional[str] = None) -> Schema:
         """
-        Main execution method.
+        Main method to acquire schema from source.
+        Returns the schema object after processing.
         """
+        if self.schema and self.schema.json_ready:
+            logger.info(f"Schema already exists and is valid for {self.database_name}")
+            return self.schema
+            
+        if self.source == "mysql":
+            # Extract schema from MySQL database
+            self._extract_from_mysql()
+        elif user_text:
+            self._acquire_schema_with_llm(user_text)
 
-        # 1️⃣ Create Schema object
-        schema = Schema(database_name=database_name, schema_source=schema_source)
-
-        # If already parsed and saved, reuse
-        if schema.json_ready:
-            return schema
-
-        # 2️⃣ Extract raw schema
-        if schema_source == "mysql":
-            raw_schema = self.database_client.extract_schema()
-        elif schema_source == "text":
-            if not raw_text_schema:
-                raise ValueError("raw_text_schema required when schema_source='text'")
-            raw_schema = raw_text_schema
+            
+        # Store in vector database
+        if self.schema.json_ready:
+            self.schema_store.add_schema(self.schema)
+            logger.info(f"Schema for {self.database_name} acquired and stored successfully")
         else:
-            raise ValueError("Invalid schema_source")
+            logger.warning(f"Failed to acquire schema for {self.database_name}")
+        
+        return self.schema
+    
+    def _extract_from_mysql(self):
+        """
+        Extract schema from MySQL database.
+        This would need implementation based on your MySQL connector.
+        """
+        self.database_client = DatabaseClient(self.database_name)
+        schema_from_db = self.database_client.extract_schema()
+        self.schema.parse_response(schema_from_db)
+        
+    
+    def _prompt_for_schema_text(self) -> str:
+        """Prompt user to input schema text if not provided"""
+        print(f"Please provide the schema text for database '{self.database_name}':")
+        print("(Enter multiple lines, end with Ctrl+D or an empty line)")
+        lines = []
+        while True:
+            try:
+                line = input()
+                if not line:
+                    break
+                lines.append(line)
+            except EOFError:
+                break
+        return "\n".join(lines)
+    
+    def _acquire_schema_with_llm(self, user_text: str):
+        if self.llm is None:
+            raise ValueError("LLM is None cannot generate or update the schema")
+        
+        if self.schema.json_ready:
+            logger.info(f"Schema already exists and is valid for {self.database_name}")
+            self._update_current_schema(user_text)
+            return
+        else:
+            self._acquire_new_schema(user_text)
+    
+        
+        """Process raw schema through LLM"""
+        if not user_text:
+            raise ValueError("User text is required when source is 'text'")
+        prompt = self.prompt_builder.schema_generation_prompt()
 
-        # 3️⃣ Build LLM prompt
-        prompt = self.prompt_builder.build_schema_prompt(raw_schema)
-
-        # 4️⃣ Call LLM
-        llm_response = self.llm.generate(prompt)
-
-        # 5️⃣ Parse response
-        schema.parse_llm_response(llm_response)
-
-        # 6️⃣ Save schema
-        schema._save_schema()
-
-        # 7️⃣ Store in vector store
-        self.schema_store.add_schema(schema)
-
-        return schema
+        schema_raw = self.llm.generate(prompt)
+        self.schema.parse_response(schema_raw)
+        
+    def _update_current_schema(self, user_text: str):
+        update_type = self.schema.classify_update(user_text)
+        if update_type == "semantic":
+            self.schema.add_semantic_note(user_text)
+            return
+        elif update_type == "unknown":
+            logger.info("Unknown update type, asking llm detect update type")
+            prompt = self.prompt_builder.update_classification_prompt(user_text)
+            update_type = self.llm.generate(prompt) # pyright: ignore[reportOptionalMemberAccess]
+        
+        if update_type == "structural":
+            current_schema = json.dumps(self.schema.tables, indent=2)
+            prompt = self.prompt_builder.schema_update_prompt(user_text, current_schema)
+            schema_raw = self.llm.generate(prompt) # pyright: ignore[reportOptionalMemberAccess]
+            self.schema.parse_response(schema_raw)
+        else:
+            self.schema.add_semantic_note(user_text)
+            
+    def _acquire_new_schema(self, user_text: str):
+        prompt = self.prompt_builder.schema_generation_prompt()
+        schema_from_llm = self.llm.generate(prompt.format(raw_schema_text=user_text)) # pyright: ignore[reportOptionalMemberAccess]
+        self.schema.parse_response(schema_from_llm)

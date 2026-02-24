@@ -33,7 +33,7 @@ class Schema:
     # LLM RESPONSE PARSING
     # =====================================================
 
-    def parse_llm_response(self, text: str):
+    def parse_response(self, text: Any):
         attempts = [
             self._attempt_direct_json,
             self._attempt_curly_braces,
@@ -52,6 +52,21 @@ class Schema:
 
         raise ValueError("Failed to extract valid schema JSON from LLM response.")
 
+    def add_semantic_note(self, note: str):
+        if not isinstance(note, str):
+            raise ValueError("Semantic note must be a string.")
+
+        normalized_note = note.strip()
+        if not normalized_note:
+            raise ValueError("Semantic note cannot be empty.")
+
+        if self.tables is None:
+            self.tables = {"tables": [], "semantic_notes": []}
+
+        semantic_notes = self.tables.setdefault("semantic_notes", [])
+        semantic_notes.append(normalized_note)
+        self.json_ready = True
+        self._save_schema()
     # =====================================================
     # LOAD EXISTING
     # =====================================================
@@ -114,7 +129,7 @@ class Schema:
     # =====================================================
     # UPDATE
     # =====================================================
-    def _classify_update(self, text: str) -> str:
+    def classify_update(self, text: str) -> str:
         """Recognizes if the text describes a structural or semantic modification."""
 
         sql_keywords = ["CREATE TABLE", "ALTER TABLE", "ADD COLUMN", "DROP TABLE", "FOREIGN KEY", "REFERENCES"]
