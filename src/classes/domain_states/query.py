@@ -24,7 +24,7 @@ class QuerySession:
         self.raw_llm_response = raw_llm_response
         self.rows_fetched: Optional[int] = None
 
-        self.current_query: Optional[str] = sql_query
+        self.sql_code: Optional[str] = sql_query
 
         self.valid_syntax: Optional[bool] = None
         self.execution_status: Optional[str] = None
@@ -75,9 +75,9 @@ class QuerySession:
 
         logger.debug("Cleaned SQL length: %s characters", len(sql_query))
 
-        self.current_query = sql_query
+        self.sql_code = sql_query
 
-        logger.debug("Final SQL:\n%s", self.current_query)
+        logger.debug("Final SQL:\n%s", self.sql_code)
         
         self.validate_syntax()
         
@@ -87,12 +87,12 @@ class QuerySession:
     # --------------------------------------------------
 
     def validate_syntax(self):
-        if not self.current_query:
+        if not self.sql_code:
             self.valid_syntax = False
             return
 
         try:
-            sqlglot.parse_one(self.current_query)
+            sqlglot.parse_one(self.sql_code)
             self.valid_syntax = True
         except Exception as e:
             self.valid_syntax = False
@@ -140,10 +140,10 @@ class QuerySession:
         self.knowledge_scope = "SCHEMA_SPECIFIC"
 
     def _detect_structural_issue(self) -> bool:
-        if not self.current_query:
+        if not self.sql_code:
             return False
 
-        sql_upper = self.current_query.upper()
+        sql_upper = self.sql_code.upper()
 
         return (
             "SELECT *" in sql_upper
@@ -207,7 +207,7 @@ User request:
 {self.user_request}
 
 Generated SQL:
-{self.current_query}
+{self.sql_code}
 
 Status: {self.status}
 Error type: {self.error_type}
@@ -217,7 +217,7 @@ Knowledge scope: {self.knowledge_scope}
     def to_document_metadata(self) -> dict:
         metadata = {
             "user_request": self.user_request,
-            "sql_query": self.current_query,
+            "sql_query": self.sql_code,
             "status": self.status,
             "error_type": self.error_type,
             "knowledge_scope": self.knowledge_scope,
@@ -248,11 +248,14 @@ Knowledge scope: {self.knowledge_scope}
         if self.llm_feedback:
             details = self.llm_feedback.format_error_details()
 
+        if not self.sql_code:
+            return ""
+        
         return f"""{title}
 
     SQL QUERY:
 
-    {self.current_query}
+    {self.sql_code}
 
     {details}
     """

@@ -1,6 +1,4 @@
-import json
-import re
-import hashlib
+import json, re, hashlib, time
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -14,7 +12,7 @@ class Schema:
         schema_source: str,  # "mysql" or "text"
     ):
         self.database_name = database_name
-        self.schema_source = schema_source
+        self.source = schema_source
         self.save_path = Path("data/schema")
 
         self.file_path = self.save_path / f"{self.database_name}_schema.json"
@@ -77,7 +75,7 @@ class Schema:
 
         if self.tables is not None:
             self.json_ready = True
-            self.schema_id = self._compute_hash(self.tables)
+            self.schema_id = self.tables.get("schema_id") or self._compute_hash(self.tables)
         else:
             raise ValueError("Loaded schema is empty, cannot compute hash.")
 
@@ -173,14 +171,24 @@ class Schema:
     def _save_schema(self):
         if self.tables is None:
             raise ValueError("Cannot save an empty schema.")
-            
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(self.tables, f, indent=2)
 
-        self.schema_id = self._compute_hash(self.tables) if self.tables is not None else None
+        semantic_notes = self.tables.get("semantic_notes", [])
+        final_schema = {
+            "database_name": self.database_name,
+            "source": self.source,
+            "tables": self.tables.get("tables", []),
+            "semantic_notes": semantic_notes,
+            "timestamp": time.time(),
+        }
+        self.schema_id = self._compute_hash(final_schema)
+        final_schema["schema_id"] = self.schema_id
+        self.tables = final_schema
+
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            json.dump(final_schema, f, indent=2)
 
         print("\nSchema successfully saved:")
-        print(json.dumps(self.tables, indent=2))
+        print(json.dumps(final_schema, indent=2))
         print(f"\nSchema ID: {self.schema_id}")
 
     # =====================================================
@@ -224,8 +232,11 @@ class Schema:
             "content": content,
             "metadata": {
                 "database_name": self.database_name,
-                "schema_source": self.schema_source,
+                "schema_source": self.source,
                 "created_at": datetime.utcnow().isoformat(),
             },
         }
+        
+    def to_string(self):
+        return json.dumps(self.tables, indent=2)
         

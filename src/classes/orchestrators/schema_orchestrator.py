@@ -1,9 +1,11 @@
 import json
 from typing import Optional
+from classes.llm_clients import BaseLLM, OpenWebUILLM
 from classes.orchestrators.base_orchestrator import BaseOrchestrator
 from classes.RAG_service.schema_store import SchemaStore
 from classes.domain_states.schema import Schema
 from classes.database_client import DatabaseClient
+from src.config import SCHEMA_MODELS
 from src.logging_utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -21,9 +23,7 @@ class SchemaOrchestrator(BaseOrchestrator):
         source: str = "text",  # "mysql" or "text"
         llm_model: Optional[str] = None,
     ):
-        # Use default model if none provided
-        model = llm_model or "default_schema_model"
-        super().__init__(database_name, model)
+        super().__init__(database_name, llm_model)
         
         self.source = source
         self.schema_store = SchemaStore()
@@ -31,6 +31,11 @@ class SchemaOrchestrator(BaseOrchestrator):
             database_name=self.database_name,
             schema_source=self.source
         )
+        
+    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
+        if choice is None:
+            return None
+        return OpenWebUILLM(model=SCHEMA_MODELS[choice]["id"])
     
     def acquire_schema(self, user_text: Optional[str] = None) -> Schema:
         """
@@ -113,8 +118,7 @@ class SchemaOrchestrator(BaseOrchestrator):
             update_type = self.llm.generate(prompt) # pyright: ignore[reportOptionalMemberAccess]
         
         if update_type == "structural":
-            current_schema = json.dumps(self.schema.tables, indent=2)
-            prompt = self.prompt_builder.schema_update_prompt(user_text, current_schema)
+            prompt = self.prompt_builder.schema_update_prompt(user_text, self.schema.to_string())
             schema_raw = self.llm.generate(prompt) # pyright: ignore[reportOptionalMemberAccess]
             self.schema.parse_response(schema_raw)
         else:

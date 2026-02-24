@@ -1,90 +1,177 @@
-from abc import ABC
-from classes.domain_states.query import QuerySession
+import json
+from pathlib import Path
+from typing import Optional, List, Dict
+
+from classes.orchestrators.base_orchestrator import BaseOrchestrator
+from classes.llm_clients import BaseLLM, OpenWebUILLM, AzureLLM
+from classes.domain_states.schema import Schema
+from classes.domain_states import QuerySession
 from classes.RAG_service.schema_store import SchemaStore
 from classes.RAG_service.query_store import QueryStore
-from classes.llm_clients.base import BaseLLM
 from classes.database_client import DatabaseClient
-from classes.prompt_builder import PromptBuilder
-from src.logging_utils import setup_logger
+from src.config import QUERY_GENERATION_MODELS
+from src.logging_utils import setup_logger, truncate_request
 
 logger = setup_logger(__name__)
 
-class QueryOrchestrator(ABC):
+class QueryOrchestrator(BaseOrchestrator):
     """
-    Handles full SQL generation + evaluation lifecycle.
+    Orchestrator responsible for SQL query generation and refinement.
+    Handles query creation, execution, and learning from failures.
     """
-
+    
     def __init__(
         self,
-        llm_service: BaseLLM,
-        schema_store: SchemaStore,
+        database_name: str,
         query_store: QueryStore,
+        schema_store: SchemaStore,
+        user_request: str,
+        model_name: Optional[str] = None,
+        max_attempts: int = 3
     ):
-        self.llm = llm_service
-        self.database_client = database_client
+        super().__init__(database_name, model_name)
+        
+        self.max_attempts = max_attempts
         self.schema_store = schema_store
         self.query_store = query_store
-        self.prompt_builder = prompt_builder
-        self.max_attempts = max_attempts
+        self.database_client = DatabaseClient(self.database_name)
+        self.request = user_request
+        
+        # Current session data
+        self.schema: Optional[Schema] = None
+        self.current_query: Optional[QuerySession] = None
+        self.schema_context: Optional[str] = None
+        
+        self.join_hints: Optional[List[str]] = None
+        
+        # Load schema for this database
+        self._load_schema()
+    
+    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
+        """Initialize the appropriate LLM based on model name pattern"""
+        logger.info("Getting LLM model for choice: %s", choice)
+        if choice is None:
+            logger.info("Selected 'none' model (no LLM)")
+            return None
+        elif QUERY_GENERATION_MODELS[choice]["provider"] == "azure":
+            model_name = QUERY_GENERATION_MODELS[choice]["id"]
+            logger.info("Selected Azure OpenAI model: %s", model_name)
+            return AzureLLM(model_name)
+        else:
+            model_name = QUERY_GENERATION_MODELS[choice]["id"]
+            logger.info("Selected OpenWebUI model: %s", model_name)
+            return OpenWebUILLM(model_name)
+        
+    def _load_schema(self) -> None:
+        """Load the schema for this database from the json file"""
+        schema_path = Path("data/schema") / f"{self.database_name}_schema.json"
 
-    def run(self, user_request: str) -> QuerySession:
+        if not schema_path.exists():
+            logger.warning("Schema file not found for database '%s': %s", self.database_name, schema_path)
+            self.schema = None
+            return
+
+        with schema_path.open("r", encoding="utf-8") as schema_file:
+            schema_data = json.load(schema_file)
+
+        schema = Schema.__new__(Schema)
+        schema.database_name = schema_data.get("database_name", self.database_name)
+        schema.source = schema_data.get("source", "text")
+        schema.save_path = schema_path.parent
+        schema.file_path = schema_path
+        schema.tables = schema_data
+        schema.json_ready = True
+        schema.schema_id = schema_data.get("schema_id")
+
+        self.schema = schema
+    
+    def generation(
+        self, 
+        user_request: str,
+    ) -> QuerySession:
         """
-        Full SQL generation pipeline with retry loop.
+        Generate SQL query based on user request.
+        Handles the complete query lifecycle from generation to execution.
         """
+        logger.info(f"Generating SQL for request: {truncate_request(user_request)}")
+        
+        # Get relevant schema context
+        self.schema_context, table_names = self.schema_store.get_context(user_request)
+        
+        if self.schema is None:
+            raise Exception("Schema not found for database")
+        
+        if self.schema.source == "mysql":
+            # Get similar failed queries for learning
+            failed_queries = self.query_store.retrieve_failed_queries(user_request)
+            
+            self.join_hints = self.database_client.get_foreign_keys(table_names)
+        
+        previous_failures = None
+        
+        while self.current_query.llm_feedback.attempt <= self.max_attempts or self.current_query.status != "SUCCESS":
 
-        # 1️⃣ Retrieve schema context
-        schema_context = self.schema_store.get_context(user_request)
-
-        # 2️⃣ Retrieve failed queries (negative guidance)
-        failed_docs = self.query_store.retrieve_failed_queries(user_request)
-
-        # 3️⃣ Build initial prompt
-        prompt = self.prompt_builder.build_sql_prompt(
-            user_request=user_request,
-            schema_context=schema_context,
-            failed_queries=failed_docs,
-        )
-
-        attempt = 1
-        session = QuerySession(user_request=user_request)
-
-        while attempt <= self.max_attempts:
-
-            # 4️⃣ Generate SQL
-            llm_response = self.llm.generate(prompt)
-            session.raw_llm_response = llm_response
-            session.clean_sql_from_llm()
-
-            # 5️⃣ Execute query
-            session = self.database_client.execute_query(session)
-
-            # 6️⃣ Evaluate
-            session.evaluate()
-
-            if session.status == "SUCCESS":
-                break
-
-            # 7️⃣ Ask LLM for feedback
-            feedback_prompt = self.prompt_builder.build_feedback_prompt(
+            # Build generation prompt
+            prompt = self.prompt_builder.query_generation_prompt(
                 user_request=user_request,
-                sql_query=session.current_query,
-                execution_result=session.execution_result,
+                schema_context=self.schema_context,
+                previous_fail=self.current_query.format_error_feedback() or previous_failures,
+                join_hints=self.join_hints
             )
-
-            feedback_response = self.llm.generate(feedback_prompt)
-            session.apply_llm_feedback(feedback_response, attempt=attempt)
-
-            # 8️⃣ Build retry prompt
-            prompt = self.prompt_builder.build_retry_prompt(
-                original_request=user_request,
-                previous_query=session.current_query,
-                error_details=session.format_error_feedback(),
-                schema_context=schema_context,
+            
+            # Generate SQL
+            response = self.llm.generate(prompt)
+            
+            # Create query session
+            self.current_query = QuerySession(
+                user_request=user_request,
+                raw_llm_response=response
             )
+            
+            self.current_query = self.database_client.execute_query(self.current_query)
+            
+            # Evaluate the query (validate syntax, execute, etc.)
+            self.current_query.evaluate()
 
-            attempt += 1
-
-        # 9️⃣ Store query session in RAG
-        self.query_store.store_query(session)
-
-        return session
+            if self.current_query.status == "SUCCESS" and self.schema.source == "mysql": 
+                self._ask_feedback(self.current_query.llm_feedback.attempt)
+            
+        
+        # Store the result
+        self.query_store.store_query(self.current_query)
+        
+        # Log generation result
+        if self.current_query.status == "SUCCESS":
+            logger.info(f"Query generated successfully: {self.current_query.current_query}")
+        else:
+            logger.warning(f"Query generation issue: {self.current_query.status}")
+        
+        return self.current_query
+    
+    def _ask_feedback(
+        self, 
+        attempt: int = 1
+    ):
+        """
+        Ask LLM for feedback on a failed query.
+        Returns updated query session with feedback applied.
+        """
+        if self.current_query.status == "SYNTAX_ERROR":
+            return
+        elif self.current_query.status == "SUCCESS":
+            prompt = self.prompt_builder.evaluation_prompt(
+                sql=self.current_query.sql_code,
+                request=self.request,
+                context=self.schema_context,
+                execution_output=self.current_query.execution_result
+            )
+        elif self.current_query.status == "RUNTIME_ERROR" and attempt > 1:
+            prompt = self.prompt_builder.explanation_prompt(
+                sql=self.current_query.sql_code,
+                context=self.schema.tables.to_string(),
+                execution_output=self.current_query.execution_result
+            )
+            
+        response = self.llm.generate(prompt)
+        
+        self.current_query.apply_llm_feedback(response)

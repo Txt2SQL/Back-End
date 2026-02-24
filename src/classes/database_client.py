@@ -53,10 +53,10 @@ class DatabaseClient:
             cursor = self.connection.cursor(dictionary=True)
             logger.info("📝 Executing SQL query...")
 
-            if query.current_query is None:
+            if query.sql_code is None:
                 logger.warning("No SQL query provided to execute")
                 raise ValueError("SQL query is None, cannot execute")
-            cursor.execute(query.current_query)
+            cursor.execute(query.sql_code)
             logger.info("📝 Query executed successfully")
 
             # Try fetching results (SELECT queries)
@@ -158,7 +158,7 @@ class DatabaseClient:
 
         return schema
     
-    def _get_foreign_keys(self, table_names: list[str] | None = None) -> list[str]:
+    def get_foreign_keys(self, table_names: list[str] | None = None) -> list[str]:
         """
         Fetch join relationships directly from MySQL foreign key metadata.
         Returns human-readable join hints.
@@ -237,40 +237,3 @@ class DatabaseClient:
         if self.connection.is_connected():
             self.connection.close()
             logger.info("🔒 Database connection closed")
-
-    def build_join_hints(self, allowed_tables: list[str] | None = None) -> str:
-        """
-        Build human-readable join hints from foreign key metadata.
-        Returns a string of join hints, with each hint on a new line.
-        If allowed_tables is provided, only include join hints that reference
-        tables in the set.
-        """
-        
-        relations = self._get_foreign_keys()
-
-        if not relations:
-            return ""
-
-        if allowed_tables:
-            filtered = []
-            for relation in relations:
-                try:
-                    left, right = relation.split("→")
-                    left_table = left.strip().split(".", 1)[0].strip()
-                    right_table = right.strip().split(".", 1)[0].strip()
-                except ValueError:
-                    continue
-
-                if left_table in allowed_tables and right_table in allowed_tables:
-                    filtered.append(relation)
-
-            relations = filtered
-
-        if not relations:
-            return ""
-
-        lines = ["=== JOIN PATH HINTS ==="]
-        for i, r in enumerate(relations, 1):
-            lines.append(f"{i:2}. {r}")
-
-        return "\n".join(lines)

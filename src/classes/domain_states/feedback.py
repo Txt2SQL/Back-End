@@ -84,7 +84,7 @@ class LLMFeedback:
         self.retry_instruction = instruction
         
     def format_error_details(self):
-        if self.attempt > 1:
+        if self.attempt > 2:
             self._build_targeted_retry_instruction()
         return f"""DETAILS: {self.error_category}
 

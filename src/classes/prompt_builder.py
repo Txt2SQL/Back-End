@@ -14,7 +14,7 @@ class PromptBuilder:
     def __init__(self):
         self.timestamp = datetime.utcnow().isoformat()
 
-    def explanation_prompt(self, sql: str, context: str, execution_output: list | None | str):
+    def explanation_prompt(self, sql: str, context: str, execution_output: str):
         return f"""
     You are an expert SQL debugger.
     Explain why the following SQL query produced this runtime error.
