@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from src.config import VECTOR_STORE_DIR, SCHEMA_MODELS
 from classes.orchestrators.schema_orchestrator import SchemaOrchestrator
+from classes.domain_states import SchemaSource
 from classes.logger_manager import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
@@ -70,7 +71,7 @@ def main():
 
         orchestrator = SchemaOrchestrator(
             database_name=database_name,
-            source="mysql",
+            source=SchemaSource.MYSQL,
         )
 
         schema = orchestrator.acquire_schema()
@@ -91,7 +92,7 @@ def main():
 
         orchestrator = SchemaOrchestrator(
             database_name=database_name,
-            source="text",
+            source=SchemaSource.TEXT,
             llm_model=model_choice,
         )
 

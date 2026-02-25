@@ -7,7 +7,7 @@ from classes.orchestrators.base_orchestrator import BaseOrchestrator
 from classes.RAG_service.schema_store import SchemaStore
 from classes.domain_states.schema import Schema
 from classes.clients.database_client import DatabaseClient
-from src.config import SCHEMA_MODELS
+from src.config import SCHEMA_MODELS, VECTOR_STORE_DIR
 from src.classes.domain_states import SchemaSource
 from classes.logger_manager import LoggerManager
 
@@ -29,7 +29,7 @@ class SchemaOrchestrator(BaseOrchestrator):
         super().__init__(database_name, llm_model)
         
         self.source = source
-        self.schema_store = SchemaStore()
+        self.schema_store = SchemaStore(VECTOR_STORE_DIR)
         self.schema: Schema = Schema(
             database_name=self.database_name,
             schema_source=self.source

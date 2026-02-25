@@ -1,4 +1,5 @@
 from typing import List
+from pathlib import Path
 from classes.RAG_service.base_vector_store import VectorStore
 from langchain_core.documents import Document
 from classes.domain_states.schema import Schema
@@ -8,8 +9,8 @@ logger = LoggerManager.get_logger(__name__)
 
 class SchemaStore(VectorStore):
 
-    def __init__(self):
-        super().__init__("schema_store")
+    def __init__(self, path: Path):
+        super().__init__(path, "schema_store")
 
     # =====================================================
     # STORE SCHEMA
