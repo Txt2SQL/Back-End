@@ -141,32 +141,13 @@ def load_test_requests(input_file: str) -> List[str]:
         requests = []
     return requests
 
-def run_single_test(
-    db_name: str,
-    request: str, 
-    model_index: int, 
-    llm_model,
-    full_schema: dict, 
-    mode: str,
-    query_vs: Chroma,
-    schema_vs: Chroma
-):
+def run_single_test():
     """
     Run a single test: generate SQL and validate it.
     
     """
 
-def run_test_with_timeout(
-    db_name: str,
-    request: str, 
-    model_index: int, 
-    llm_model,
-    full_schema: dict,
-    mode: str,
-    query_vs: Chroma,
-    schema_vs: Chroma,
-    timeout: int = TIMEOUT_PER_MODEL
-) -> Tuple[str, str, str, str, int]:
+def run_test_with_timeout():
     """
     Run test in a separate thread with timeout to prevent hanging.
     """
@@ -541,17 +522,7 @@ def run_stress_tests(mode: str, db_name: str, output_dir: Path):
                 logger.info("!#" * 100)
                 model_start_time = time.time()
 
-                sql_query, status, outcome, feedback_category, attempts = run_test_with_timeout(
-                    db_name,
-                    request,
-                    model_idx,
-                    llm_model,
-                    full_schema,
-                    mode,
-                    query_vs,
-                    schema_vs,
-                    TIMEOUT_PER_MODEL,
-                )
+                _ = run_test_with_timeout()
 
                 model_time = time.time() - model_start_time
                 print(f"   Status: {status} ({model_time:.1f}s)\n")
@@ -565,12 +536,7 @@ def run_stress_tests(mode: str, db_name: str, output_dir: Path):
                     logger.warning("Error output: %s", outcome[:200])
 
                 req_entry = all_results_map[i]
-                req_entry["model_results"][model_name] = (
-                    sql_query,
-                    status,
-                    outcome,
-                    feedback_category,
-                    attempts,
+                req_entry["model_results"][model_name] = ( _
                     model_time,
                 )
                 req_entry["request_time"] += model_time
@@ -614,99 +580,6 @@ def run_stress_tests(mode: str, db_name: str, output_dir: Path):
     logger.info("Testing completed. Full results saved to %s.", OUTPUT_FILE)
     logger.info("Per-request logs saved under %s.", request_output_dir)
 
-def run_full_cycle_without_llm(
-    *,
-    user_request: str,
-    mode: str,
-    schema: dict,
-    query_vs: Chroma,
-    schema_vs: Chroma,
-    execute_sql: bool,
-):
-    """
-    Runs the full SQL generation pipeline WITHOUT calling the LLM.
-    """
-    template = create_prompt(
-        user_request=user_request,
-        source=mode,
-        database_name="none",
-        query_vs=query_vs,
-        schema_vs=schema_vs,
-    )
-    sql = generate_sql_query("none", template)
-
-    syntax_status = validate_sql_syntax(sql)
-
-    execution_status = None
-    execution_output = None
-
-    if execute_sql and syntax_status == "OK":
-        execution_status, execution_output = execute_sql_query(sql)
-
-    qm = create_metadata(
-        sql_query=sql,
-        syntax_status=syntax_status,
-        schema_id=compute_schema_id(schema),
-        schema_source=mode,
-        user_request=user_request,
-        model_index=0,
-        execution_status=execution_status,
-        execution_output=execution_output,
-    )
-
-    store_query_feedback(query_vs, sql, qm)
-
-    return sql, qm
-
-def execute_sample_query(input_path: str):
-    """
-    Execute SQL queries from a file and write results to outcomes.txt.
-
-    File format:
-    - One or more SQL queries
-    - Each query MUST end with a semicolon (;)
-    """
-
-    if not input_path:
-        raise ValueError("❌ --test execute requires an input file via --input")
-
-    if not os.path.exists(input_path):
-        raise FileNotFoundError(f"❌ Input file not found: {input_path}")
-
-    with open(input_path, "r", encoding="utf-8") as f:
-        content = f.read().strip()
-
-    if not content:
-        raise ValueError("❌ Input file is empty")
-
-    # Split queries by semicolon, keeping valid SQL only
-    queries = [
-        q.strip() + ";"
-        for q in content.split(";")
-        if q.strip()
-    ]
-
-    if not queries:
-        raise ValueError("❌ No valid SQL queries found in input file")
-
-    output_file = "outcomes.txt"
-
-    with open(output_file, "w", encoding="utf-8") as out:
-        for query in queries:
-            out.write("query:\n\n")
-            out.write(f"{query}\n\n")
-
-            status, result = execute_sql_query(query)
-
-            if status == "OK":
-                rows_fetched = len(result) if isinstance(result, list) else 0
-                out.write(f"rows fetched: {rows_fetched} rows\n\n")
-            else:
-                out.write(f"error: {result}\n\n")
-
-            out.write("\n")
-
-    print(f"✅ Query execution completed. Results written to {output_file}")
 
 if __name__ == "__main__":
     import argparse
@@ -740,9 +613,5 @@ if __name__ == "__main__":
         
         # Run the comprehensive tests
         run_stress_tests(args.mode, db_name=selected_db, output_dir=output_dir)
-    elif args.test == "execute":
-        if not args.input:
-            raise ValueError("❌ --test execute requires --input <sql_file>")
-        execute_sample_query(args.input)
     else:
         raise ValueError(f"❌ Invalid test type: {args.test}")
