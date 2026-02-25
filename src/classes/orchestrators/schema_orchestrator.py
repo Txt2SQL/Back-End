@@ -8,6 +8,7 @@ from classes.RAG_service.schema_store import SchemaStore
 from classes.domain_states.schema import Schema
 from classes.llm_clients.database_client import DatabaseClient
 from src.config import SCHEMA_MODELS
+from src.classes.domain_states import SchemaSource
 from classes.logger_manager import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
@@ -22,7 +23,7 @@ class SchemaOrchestrator(BaseOrchestrator):
     def __init__(
         self, 
         database_name: str, 
-        source: str = "text",  # "mysql" or "text"
+        source: SchemaSource = SchemaSource.TEXT,  # "mysql" or "text"
         llm_model: Optional[str] = None,
     ):
         super().__init__(database_name, llm_model)
@@ -51,7 +52,7 @@ class SchemaOrchestrator(BaseOrchestrator):
             logger.info(f"Schema already exists and is valid for {self.database_name}")
             return self.schema
             
-        if self.source == "mysql":
+        if self.source == SchemaSource.MYSQL:
             # Extract schema from MySQL database
             response = self._extract_from_mysql()
         elif user_text:

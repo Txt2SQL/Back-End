@@ -1,7 +1,13 @@
 import sqlglot
 import time
-import re
 from typing import Any, List, Optional, Union
+
+from .enums import (
+    QueryStatus,
+    ErrorType,
+    KnowledgeScope,
+    FeedbackStatus,
+)
 from src.classes.domain_states.feedback import LLMFeedback
 from classes.logger_manager import LoggerManager
 
@@ -19,69 +25,54 @@ class QuerySession:
         if user_request is None and sql_query is None:
             raise ValueError("At least one input must be provided")
 
-        self.user_request = user_request or ""
-        self.rows_fetched: Optional[int] = None
-
+        self.user_request: str = user_request or ""
         self.sql_code: Optional[str] = sql_query
 
+        self.rows_fetched: Optional[int] = None
         self.valid_syntax: Optional[bool] = None
         self.execution_status: Optional[str] = None
         self.execution_result: Union[str, List[Any], None] = None
 
-        self.status: str = "PENDING"
-        self.error_type: Optional[str] = None
-        self.knowledge_scope: Optional[str] = None
+        self.status: QueryStatus = QueryStatus.PENDING
+        self.error_type: Optional[ErrorType] = None
+        self.knowledge_scope: Optional[KnowledgeScope] = None
+
         self.llm_feedback: LLMFeedback = LLMFeedback()
-
-        self.timestamp = time.time()
+        self.timestamp: float = time.time()
 
     # --------------------------------------------------
-    # 1️⃣ SQL CLEANING
+    # SQL CLEANING
     # --------------------------------------------------
 
-    def clean_sql_from_llm(self, raw_llm_response: str):
+    def clean_sql_from_llm(self, raw_llm_response: str) -> None:
         logger.debug("Cleaning LLM response")
-        
-        if raw_llm_response is None:
+
+        if not raw_llm_response:
             logger.warning("No LLM response to clean")
             return
-        
+
         sql_query = raw_llm_response
 
-        logger.debug("Original response length: %s characters", len(sql_query))
-
-        # 2. Remove markdown fences safely
         if "```" in sql_query:
             sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
-            logger.debug("Removed markdown fences")
 
-        # 4. Remove trailing junk after last semicolon IF present
         if ";" in sql_query:
             sql_query = sql_query[: sql_query.rfind(";") + 1].strip()
 
-        # 5. Final validation
         if not sql_query:
             raise ValueError("LLM returned empty SQL")
 
-        # 6. Ensure terminating semicolon (DO NOT FAIL)
         if not sql_query.endswith(";"):
-            logger.warning("SQL query missing terminating semicolon, appending automatically")
             sql_query += ";"
 
-        logger.debug("Cleaned SQL length: %s characters", len(sql_query))
-
         self.sql_code = sql_query
-
-        logger.debug("Final SQL:\n%s", self.sql_code)
-        
         self.validate_syntax()
-        
 
     # --------------------------------------------------
-    # 2️⃣ SYNTAX VALIDATION
+    # SYNTAX VALIDATION
     # --------------------------------------------------
 
-    def validate_syntax(self):
+    def validate_syntax(self) -> None:
         if not self.sql_code:
             self.valid_syntax = False
             return
@@ -94,45 +85,43 @@ class QuerySession:
             self.execution_result = str(e)
 
     # --------------------------------------------------
-    # 4️⃣ RUNTIME ERROR CLASSIFICATION
+    # RUNTIME ERROR CLASSIFICATION
     # --------------------------------------------------
 
-    def _classify_runtime_error(self):
+    def _classify_runtime_error(self) -> None:
 
-        # Priorità al DB error
         if isinstance(self.execution_result, str):
             msg = self.execution_result.lower()
 
             if "unknown column" in msg:
-                self.error_type = "UNKNOWN_COLUMN"
+                self.error_type = ErrorType.UNKNOWN_COLUMN
             elif "unknown table" in msg:
-                self.error_type = "UNKNOWN_TABLE"
+                self.error_type = ErrorType.UNKNOWN_TABLE
             elif "ambiguous" in msg:
-                self.error_type = "AMBIGUOUS_COLUMN"
+                self.error_type = ErrorType.AMBIGUOUS_COLUMN
             elif "join" in msg:
-                self.error_type = "BAD_JOIN"
+                self.error_type = ErrorType.BAD_JOIN
             else:
-                self.error_type = "GENERIC_RUNTIME_ERROR"
+                self.error_type = ErrorType.GENERIC_RUNTIME_ERROR
             return
 
-        # fallback su LLM
-        if self.llm_feedback and self.llm_feedback.error_category:
+        if self.llm_feedback.error_category:
             self.error_type = self.llm_feedback.error_category
 
     # --------------------------------------------------
-    # 5️⃣ KNOWLEDGE SCOPE
+    # KNOWLEDGE SCOPE
     # --------------------------------------------------
 
-    def _detect_knowledge_scope(self):
+    def _detect_knowledge_scope(self) -> None:
         if self.valid_syntax is False:
-            self.knowledge_scope = "SYNTAX"
+            self.knowledge_scope = KnowledgeScope.SYNTAX
             return
 
         if self._detect_structural_issue():
-            self.knowledge_scope = "STRUCTURAL"
+            self.knowledge_scope = KnowledgeScope.STRUCTURAL
             return
 
-        self.knowledge_scope = "SCHEMA_SPECIFIC"
+        self.knowledge_scope = KnowledgeScope.SCHEMA_SPECIFIC
 
     def _detect_structural_issue(self) -> bool:
         if not self.sql_code:
@@ -147,53 +136,51 @@ class QuerySession:
         )
 
     # --------------------------------------------------
-    # 6️⃣ FULL EVALUATION
+    # FULL EVALUATION
     # --------------------------------------------------
 
-    def evaluate(self):
+    def evaluate(self) -> None:
 
         self.validate_syntax()
 
-        # 1️⃣ SYNTAX ERROR
         if self.valid_syntax is False:
-            self.status = "SYNTAX_ERROR"
-            self.error_type = "SYNTAX_ERROR"
+            self.status = QueryStatus.SYNTAX_ERROR
+            self.error_type = ErrorType.SYNTAX_ERROR
             self._detect_knowledge_scope()
             return
 
-        # 2️⃣ RUNTIME ERROR
         if self.execution_status and self.execution_status != "SUCCESS":
-            self.status = "RUNTIME_ERROR"
+            self.status = QueryStatus.RUNTIME_ERROR
             self._classify_runtime_error()
             self._detect_knowledge_scope()
             return
 
-        # 3️⃣ LLM FEEDBACK (semantic evaluation)
-        if self.llm_feedback and self.llm_feedback.feedback_status != "UNKNOWN":
+        if self.llm_feedback.feedback_status is FeedbackStatus.CORRECT:
+            self.status = QueryStatus.SUCCESS
+            self.error_type = None
 
-            if self.llm_feedback.feedback_status == "CORRECT":
-                self.status = "SUCCESS"
-                self.error_type = None
-            else:
-                self.status = "INCORRECT"
-                self.error_type = self.llm_feedback.error_category
+        elif self.llm_feedback.feedback_status is FeedbackStatus.INCORRECT:
+            self.status = QueryStatus.INCORRECT
+            self.error_type = (
+                self.llm_feedback.error_category
+                or ErrorType.SEMANTIC_ERROR
+            )
 
-            self._detect_knowledge_scope()
-            return
+        else:
+            self.status = QueryStatus.SUCCESS
+            self.error_type = None
 
-        # 4️⃣ Default success
-        self.status = "SUCCESS"
-        self.error_type = None
         self._detect_knowledge_scope()
-        
-    def apply_llm_feedback(self, raw_feedback: str, attempt: int = 1):
-        feedback = LLMFeedback()
-        feedback.attempt = attempt
-        feedback.parse_llm_feedback(raw_feedback)
-        self.llm_feedback = feedback
 
     # --------------------------------------------------
-    # 7️⃣ OUTPUT
+    # APPLY FEEDBACK
+    # --------------------------------------------------
+
+    def apply_llm_feedback(self, raw_feedback: str) -> None:
+        self.llm_feedback.parse_llm_feedback(raw_feedback)
+
+    # --------------------------------------------------
+    # OUTPUT
     # --------------------------------------------------
 
     def to_content_block(self) -> str:
@@ -210,14 +197,15 @@ Knowledge scope: {self.knowledge_scope}
 """.strip()
 
     def to_document_metadata(self) -> dict:
+
         metadata = {
             "user_request": self.user_request,
             "sql_query": self.sql_code,
-            "status": self.status,
-            "error_type": self.error_type,
-            "knowledge_scope": self.knowledge_scope,
+            "status": self.status.value,
+            "error_type": self.error_type.value if self.error_type else None,
+            "knowledge_scope": self.knowledge_scope.value if self.knowledge_scope else None,
             "outcome": self.execution_status,
-            "attempt_count": self.llm_feedback.attempt if self.llm_feedback else 1,
+            "attempt_count": self.llm_feedback.attempt,
             "feedback_status": self.llm_feedback.feedback_status if self.llm_feedback else None,
             "timestamp": self.timestamp,
         }

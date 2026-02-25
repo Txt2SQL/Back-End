@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from src.config import SCHEMA_DIR
+from .enums import SchemaSource
 from classes.logger_manager import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
@@ -16,7 +17,7 @@ class Schema:
     def __init__(
         self,
         database_name: str,
-        schema_source: str,  # "mysql" or "text"
+        schema_source: SchemaSource,  # "mysql" or "text"
     ):
         self.database_name = database_name
         self.source = schema_source

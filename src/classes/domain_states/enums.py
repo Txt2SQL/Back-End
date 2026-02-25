@@ -1,0 +1,33 @@
+from enum import Enum
+
+class SchemaSource(str, Enum):
+    TEXT = "text"
+    MYSQL = "mysql"
+
+class QueryStatus(str, Enum):
+    PENDING = "PENDING"
+    SUCCESS = "SUCCESS"
+    SYNTAX_ERROR = "SYNTAX_ERROR"
+    RUNTIME_ERROR = "RUNTIME_ERROR"
+    INCORRECT = "INCORRECT"
+    
+class ErrorType(str, Enum):
+    SYNTAX_ERROR = "SYNTAX_ERROR"
+    UNKNOWN_COLUMN = "UNKNOWN_COLUMN"
+    UNKNOWN_TABLE = "UNKNOWN_TABLE"
+    AMBIGUOUS_COLUMN = "AMBIGUOUS_COLUMN"
+    BAD_JOIN = "BAD_JOIN"
+    GENERIC_RUNTIME_ERROR = "GENERIC_RUNTIME_ERROR"
+    SEMANTIC_ERROR = "SEMANTIC_ERROR"
+    SCHEMA_ERROR = "SCHEMA_ERROR"
+    UNKNOWN_ERROR = "UNKNOWN_ERROR"
+
+class KnowledgeScope(str, Enum):
+    SYNTAX = "SYNTAX"
+    STRUCTURAL = "STRUCTURAL"
+    SCHEMA_SPECIFIC = "SCHEMA_SPECIFIC"
+
+class FeedbackStatus(str, Enum):
+    UNKNOWN = "UNKNOWN"
+    CORRECT = "CORRECT"
+    INCORRECT = "INCORRECT"

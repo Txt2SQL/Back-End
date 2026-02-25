@@ -1,5 +1,4 @@
 from datetime import datetime
-from src.logging_utils import setup_logger
 from langchain_core.documents import Document
 from classes.domain_states.query import QuerySession
 from .logger_manager import LoggerManager
