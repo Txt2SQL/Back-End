@@ -2,11 +2,11 @@ import json, os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from typing import Optional
-from classes.llm_clients import BaseLLM, OpenWebUILLM, AzureLLM
+from classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
 from classes.orchestrators.base_orchestrator import BaseOrchestrator
 from classes.RAG_service.schema_store import SchemaStore
 from classes.domain_states.schema import Schema
-from classes.llm_clients.database_client import DatabaseClient
+from classes.clients.database_client import DatabaseClient
 from src.config import SCHEMA_MODELS
 from src.classes.domain_states import SchemaSource
 from classes.logger_manager import LoggerManager

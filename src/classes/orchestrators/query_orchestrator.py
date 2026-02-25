@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Optional, List
 
 from classes.orchestrators.base_orchestrator import BaseOrchestrator
-from classes.llm_clients import BaseLLM, OpenWebUILLM, AzureLLM
+from classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
 from classes.domain_states.schema import Schema
 from classes.domain_states import QuerySession
 from classes.RAG_service.schema_store import SchemaStore
 from classes.RAG_service.query_store import QueryStore
 from classes.RAG_service.schema_store import Document
-from classes.llm_clients.database_client import DatabaseClient
+from classes.clients.database_client import DatabaseClient
 from classes.logger_manager import LoggerManager
 
 from src.config import QUERY_GENERATION_MODELS, SCHEMA_DIR

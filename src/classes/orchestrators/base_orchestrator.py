@@ -2,7 +2,7 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 from typing import Optional, Any
 
-from classes.llm_clients import BaseLLM, OpenWebUILLM, AzureLLM
+from classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
 from classes.prompt_builder import PromptBuilder
 from classes.logger_manager import LoggerManager
 
