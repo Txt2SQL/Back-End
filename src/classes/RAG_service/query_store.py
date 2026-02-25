@@ -12,9 +12,9 @@ logger = setup_logger(__name__)
 
 class QueryStore(VectorStore):
 
-    def __init__(self, collection_name: str = "queries"):
+    def __init__(self):
         self.half_life_days = 7
-        super().__init__(collection_name=collection_name)
+        super().__init__("query_store")
 
     # =====================================================
     # STORE QUERY
