@@ -39,6 +39,54 @@ def select_model() -> str | None:
             print("❌ Invalid input. Please enter a number.")
 
 
+def list_schema_databases() -> list[str]:
+    """
+    Returns database names discovered from data/schema/<database_name>_schema.json files.
+    """
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    schema_dir = os.path.join(project_root, "data", "schema")
+
+    if not os.path.isdir(schema_dir):
+        logger.warning("Schema directory not found: %s", schema_dir)
+        return []
+
+    database_names = []
+    for file_name in os.listdir(schema_dir):
+        file_path = os.path.join(schema_dir, file_name)
+        if os.path.isfile(file_path) and file_name.endswith("_schema.json"):
+            database_names.append(file_name[: -len("_schema.json")])
+
+    return sorted(database_names)
+
+
+def select_database_name() -> str | None:
+    """Prompt user to select a database from schema files."""
+    database_names = list_schema_databases()
+
+    if not database_names:
+        print("❌ No schema files found in data/schema.")
+        return None
+
+    print("\n🗂️  Available databases:")
+    for idx, database_name in enumerate(database_names, 1):
+        print(f"   {idx}. {database_name}")
+
+    while True:
+        choice = input("\n👉 Select a database by number or name: ").strip()
+
+        if choice.isdigit():
+            choice_index = int(choice) - 1
+            if 0 <= choice_index < len(database_names):
+                selected_database_name = database_names[choice_index]
+                print(f"✅ Selected database: {selected_database_name}\n")
+                return selected_database_name
+        elif choice in database_names:
+            print(f"✅ Selected database: {choice}\n")
+            return choice
+
+        print("❌ Invalid choice. Please select a valid database.")
+
+
 def main():
     print("🤖 SQL query generator (orchestrator version)\n")
 
@@ -89,8 +137,10 @@ def main():
             # Select model
             model_name = select_model()
 
-            # Ask database name
-            database_name = input("\n👉 Enter database name: ").strip()
+            # Select database from schema files
+            database_name = select_database_name()
+            if database_name is None:
+                continue
 
             # User request
             user_request = input("\n👉 Enter a request in natural language: ").strip()
