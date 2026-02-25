@@ -2,9 +2,9 @@ from typing import List
 from classes.RAG_service.base_vector_store import VectorStore
 from langchain_core.documents import Document
 from classes.domain_states.schema import Schema
-from src.logging_utils import setup_logger, truncate_request
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 class SchemaStore(VectorStore):
 
@@ -50,7 +50,7 @@ class SchemaStore(VectorStore):
         Uses light query-intent heuristics to tune retrieval depth,
         removes duplicate chunks, and groups output by table.
         """
-        logger.info("Retrieving schema context for request: '%s'", truncate_request(user_request))
+        logger.info("Retrieving schema context for request: '%s'", LoggerManager.truncate_request(user_request))
 
         # ------------------------------------------------------------------
         # SCHEMA RETRIEVAL (RAG)
@@ -126,7 +126,7 @@ class SchemaStore(VectorStore):
         )
 
         if not schema_context:
-            logger.warning("No schema context retrieved for request: %s", truncate_request(user_request))
+            logger.warning("No schema context retrieved for request: %s", logger)
 
         return schema_context, table_names
     

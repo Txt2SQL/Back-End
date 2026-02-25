@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from src.config import SCHEMA_DIR
-from src.logging_utils import setup_logger
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 
 class Schema:

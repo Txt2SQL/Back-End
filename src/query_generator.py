@@ -5,9 +5,9 @@ from classes.orchestrators.query_orchestrator import QueryOrchestrator
 from classes.RAG_service.query_store import QueryStore
 from classes.RAG_service.schema_store import SchemaStore
 from src.config import QUERY_GENERATION_MODELS
-from src.logging_utils import setup_logger
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 
 def select_model() -> str | None:

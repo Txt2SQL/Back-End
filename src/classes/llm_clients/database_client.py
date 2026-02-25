@@ -3,10 +3,10 @@ from getpass import getpass
 import mysql.connector
 from src.classes.domain_states.query import QuerySession
 from collections import defaultdict
-from src.logging_utils import setup_logger
 from src.classes.loaders.mysql_loader import MySQLLoader
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 class DatabaseClient:
     

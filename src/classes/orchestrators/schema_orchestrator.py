@@ -8,9 +8,9 @@ from classes.RAG_service.schema_store import SchemaStore
 from classes.domain_states.schema import Schema
 from classes.llm_clients.database_client import DatabaseClient
 from src.config import SCHEMA_MODELS
-from src.logging_utils import setup_logger
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 
 class SchemaOrchestrator(BaseOrchestrator):

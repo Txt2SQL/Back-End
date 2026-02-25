@@ -4,9 +4,9 @@ from typing import Optional, Any
 
 from classes.llm_clients import BaseLLM, OpenWebUILLM, AzureLLM
 from classes.prompt_builder import PromptBuilder
-from src.logging_utils import setup_logger, truncate_request
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 
 class BaseOrchestrator(ABC):

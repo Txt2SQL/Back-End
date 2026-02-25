@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from dotenv import dotenv_values
 from typing import Any, Type
-from src.logging_utils import setup_logger
+from classes.logger_manager import LoggerManager
 from src.config import ENV_DIR
 from classes.loaders.exceptions import (
     MissingVariableError,
@@ -13,7 +13,7 @@ from classes.loaders.exceptions import (
     InvalidTypeError,
 )
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 class BaseLoader(ABC):
     """

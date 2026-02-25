@@ -2,10 +2,10 @@ import os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import VECTOR_STORE_DIR, SCHEMA_MODELS
-from src.logging_utils import setup_logger
 from classes.orchestrators.schema_orchestrator import SchemaOrchestrator
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 DB_DIR = os.path.join(VECTOR_STORE_DIR, "schema")
 

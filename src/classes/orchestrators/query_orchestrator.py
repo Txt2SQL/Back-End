@@ -11,9 +11,9 @@ from classes.RAG_service.schema_store import SchemaStore
 from classes.RAG_service.query_store import QueryStore
 from classes.llm_clients.database_client import DatabaseClient
 from src.config import QUERY_GENERATION_MODELS, SCHEMA_DIR
-from src.logging_utils import setup_logger, truncate_request
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 class QueryOrchestrator(BaseOrchestrator):
     """
@@ -101,7 +101,7 @@ class QueryOrchestrator(BaseOrchestrator):
         Generate SQL query based on user request.
         Handles the complete query lifecycle from generation to execution.
         """
-        logger.info(f"Generating SQL for request: {truncate_request(user_request)}")
+        logger.info(f"Generating SQL for request: {LoggerManager.truncate_request(user_request)}")
         
         # Get relevant schema context
         self.schema_context, table_names = self.schema_store.get_context(user_request)
@@ -119,7 +119,7 @@ class QueryOrchestrator(BaseOrchestrator):
             self.join_hints = self.database_client.get_foreign_keys(table_names)
         
         while self.current_query.llm_feedback.attempt <= self.max_attempts:
-            logger.info(f"Attempt #{self.current_query.llm_feedback.attempt} for request: {truncate_request(user_request)}")
+            logger.info(f"Attempt #{self.current_query.llm_feedback.attempt} for request: {LoggerManager.truncate_request(user_request)}")
             # Build generation prompt
             error_feedback = self.current_query.format_error_feedback()
             prompt = self.prompt_builder.query_generation_prompt(

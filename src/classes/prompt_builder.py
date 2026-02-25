@@ -2,8 +2,10 @@ from datetime import datetime
 from src.logging_utils import setup_logger
 from langchain_core.documents import Document
 from classes.domain_states.query import QuerySession
+from .logger_manager import LoggerManager
+from src.config import LOGGER_LEVEL
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 class PromptBuilder:
     """
@@ -15,7 +17,7 @@ class PromptBuilder:
         self.timestamp = datetime.utcnow().isoformat()
 
     def explanation_prompt(self, sql: str, context: str, execution_output: str):
-        return f"""
+        template = f"""
     You are an expert SQL debugger.
     Explain why the following SQL query produced this runtime error.
     Be concise and do NOT rewrite the query.
@@ -31,6 +33,8 @@ class PromptBuilder:
 
     Provide a clear explanation of the cause.
     """
+        self._log_prompt("explanation_prompt", template)
+        return template
 
     def evaluation_prompt(self, sql: str, request: str, context: str, execution_output: list) -> str:
         # Take only the first 20 rows to avoid token explosion
@@ -40,7 +44,7 @@ class PromptBuilder:
         # Convert rows to a readable string
         rows_text = "\n".join(str(row) for row in preview_rows)
 
-        return f"""
+        template = f"""
 You are an expert SQL reviewer.
 
 Your task is to evaluate whether the SQL query correctly answers
@@ -72,6 +76,8 @@ Rules:
 - Be concise and precise.
 - Judge correctness, not syntax or performance.
 """
+        self._log_prompt("evaluation_prompt", template)
+        return template
 
     def query_generation_prompt(self, 
         user_request: str,
@@ -135,7 +141,7 @@ Rules:
     Do NOT repeat the same mistake.
     """
 
-        return template + f"""
+        template = template + f"""
 
     Before writing the SQL query, internally determine:
     - Which tables are required
@@ -148,12 +154,14 @@ Rules:
         
     SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
     """
+        self._log_prompt("query_generation_prompt", template)
+        return template
 
     def schema_generation_prompt(self) -> str:
         """
         Create prompt for schema generation.
         """
-        return """
+        template = """
     You are an expert database schema analyzer. Your task is to convert SQL DDL statements into a structured JSON schema.
 
     IMPORTANT:
@@ -187,12 +195,14 @@ Rules:
 
     Return ONLY the JSON object:
     """
+        self._log_prompt("schema_generation_prompt", template)
+        return template
 
     def schema_update_prompt(self, raw_schema_text: str, current_schema: str) -> str:
         """
         Create prompt for schema update.
         """
-        return f"""
+        template = f"""
     You are an expert database schema analyst.
 
     You have been provided with:
@@ -221,12 +231,14 @@ Rules:
 
     Return the UPDATED schema JSON:
     """
+        self._log_prompt("schema_update_prompt", template)
+        return template
 
     def update_classification_prompt(self, text: str) -> str:
         """
         Create prompt for error classification.
         """
-        return f"""
+        template = f"""
     System: You are an assistant that classifies schema updates.
     User: Text provided by the user:
     {text}
@@ -236,6 +248,8 @@ Rules:
     (B) a description or semantic note?
     Answer only with "A" or "B".
     """
+        self._log_prompt("update_classification_prompt", template)
+        return template
     
     def _build_penalty_section(self, failed_queries: list[Document]) -> str:
         if not failed_queries:
@@ -296,3 +310,14 @@ Rules:
             lines.append(f"{i:2}. {r}")
 
         return "\n".join(lines)
+
+    def _log_prompt(self, name: str, prompt: str) -> None:
+        """
+        Logs the full prompt only if DEBUG level is enabled.
+        """
+        if logger.isEnabledFor(LOGGER_LEVEL):
+            logger.debug(
+                "\n\n===== GENERATED PROMPT: %s =====\n%s\n===== END PROMPT =====\n",
+                name,
+                prompt
+            )

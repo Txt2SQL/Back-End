@@ -2,10 +2,10 @@ import sqlglot
 import time
 import re
 from typing import Any, List, Optional, Union
-from src.logging_utils import setup_logger
 from src.classes.domain_states.feedback import LLMFeedback
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 
 class QuerySession:

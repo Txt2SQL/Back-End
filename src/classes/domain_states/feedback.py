@@ -1,9 +1,9 @@
 
 from typing import Optional
-from src.logging_utils import setup_logger
 from src.config import ERROR_CATEGORIES
+from classes.logger_manager import LoggerManager
 
-logger = setup_logger(__name__)
+logger = LoggerManager.get_logger(__name__)
 
 
 class LLMFeedback:
