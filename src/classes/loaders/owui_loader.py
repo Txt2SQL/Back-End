@@ -3,12 +3,12 @@ import requests
 from urllib.parse import urlparse
 from pathlib import Path
 from .exceptions import ConnectionTestError
-from loaders.base_loader import Loader
+from classes.loaders.base_loader import BaseLoader
 
 
 
 
-class OWUILoader(Loader):
+class OWUILoader(BaseLoader):
 
     def __init__(self):
         values = {

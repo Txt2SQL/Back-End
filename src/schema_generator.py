@@ -1,28 +1,25 @@
-import os
-from pathlib import Path
-from classes.orchestrators.schema_orchestrator import SchemaOrchestrator
-from src.logging_utils import setup_logger
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from src.config import VECTOR_STORE_DIR, SCHEMA_MODELS
-from classes.llm_clients import OpenWebUILLM
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OllamaEmbeddings
+from src.logging_utils import setup_logger
+from classes.orchestrators.schema_orchestrator import SchemaOrchestrator
 
 logger = setup_logger(__name__)
 
-COLLECTION_NAME = "%s_schema_store"
-DB_DIR = str(VECTOR_STORE_DIR / "%s_schema")
+DB_DIR = os.path.join(VECTOR_STORE_DIR, "schema")
 
 def choose_schema_model() -> str:
     """Allow users to choose one of the configured schema generation models."""
-    # Display numbered list of models
     models = list(SCHEMA_MODELS.keys())
+
+    print("\nAvailable schema models:")
     for idx, model_name in enumerate(models, 1):
         print(f"   {idx}. {model_name}")
-    
+
     while True:
         try:
-            choice = int(input("\n👉 Select a model (1-{}): ".format(len(models))).strip())
-            
+            choice = int(input(f"\n👉 Select a model (1-{len(models)}): ").strip())
             if 1 <= choice <= len(models):
                 selected = models[choice - 1]
                 print(f"✅ Selected model: {selected}\n")
@@ -32,51 +29,74 @@ def choose_schema_model() -> str:
         except ValueError:
             print("❌ Invalid input. Please enter a number.")
 
-def main():
-    """Main function to handle interactive schema workflow using SchemaOrchestrator."""
-    
-    print("🤖 Interactive canonical schema management (phase 2 - orchestrated)")
 
+def main():
+    print("🤖 Interactive canonical schema management (orchestrator version)")
+
+    vector_store_exists = os.path.exists(DB_DIR) and os.path.isdir(DB_DIR)
 
     print("\nChoose how to acquire the database schema:")
     print("1️⃣  via text input (DDL statements or descriptions)")
     print("2️⃣  via MySQL database connection")
-    print("3️⃣  Print current vector store")
 
-    method = input("\n👉 Your choice: ").strip()    
+    if vector_store_exists:
+        print("3️⃣  Print current vector store")
 
-    database_name = input("\n📂 Enter database name: ").strip()
+    method = input("\n👉 Your choice: ").strip()
 
-    file_path = Path("data/schema") / f"{database_name}_schema.json"
+    valid_choices = {"1", "2"}
+    if vector_store_exists:
+        valid_choices.add("3")
 
-    if method == "1":
-        source = "text"
-    elif method == "2":
-        source = "mysql"
-    elif method == "3":
-        if not file_path.exists():
-            logger.error(f"Schema file not found: {file_path}")
-            return
-        else:
-            source = "file"
-    else:
-        print("❌ Invalid choice.")
+    if method not in valid_choices:
+        logger.error("Invalid method choice. Exiting.")
         return
 
-    orchestrator = SchemaOrchestrator(
-        database_name=database_name,
-        source=source
-    )
-    # ------------------------
-    # TEXT-BASED SCHEMA FLOW
-    # ------------------------
-    if method == "1":
-        model_name = choose_schema_model()
+    database_name = input("👉 Enter database name: ").strip()
+    # ------------------------------------------------------------------
+    # PRINT EXISTING VECTOR STORE
+    # ------------------------------------------------------------------
 
-        orchestrator.initialize_llm(model_name)
+    if method == "3":
+        orchestrator = SchemaOrchestrator(database_name=database_name)
+        orchestrator.schema_store.print_collection()
+        return
+
+    # ------------------------------------------------------------------
+    # MYSQL FLOW
+    # ------------------------------------------------------------------
+
+    if method == "2":
+
+        orchestrator = SchemaOrchestrator(
+            database_name=database_name,
+            source="mysql",
+        )
+
+        schema = orchestrator.acquire_schema()
+
+        if schema.json_ready:
+            print(f"\n✅ Schema for '{database_name}' successfully extracted and stored.")
+        else:
+            print("\n❌ Failed to extract schema.")
+
+        return
+
+    # ------------------------------------------------------------------
+    # TEXT + LLM FLOW
+    # ------------------------------------------------------------------
+
+    if method == "1":
+        model_choice = choose_schema_model()
+
+        orchestrator = SchemaOrchestrator(
+            database_name=database_name,
+            source="text",
+            llm_model=model_choice,
+        )
 
         while True:
-            print("\n👉 Paste schema text (press ENTER twice to finish):\n")
+            print("\n👉 Paste schema text (press ENTER twice to finish):")
 
             lines = []
             while True:
@@ -96,12 +116,14 @@ def main():
 
             schema = orchestrator.acquire_schema(user_text=raw_text)
 
-            if schema and schema.json_ready:
-                print("✅ Schema processed successfully.")
+            if schema.json_ready:
+                print(f"\n✅ Schema for '{database_name}' processed and stored.")
+            else:
+                print("\n❌ Schema generation failed.")
 
             print("\nChoose an option:")
             print("0️⃣  Exit")
-            print("1️⃣  Provide more text to update schema")
+            print("1️⃣  Provide more text to update the schema")
             print("3️⃣  Print current vector store")
 
             choice = input("\n👉 Your choice: ").strip()
@@ -111,26 +133,9 @@ def main():
                 break
             elif choice == "3":
                 orchestrator.schema_store.print_collection()
-            else:
-                continue
-
-    # ------------------------
-    # MYSQL SCHEMA FLOW
-    # ------------------------
-    elif method == "2":
-
-        schema = orchestrator.acquire_schema()
-
-        if schema and schema.json_ready:
-            print("✅ Schema extracted from MySQL successfully.")
-        else:
-            logger.error("Schema extraction failed.")
-
-    # ------------------------
-    # PRINT VECTOR STORE
-    # ------------------------
-    elif method == "3":
-        orchestrator.schema_store.print_collection()
+            elif choice != "1":
+                print("Invalid choice. Exiting.")
+                break
 
 if __name__ == "__main__":
     main()

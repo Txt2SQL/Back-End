@@ -1,10 +1,10 @@
 import requests
 from pathlib import Path
 from .exceptions import ConnectionTestError
-from loaders.base_loader import Loader
+from classes.loaders.base_loader import BaseLoader
 
 
-class AzureLoader(Loader):
+class AzureLoader(BaseLoader):
 
     def __init__(self):
         values = {

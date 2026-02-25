@@ -1,13 +1,13 @@
 import mysql.connector
 
-from loaders.base_loader import Loader
-from loaders.exceptions import ConnectionTestError
+from classes.loaders.base_loader import BaseLoader
+from classes.loaders.exceptions import ConnectionTestError
 from pathlib import Path
 
 
 
 
-class MySQLLoader(Loader):
+class MySQLLoader(BaseLoader):
 
     def __init__(self):
         values = {

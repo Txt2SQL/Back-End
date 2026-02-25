@@ -20,10 +20,10 @@ class DatabaseClient:
         try:
             logger.info("🔌 Establishing database connection with config: %s", {k: v for k, v in self.config.items() if k != "password"})
             connection_params = {
-                "host": self.config["host"],
-                "port": int(self.config["port"]),
-                "user": self.config["user"],
-                "password": self.config["password"],
+                "host": self.config["DB_HOST"],
+                "port": int(self.config["DB_PORT"]),
+                "user": self.config["DB_USER"],
+                "password": self.config["DB_PASSWORD"],
             }
             if self.database is not None:
                 logger.debug(f"📂 Setting database to: {self.database}")

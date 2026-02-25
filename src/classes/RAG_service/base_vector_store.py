@@ -1,3 +1,5 @@
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from abc import ABC, abstractmethod
 from langchain_ollama import OllamaEmbeddings

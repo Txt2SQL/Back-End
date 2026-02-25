@@ -1,10 +1,10 @@
 """Project-wide settings constants."""
 
 SCHEMA_MODELS = {
-    # "starchat-alpha": {
-    #     "provider": "openwebui",
-    #     "id": "huggingfaceh4_-_starchat-alpha",
-    # },
+    "gpt-5-mini": {
+        "provider": "azure",
+        "id": "gpt-5-mini",
+    },
     "Qwen2.5-Coder": {
         "provider": "openwebui",
         "id": "ollama@isarco02.MHKetbi/Qwen2.5-Coder-32B-Instruct:q4_K_S"

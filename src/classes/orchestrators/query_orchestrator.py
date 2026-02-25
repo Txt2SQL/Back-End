@@ -8,7 +8,7 @@ from classes.domain_states.schema import Schema
 from classes.domain_states import QuerySession
 from classes.RAG_service.schema_store import SchemaStore
 from classes.RAG_service.query_store import QueryStore
-from classes.database_client import DatabaseClient
+from classes.llm_clients.database_client import DatabaseClient
 from src.config import QUERY_GENERATION_MODELS
 from src.logging_utils import setup_logger, truncate_request
 
@@ -26,9 +26,10 @@ class QueryOrchestrator(BaseOrchestrator):
         query_store: QueryStore,
         schema_store: SchemaStore,
         user_request: str,
+        model_name: Optional[str] = None,
         max_attempts: int = 3
     ):
-        super().__init__(database_name)
+        super().__init__(database_name, model_name)
         
         self.max_attempts = max_attempts
         self.schema_store = schema_store
@@ -46,20 +47,20 @@ class QueryOrchestrator(BaseOrchestrator):
         # Load schema for this database
         self._load_schema()
     
-    def initialize_llm(self, model_name: str | None) -> BaseLLM | None:
+    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
         """Initialize the appropriate LLM based on model name pattern"""
-        logger.info("Getting LLM model for choice: %s", model_name)
-        if model_name is None:
+        logger.info("Getting LLM model for choice: %s", choice)
+        if choice is None:
             logger.info("Selected 'none' model (no LLM)")
-            self.llm = None
-        elif QUERY_GENERATION_MODELS[model_name]["provider"] == "azure":
-            model_name = QUERY_GENERATION_MODELS[model_name]["id"]
+            return None
+        elif QUERY_GENERATION_MODELS[choice]["provider"] == "azure":
+            model_name = QUERY_GENERATION_MODELS[choice]["id"]
             logger.info("Selected Azure OpenAI model: %s", model_name)
-            self.llm = AzureLLM(model_name)
+            return AzureLLM(model_name)
         else:
-            model_name = QUERY_GENERATION_MODELS[model_name]["id"]
+            model_name = QUERY_GENERATION_MODELS[choice]["id"]
             logger.info("Selected OpenWebUI model: %s", model_name)
-            self.llm = OpenWebUILLM(model_name)
+            return OpenWebUILLM(model_name)
         
     def _load_schema(self) -> None:
         """Load the schema for this database from the json file"""

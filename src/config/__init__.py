@@ -23,7 +23,7 @@ from .paths import (
     TESTS_DIR,
     SAMPLE_QUERY_PATH,
     VECTOR_STORE_DIR,
-    SCHEMA_FILE,
+    SCHEMA_DIR,
     ENV_DIR,
 )
 
@@ -44,6 +44,6 @@ __all__ = [
     "TESTS_DIR",
     "SAMPLE_QUERY_PATH",
     "VECTOR_STORE_DIR",
-    "SCHEMA_FILE",
+    "SCHEMA_DIR",
     "ENV_DIR",
 ]

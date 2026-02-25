@@ -1,10 +1,12 @@
-import json
+import json, os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from typing import Optional
-from classes.llm_clients import BaseLLM, OpenWebUILLM
+from classes.llm_clients import BaseLLM, OpenWebUILLM, AzureLLM
 from classes.orchestrators.base_orchestrator import BaseOrchestrator
 from classes.RAG_service.schema_store import SchemaStore
 from classes.domain_states.schema import Schema
-from classes.database_client import DatabaseClient
+from classes.llm_clients.database_client import DatabaseClient
 from src.config import SCHEMA_MODELS
 from src.logging_utils import setup_logger
 
@@ -21,8 +23,9 @@ class SchemaOrchestrator(BaseOrchestrator):
         self, 
         database_name: str, 
         source: str = "text",  # "mysql" or "text"
+        llm_model: Optional[str] = None,
     ):
-        super().__init__(database_name)
+        super().__init__(database_name, llm_model)
         
         self.source = source
         self.schema_store = SchemaStore()
@@ -31,10 +34,13 @@ class SchemaOrchestrator(BaseOrchestrator):
             schema_source=self.source
         )
         
-    def initialize_llm(self, model_name: str | None) -> BaseLLM | None:
-        if model_name is None:
+    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
+        if choice is None:
             return None
-        self.llm = OpenWebUILLM(model=SCHEMA_MODELS[model_name]["id"])
+        elif SCHEMA_MODELS[choice]["provider"] == "openwebui":
+            return OpenWebUILLM(model=SCHEMA_MODELS[choice]["id"])
+        else:
+            return AzureLLM(model=SCHEMA_MODELS[choice]["id"])
     
     def acquire_schema(self, user_text: Optional[str] = None) -> Schema:
         """
@@ -47,11 +53,15 @@ class SchemaOrchestrator(BaseOrchestrator):
             
         if self.source == "mysql":
             # Extract schema from MySQL database
-            self._extract_from_mysql()
+            response = self._extract_from_mysql()
         elif user_text:
-            self._acquire_schema_with_llm(user_text)
-
-            
+            response = self._acquire_schema_with_llm(user_text)
+        else:
+            raise ValueError(f"Invalid schema source: {self.source}")
+        
+        logger.info(f"LLM response: {response}")
+        # Parse response
+        self.schema.parse_response(response)
         # Store in vector database
         if self.schema.json_ready:
             self.schema_store.add_schema(self.schema)
@@ -67,8 +77,7 @@ class SchemaOrchestrator(BaseOrchestrator):
         This would need implementation based on your MySQL connector.
         """
         self.database_client = DatabaseClient(self.database_name)
-        schema_from_db = self.database_client.extract_schema()
-        self.schema.parse_response(schema_from_db)
+        return self.database_client.extract_schema()
         
     
     def _prompt_for_schema_text(self) -> str:
@@ -92,26 +101,15 @@ class SchemaOrchestrator(BaseOrchestrator):
         
         if self.schema.json_ready:
             logger.info(f"Schema already exists and is valid for {self.database_name}")
-            self._update_current_schema(user_text)
-            return
+            schema_from_llm = self._update_current_schema(user_text)
         else:
-            self._acquire_new_schema(user_text)
-    
+            schema_from_llm = self._acquire_new_schema(user_text)
         
-        """Process raw schema through LLM"""
-        if not user_text:
-            raise ValueError("User text is required when source is 'text'")
-        prompt = self.prompt_builder.schema_generation_prompt()
-
-        schema_raw = self.llm.generate(prompt)
-        self.schema.parse_response(schema_raw)
+        return schema_from_llm
         
     def _update_current_schema(self, user_text: str):
         update_type = self.schema.classify_update(user_text)
-        if update_type == "semantic":
-            self.schema.add_semantic_note(user_text)
-            return
-        elif update_type == "unknown":
+        if update_type == "unknown":
             logger.info("Unknown update type, asking llm detect update type")
             prompt = self.prompt_builder.update_classification_prompt(user_text)
             update_type = self.llm.generate(prompt) # pyright: ignore[reportOptionalMemberAccess]
@@ -125,5 +123,4 @@ class SchemaOrchestrator(BaseOrchestrator):
             
     def _acquire_new_schema(self, user_text: str):
         prompt = self.prompt_builder.schema_generation_prompt()
-        schema_from_llm = self.llm.generate(prompt.format(raw_schema_text=user_text)) # pyright: ignore[reportOptionalMemberAccess]
-        self.schema.parse_response(schema_from_llm)
+        return self.llm.generate(prompt.format(raw_schema_text=user_text)) # pyright: ignore[reportOptionalMemberAccess]

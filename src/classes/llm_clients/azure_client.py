@@ -1,16 +1,17 @@
+from classes.loaders.azure_loader import AzureLoader
 from openai import AzureOpenAI
-from src.config import load_azure_config
-from .base import BaseLLM
+from .base_llm import BaseLLM
 
 
 class AzureLLM(BaseLLM):
     def __init__(self, model: str):
-        cfg = load_azure_config()
+        self.loader = AzureLoader()
+        cfg = self.loader.config
         
         self.client = AzureOpenAI(
-            api_key=cfg["api_key"],
-            azure_endpoint=cfg["endpoint"], # pyright: ignore[reportArgumentType]
-            api_version=cfg["api_version"],
+            api_key=cfg["AZURE_API_KEY"],
+            azure_endpoint=cfg["AZURE_ENDPOINT"], # pyright: ignore[reportArgumentType]
+            api_version=cfg["AZURE_API_VERSION"],
         )
         self.model = model
 

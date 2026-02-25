@@ -1,7 +1,14 @@
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import json, re, hashlib, time
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
+from src.config import SCHEMA_DIR
+from src.logging_utils import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class Schema:
@@ -13,9 +20,8 @@ class Schema:
     ):
         self.database_name = database_name
         self.source = schema_source
-        self.save_path = Path("data/schema")
 
-        self.file_path = self.save_path / f"{self.database_name}_schema.json"
+        self.file_path = SCHEMA_DIR / f"{self.database_name}_schema.json"
 
         self.tables: Optional[Dict] = None
         self.semantic_notes: list[str] = []
@@ -33,6 +39,14 @@ class Schema:
     # =====================================================
 
     def parse_response(self, text: Any):
+        logger.info("📝 Starting parsing LLM response...")
+        
+        if isinstance(text, Dict):
+            self.tables = text
+            self.json_ready = True
+            self._save_schema()
+            return
+
         attempts = [
             self._attempt_direct_json,
             self._attempt_curly_braces,
@@ -41,13 +55,17 @@ class Schema:
         ]
 
         for attempt in attempts:
+            logger.info("📝 Attempting to parse LLM response with attempts: %s", attempt)
             parsed = attempt(text)
             if parsed:
+                logger.info("✅ LLM response parsed successfully")
                 if self._validate_structure(parsed):
                     self.tables = parsed
                     self.json_ready = True
                     self._save_schema()
                     return
+            else:
+                logger.info("❌ LLM response parsing failed")
 
         raise ValueError("Failed to extract valid schema JSON from LLM response.")
 
@@ -171,7 +189,7 @@ class Schema:
         final_schema = {
             "database_name": self.database_name,
             "source": self.source,
-            "tables": self.tables.get("tables", []),
+            "tables": self.tables.get("tables"),
             "semantic_notes": self.semantic_notes,
             "timestamp": time.time(),
         }
@@ -184,7 +202,6 @@ class Schema:
 
         print("\nSchema successfully saved:")
         print(json.dumps(final_schema, indent=2))
-        print(f"\nSchema ID: {self.schema_id}")
 
     # =====================================================
     # HASH

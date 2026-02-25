@@ -1,16 +1,21 @@
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dotenv import dotenv_values
 from typing import Any, Type
-from loaders.exceptions import (
+from src.logging_utils import setup_logger
+from src.config import ENV_DIR
+from classes.loaders.exceptions import (
     MissingVariableError,
     UninitializedVariableError,
     InvalidTypeError,
 )
-import os
 
+logger = setup_logger(__name__)
 
-class Loader(ABC):
+class BaseLoader(ABC):
     """
     Abstract configuration loader.
     """
@@ -20,7 +25,7 @@ class Loader(ABC):
     env_path: Path
 
     def __init__(self, env_name: str, values: dict[str, Type]):
-        self.env_path = Path(os.getcwd()) / "src" / "config" / env_name
+        self.env_path = ENV_DIR /  env_name
         self.values = values
         self.config = {}
 
@@ -36,6 +41,9 @@ class Loader(ABC):
             self._prompt_and_save()
 
         raw_config = dotenv_values(self.env_path)
+        
+        logger.info(f"📂 Loaded configuration from {self.env_path}"
+                    f" with values: {raw_config}")
         self.config = dict(raw_config)
 
     def _prompt_and_save(self):

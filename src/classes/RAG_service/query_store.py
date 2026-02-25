@@ -1,5 +1,6 @@
-import time
-import math
+import time, math, os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from typing import List
 from langchain_core.documents import Document
 from classes.RAG_service.base_vector_store import VectorStore
@@ -166,7 +167,7 @@ class QueryStore(VectorStore):
             return False
 
         for metadata in data["metadatas"]:
-            if metadata.get("sql_query") == query.current_query:
+            if metadata.get("sql_query") == query.sql_code:
                 logger.info("✅ Query already exists in store.")
                 return True
 
@@ -210,5 +211,38 @@ class QueryStore(VectorStore):
     # =====================================================
 
     def _build_query_id(self, query: QuerySession) -> str:
-        base = f"{query.user_request}|{query.current_query}|{query.timestamp}"
+        base = f"{query.user_request}|{query.sql_code}|{query.timestamp}"
         return str(abs(hash(base)))
+    
+    def print_collection(self):
+        """
+        Prints the 15 most recent documents stored in the query feedback vector store.
+        Useful for debugging and inspection.
+        """
+        print("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n")
+
+        # Recupera TUTTI i documenti
+        data = self._store.get()
+
+        if not data or not data.get("documents"):
+            print("\n⚠️ Query vector store is empty.")
+            return
+
+        # Crea lista di tuple (doc, metadata) e ordina per timestamp decrescente
+        docs_with_metadata = list(zip(data["documents"], data["metadatas"]))
+        docs_with_metadata.sort(
+            key=lambda x: x[1].get("timestamp", 0),
+            reverse=True
+        )
+        
+        # Prendi solo i 15 più recenti
+        docs_with_metadata = docs_with_metadata[:15]
+
+        for idx, (doc, metadata) in enumerate(docs_with_metadata, start=1):
+            print(f"--- Entry #{idx} ------------------------------")
+            print(doc)
+            print("\nMetadata:")
+            for k, v in metadata.items():
+                if k != "sql_query":
+                    print(f"  {k}: {v}")
+            print("---------------------------------------------\n")

@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
+from classes.loaders.base_loader import BaseLoader
 
 class BaseLLM(ABC):
     response: str
+    loader: BaseLoader
     
     @abstractmethod
     def generate(self, prompt: str, **kwargs) -> str:
