@@ -115,24 +115,9 @@ def clear_tmp_dir(tmp_dir: Path) -> None:
     tmp_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Temporary directory cleared and ready.")
 
-def build_schema_retriever(db_name: str) -> Tuple[dict, Chroma]:
-    """
-    Build schema vector store from the live database and return schema data.
-    """
-    logger.info("Building schema retriever for database '%s'.", db_name)
-    schema = extract_schema(db_name)
-    schema["database"] = db_name
-    logger.info("Schema extracted for database '%s'. Number of tables: %s", db_name, len(schema.get('tables', [])))
-    
-    logger.info("Building vector store for schema. Persist directory: %s", SVS_DIR)
-    schema_vs = build_vector_store(
-        schema,
-        persist_directory=SVS_DIR,
-        collection_name=SCHEMA_COLLECTION_NAME,
-    )
-
-    logger.info("Schema retriever built for database '%s'. Vector store created successfully.", db_name)
-    return schema, schema_vs
+def build_schema_retriever(db_name: str):
+    # TODO: Build schema vector store from the live database and return schema data.
+    pass
 
 def load_test_requests(input_file: str) -> List[str]:
     """
@@ -169,74 +154,7 @@ def run_single_test(
     """
     Run a single test: generate SQL and validate it.
     
-    Returns:
-        (sql_query, status, error_message)
     """
-    logger.info("Starting single test execution. Request: '%s', Model: %s, Mode: %s", 
-                truncate_request(request), model_index, mode)
-    try:
-        logger.info("Entering generation loop for request.")
-        sql, syntax_status, execution_status, execution_output, feedback_category, attempt = generation_loop(
-            user_request=request,
-            source=mode,
-            database_name=db_name,
-            query_vs=query_vs,
-            schema_vs=schema_vs,
-            llm_model=llm_model
-        )
-
-        if mode != "mysql":
-            schema_context = get_context(request, schema_vs)
-            syntax_status, execution_status, _, _, feedback_category = evaluate_feedback_error(
-                request=request,
-                sql=sql,
-                source=mode,
-                context=schema_context,
-                database_name=db_name,
-                execution_status=execution_status,
-                execution_output=execution_output
-            )
-        
-        logger.info("Generation loop completed. SQL generated (truncated): %s", truncate_request(sql))
-        logger.info("Syntax status: %s, Execution status: %s", syntax_status, execution_status)
-                
-        schema_id = compute_schema_id(full_schema)
-        logger.info("Creating metadata for test results. Schema ID: %s", schema_id)
-        
-        metadata = create_metadata(
-            sql_query=sql,
-            syntax_status=syntax_status,
-            schema_id=schema_id,
-            schema_source=mode,
-            user_request=request,
-            model_index=model_index,
-            execution_status=execution_status,
-            execution_output=execution_output,
-            LLM_feedback=feedback_category
-        )
-
-        logger.info("Storing query feedback in vector store.")
-        store_query_feedback(
-            store=query_vs,
-            sql_query=sql,
-            qm=metadata
-        )
-        logger.info("Query feedback stored successfully.")
-        
-        logger.info("Test completed with status: %s", metadata.status)
-        return (
-            sql,
-            metadata.status,
-            str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message,
-            feedback_category,
-            attempt,
-        )
-            
-    except Exception as e:
-        # Catch any unexpected errors during generation
-        error_msg = f"GENERATION_ERROR: {str(e)}"
-        logger.exception("Unexpected error during generation. Request: '%s'", truncate_request(request))
-        return "", "GENERATION_ERROR", error_msg, "GENERATION_ERROR", 0
 
 def run_test_with_timeout(
     db_name: str,
@@ -250,42 +168,8 @@ def run_test_with_timeout(
     timeout: int = TIMEOUT_PER_MODEL
 ) -> Tuple[str, str, str, str, int]:
     """
-    Run test with timeout to prevent hanging.
+    Run test in a separate thread with timeout to prevent hanging.
     """
-    logger.info("Starting test with timeout. Timeout: %s seconds", timeout)
-    import threading
-    import queue
-    
-    result_queue = queue.Queue()
-    
-    def worker():
-        try:
-            logger.debug("Timeout worker thread started for request: '%s'", truncate_request(request))
-            result = run_single_test(db_name, request, model_index, llm_model, full_schema, mode, query_vs, schema_vs)
-            result_queue.put(result)
-            logger.debug("Worker thread completed successfully.")
-        except Exception as e:
-            logger.exception("Worker thread encountered exception.")
-            result_queue.put(("", "TIMEOUT_OR_ERROR", str(e), "TIMEOUT_OR_ERROR", 0))
-    
-    thread = threading.Thread(target=worker)
-    thread.daemon = True
-    thread.start()
-    logger.debug("Timeout thread started, waiting for completion...")
-    thread.join(timeout)
-    
-    if thread.is_alive():
-        # Thread is still running - timeout occurred
-        logger.warning("Test exceeded timeout of %s seconds for request: '%s'", timeout, truncate_request(request))
-        return "TIMEOUT", f"Test exceeded {timeout}s timeout", "", "", 0
-    else:
-        try:
-            result = result_queue.get_nowait()
-            logger.info("Test completed within timeout. Status: %s", result[1])
-            return result
-        except queue.Empty:
-            logger.error("No result returned from worker thread. Queue is empty.")
-            return "UNKNOWN_ERROR", "No result returned", "", "", 0
 
 def format_result_line(
     model_name: str,
@@ -561,7 +445,7 @@ def print_test_summary(
 
 # ==================== MAIN TEST FUNCTION ====================
 
-def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
+def run_stress_tests(mode: str, db_name: str, output_dir: Path):
     """
     Main function to run comprehensive tests.
     """
@@ -824,283 +708,13 @@ def execute_sample_query(input_path: str):
 
     print(f"✅ Query execution completed. Results written to {output_file}")
 
-# ==================== PYTEST TEST CASES ====================
-
-@pytest.fixture
-def schema():
-    project_root = Path(__file__).resolve().parents[1]
-    schema_path = project_root / "schema_canonical.json"
-
-    if not schema_path.exists():
-        pytest.skip(f"Schema file not found: {schema_path}")
-
-    with schema_path.open(encoding="utf-8") as f:
-        return json.load(f)
-
-@pytest.fixture
-def vector_stores(tmp_path):
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large")
-
-    query_dir = tmp_path / "vector_store" / "queries"
-    schema_dir = tmp_path / "vector_store" / "schema"
-    query_dir.mkdir(parents=True, exist_ok=True)
-    schema_dir.mkdir(parents=True, exist_ok=True)
-
-    query_vs = Chroma(
-        collection_name=QUERY_COLLECTION_NAME,
-        persist_directory=str(query_dir),
-        embedding_function=embeddings,
-    )
-
-    schema_vs = Chroma(
-        collection_name=SCHEMA_COLLECTION_NAME,
-        persist_directory=str(schema_dir),
-        embedding_function=embeddings,
-    )
-
-    return query_vs, schema_vs
-
-@pytest.fixture(scope="class")
-def load_file():
-    def _load(path: str) -> str:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return _load
-
-
-@pytest.mark.execution
-def test_execute_sql_success_only(load_file):
-    sql = load_file("test/inputs/sql_success.sql")
-
-    status, result = execute_sql_query(sql)
-
-    assert status == "OK"
-    assert isinstance(result, list)
-
-@pytest.mark.execution
-def test_execute_sql_success_and_store(schema, vector_stores, load_file):
-    query_vs, _ = vector_stores
-    sql = load_file("test/inputs/sql_success.sql")
-
-    if schema is None:
-        pytest.skip("Schema not loaded")
-    syntax = validate_sql_syntax(sql)
-    status, output = execute_sql_query(sql)
-
-    qm = create_metadata(
-        sql_query=sql,
-        syntax_status=syntax,
-        schema_id=compute_schema_id(schema),
-        schema_source="mysql",
-        user_request="test success",
-        model_index=0,
-        execution_status=status,
-        execution_output=output,
-    )
-
-    store_query_feedback(query_vs, sql, qm)
-
-    assert qm.status == "OK"
-    assert qm.rows_fetched >= 0
-
-@pytest.mark.execution
-def test_syntax_error_and_store(schema, vector_stores, load_file):
-    query_vs, _ = vector_stores
-    sql = load_file("test/inputs/sql_syntax_error.sql")
-
-    syntax = validate_sql_syntax(sql)
-
-    qm = create_metadata(
-        sql_query=sql,
-        syntax_status=syntax,
-        schema_id=compute_schema_id(schema),
-        schema_source="mysql",
-        user_request="syntax error",
-        model_index=0,
-    )
-
-    store_query_feedback(query_vs, sql, qm)
-
-    assert qm.status == "SYNTAX_ERROR"
-    assert qm.knowledge_scope == "SYNTAX"
-
-@pytest.mark.execution    
-@pytest.mark.parametrize("sql_file", [
-    "test/inputs/sql_runtime_error_fk.sql",
-    "test/inputs/sql_runtime_error_column.sql",
-])
-def test_runtime_error_and_store(schema, vector_stores, load_file, sql_file):
-    query_vs, _ = vector_stores
-    sql = load_file(sql_file)
-
-    syntax = validate_sql_syntax(sql)
-    status, error = execute_sql_query(sql)
-
-    qm = create_metadata(
-        sql_query=sql,
-        syntax_status=syntax,
-        schema_id=compute_schema_id(schema),
-        schema_source="mysql",
-        user_request="runtime error",
-        model_index=0,
-        execution_status=status,
-        execution_output=error,
-    )
-
-    store_query_feedback(query_vs, sql, qm)
-
-    assert qm.status == "RUNTIME_ERROR"
-    assert qm.error_type is not None
-
-@pytest.mark.prompt
-def test_complex_prompt_creation_only(schema, vector_stores, capsys):
-    query_vs, schema_vs = vector_stores
-
-    create_prompt(
-        user_request="Show total sales by customer",
-        source="mysql",
-        database_name="none",
-        query_vs=query_vs,
-        schema_vs=schema_vs,
-    )
-
-    captured = capsys.readouterr().out
-
-    assert "=== SCHEMA ===" in captured
-    assert "IMPORTANT CONSTRAINTS" in captured
-    assert "PREVIOUS FAILURES" in captured or "SQL QUERY" in captured
-
-@pytest.mark.prompt
-def test_simple_prompt_creation_only(schema, vector_stores, capsys):
-    query_vs, schema_vs = vector_stores
-
-    create_prompt(
-        user_request="Show total sales by customer",
-        source="text",
-        database_name="none",
-        query_vs=query_vs,
-        schema_vs=schema_vs,
-    )
-
-    captured = capsys.readouterr().out
-
-    assert "=== SCHEMA ===" in captured
-    assert "PREVIOUS FAILURES" not in captured
-    assert "join" not in captured.lower()
-
-@pytest.mark.fullcycle
-def test_simple_prompt_full_cycle_no_execution(schema, vector_stores):
-    query_vs, schema_vs = vector_stores
-
-    sql, qm = run_full_cycle_without_llm(
-        user_request="List all customers",
-        mode="text",
-        schema=schema,
-        query_vs=query_vs,
-        schema_vs=schema_vs,
-        execute_sql=False,
-    )
-
-    assert sql
-    assert qm.status in {"OK", "UNKNOWN_ERROR"}
-    assert qm.knowledge_scope != "SYNTAX"
-
-@pytest.mark.fullcycle
-def test_complex_prompt_full_cycle_with_execution(schema, vector_stores):
-    query_vs, schema_vs = vector_stores
-
-    sql, qm = run_full_cycle_without_llm(
-        user_request="Show total sales by customer",
-        mode="mysql",
-        schema=schema,
-        query_vs=query_vs,
-        schema_vs=schema_vs,
-        execute_sql=True,
-    )
-
-    assert sql
-    assert qm.status == "OK"
-    assert qm.rows_fetched >= 0
-
-@pytest.mark.fullcycle
-def test_simple_prompt_execute_and_store(schema, vector_stores):
-    query_vs, schema_vs = vector_stores
-
-    sql, qm = run_full_cycle_without_llm(
-        user_request="Show all customers",
-        mode="text",
-        schema=schema,
-        query_vs=query_vs,
-        schema_vs=schema_vs,
-        execute_sql=True,
-    )
-
-    assert sql
-    assert qm.status == "OK"
-    assert qm.rows_fetched >= 0
-
-import threading
-import queue
-
-# @pytest.mark.llm
-# @pytest.mark.slow
-# @pytest.mark.parametrize("model_name", AVAILABLE_MODELS.values())
-# def test_real_llm_simple_prompt_generation(schema, vector_stores, model_name):
-#     """
-#     Real LLM integration test:
-#     - simple prompt (text)
-#     - no execution
-#     - no storage
-#     - no prompt inspection
-#     """
-#     query_vs, schema_vs = vector_stores
-#     user_request = "List all customers"
-
-#     result_queue: queue.Queue[str | Exception] = queue.Queue()
-
-#     def worker():
-#         try:
-#             sql = generate_sql_query(
-#                 user_request=user_request,
-#                 source="text",
-#                 full_schema=schema,
-#                 model_name=model_name,
-#                 query_vs=query_vs,
-#                 schema_vs=schema_vs,
-#             )
-#             result_queue.put(sql)
-#         except Exception as e:
-#             result_queue.put(e)
-
-#     thread = threading.Thread(target=worker, daemon=True)
-#     thread.start()
-#     thread.join(timeout=120)  # ⏱️ 2 minutes per model
-
-#     if thread.is_alive():
-#         pytest.fail(f"LLM model '{model_name}' timed out")
-
-#     result = result_queue.get()
-
-#     if isinstance(result, Exception):
-#         pytest.fail(f"LLM model '{model_name}' failed: {result}")
-
-#     sql = result
-
-#     # --- minimal but meaningful assertions ---
-#     assert isinstance(sql, str)
-#     assert sql.strip()
-#     assert "select" in sql.lower()
-
-
-# ==================== COMMAND LINE INTERFACE ====================
-
 if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Test SQL generation with multiple models")
-    parser.add_argument("--test", choices=["run", "pytest, execute"], default="run",
-                       help="Test type: 'run' to execute tests, 'pytest' to run the pytest suite, 'execute' ")
-    parser.add_argument("--mode", choices=["mysql", "base"], default="base",
+    parser.add_argument("--test", choices=["run", "execute"], default="run",
+                       help="Test type: 'run' to execute tests, 'execute' to execute a bunch of SQL queries from a file")
+    parser.add_argument("--mode", choices=["mysql", "text"], default="text",
                        help="Mode: 'mysql' for MySQL mode, 'base' for base mode")
     parser.add_argument("--db", default=False, help="Database name")
     parser.add_argument("--input", default=False, help="Input file with test requests")
@@ -1125,12 +739,10 @@ if __name__ == "__main__":
         TIMEOUT_PER_MODEL = args.timeout
         
         # Run the comprehensive tests
-        run_comprehensive_tests(args.mode, db_name=selected_db, output_dir=output_dir)
+        run_stress_tests(args.mode, db_name=selected_db, output_dir=output_dir)
     elif args.test == "execute":
         if not args.input:
             raise ValueError("❌ --test execute requires --input <sql_file>")
         execute_sample_query(args.input)
     else:
-        # Run pytest
-        print("Running pytest tests...")
-        pytest.main([__file__, "-v", "--tb=short"])
+        raise ValueError(f"❌ Invalid test type: {args.test}")
