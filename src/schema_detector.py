@@ -52,7 +52,7 @@ def main():
         logger.error("Invalid method choice. Exiting.")
         return
 
-    database_name = input("👉 Enter database name: ").strip()
+    database_name = input("\n👉 Enter database name: ").strip()
     # ------------------------------------------------------------------
     # PRINT EXISTING VECTOR STORE
     # ------------------------------------------------------------------
@@ -129,12 +129,12 @@ def main():
             choice = input("\n👉 Your choice: ").strip()
 
             if choice == "0":
-                print("👋 Exiting. Goodbye!")
+                print("\n👋 Exiting. Goodbye!")
                 break
             elif choice == "3":
                 orchestrator.schema_store.print_collection()
             elif choice != "1":
-                print("Invalid choice. Exiting.")
+                print("\nInvalid choice. Exiting.")
                 break
 
 if __name__ == "__main__":
