@@ -82,7 +82,7 @@ Rules:
         """
         Create prompt for SQL generation.
         """
-        logger.info("Creating prompt for request: '%s', source: %s", user_request)
+        logger.info("Creating prompt for request: '%s'", user_request)
 
         logger.debug("Schema context length: %s characters", len(schema_context))
 

@@ -123,3 +123,6 @@ def main():
 
         else:
             print("❌ Invalid option. Try again.")
+            
+if __name__ == "__main__":
+    main()

@@ -175,7 +175,7 @@ class QuerySession:
                 self.status = "SUCCESS"
                 self.error_type = None
             else:
-                self.status = "SEMANTIC_ERROR"
+                self.status = "INCORRECT"
                 self.error_type = self.llm_feedback.error_category
 
             self._detect_knowledge_scope()

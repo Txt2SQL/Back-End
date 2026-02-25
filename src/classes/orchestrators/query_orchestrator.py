@@ -1,7 +1,8 @@
-import json
+import json, os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from pathlib import Path
 from typing import Optional, List, Dict
-
 from classes.orchestrators.base_orchestrator import BaseOrchestrator
 from classes.llm_clients import BaseLLM, OpenWebUILLM, AzureLLM
 from classes.domain_states.schema import Schema
@@ -9,7 +10,7 @@ from classes.domain_states import QuerySession
 from classes.RAG_service.schema_store import SchemaStore
 from classes.RAG_service.query_store import QueryStore
 from classes.llm_clients.database_client import DatabaseClient
-from src.config import QUERY_GENERATION_MODELS
+from src.config import QUERY_GENERATION_MODELS, SCHEMA_DIR
 from src.logging_utils import setup_logger, truncate_request
 
 logger = setup_logger(__name__)
@@ -64,25 +65,32 @@ class QueryOrchestrator(BaseOrchestrator):
         
     def _load_schema(self) -> None:
         """Load the schema for this database from the json file"""
-        schema_path = Path("data/schema") / f"{self.database_name}_schema.json"
+        schema_path = SCHEMA_DIR / f"{self.database_name}_schema.json"
 
         if not schema_path.exists():
             logger.warning("Schema file not found for database '%s': %s", self.database_name, schema_path)
             self.schema = None
             return
 
+        logger.info("Loading schema for database '%s': %s", self.database_name, schema_path)
         with schema_path.open("r", encoding="utf-8") as schema_file:
             schema_data = json.load(schema_file)
 
+        if schema_data is None:
+            logger.warning("Schema data is empty for database '%s'", self.database_name)
+            self.schema = None
+            return
+        
         schema = Schema.__new__(Schema)
         schema.database_name = schema_data.get("database_name", self.database_name)
         schema.source = schema_data.get("source", "text")
-        schema.save_path = schema_path.parent
         schema.file_path = schema_path
         schema.tables = schema_data
         schema.json_ready = True
         schema.schema_id = schema_data.get("schema_id")
 
+        logger.info("Loaded schema for database '%s'", self.database_name)
+        #schema.print_schema_preview()
         self.schema = schema
     
     def generation(
@@ -103,13 +111,15 @@ class QueryOrchestrator(BaseOrchestrator):
         
         failed_queries = None
         if self.schema.source == "mysql":
+            logger.info("Getting similar failed queries for learning...")
             # Get similar failed queries for learning
             failed_queries = self.query_store.retrieve_failed_queries(user_request)
             
+            logger.info("Getting join hints for learning...")
             self.join_hints = self.database_client.get_foreign_keys(table_names)
         
-        while self.current_query.llm_feedback.attempt <= self.max_attempts or self.current_query.status != "SUCCESS":
-
+        while self.current_query.llm_feedback.attempt <= self.max_attempts:
+            logger.info(f"Attempt #{self.current_query.llm_feedback.attempt} for request: {truncate_request(user_request)}")
             # Build generation prompt
             error_feedback = self.current_query.format_error_feedback()
             prompt = self.prompt_builder.query_generation_prompt(
@@ -123,19 +133,26 @@ class QueryOrchestrator(BaseOrchestrator):
                 # TODO: add choose of a random sample query
                 response = ""
             else:
+                logger.info("Sending prompt to LLM: %s", user_request)
                 # Generate SQL
                 response = self.llm.generate(prompt)
             
+            logger.info("Received response from LLM: %s", response)
             # Create query session
             self.current_query.clean_sql_from_llm(response)
             
-            self.current_query = self.database_client.execute_query(self.current_query)
+            if self.schema.source == "text": 
+                if self.current_query.valid_syntax: break
+            else:
+                self.current_query = self.database_client.execute_query(self.current_query)
             
-            # Evaluate the query (validate syntax, execute, etc.)
-            self.current_query.evaluate()
+                # Evaluate the query (validate syntax, execute, etc.)
+                self.current_query.evaluate()
 
-            if self.current_query.status == "SUCCESS" and self.schema.source == "mysql": 
                 self._ask_feedback(self.current_query.llm_feedback.attempt)
+                
+                if self.current_query.llm_feedback.feedback_status == "CORRECT":
+                    break
             
             self.current_query.llm_feedback.attempt += 1    
         
