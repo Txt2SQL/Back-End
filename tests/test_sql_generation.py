@@ -255,7 +255,7 @@ def write_final_statistics(
     output_file.write_text(content, encoding="utf-8")
 
 
-def run_workflow(input_file: Path, selected_db: str | None) -> Path:
+def run_workflow(mode: str, selected_db: str) -> Path:
     create_temp_instances_dir()
 
     bootstrap_client = DatabaseClient()
@@ -323,16 +323,11 @@ def run_workflow(input_file: Path, selected_db: str | None) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run end-to-end QueryOrchestrator SQL generation workflow")
-    parser.add_argument(
-        "--input",
-        type=str,
-        default=str(PROJECT_ROOT / "data" / "sample_query.sql"),
-        help="Input file containing one request per line",
-    )
-    parser.add_argument("--db", type=str, default=None, help="Database name to use")
+    parser.add_argument("--mode", choices=["mysql", "text"], required=True, help="Schema mode")
+    parser.add_argument("--db", type=str, required=True, help="Database name to use")
 
     args = parser.parse_args()
-    output_root = run_workflow(Path(args.input), args.db)
+    output_root = run_workflow(args.mode, args.db)
     print(f"✅ Workflow completed. Output directory: {output_root}")
 
 
