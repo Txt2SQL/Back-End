@@ -29,6 +29,7 @@ from src.query_generator import (
     create_prompt,
     generation_loop,
     evaluate_feedback_error,
+    get_context,
     SCHEMA_COLLECTION_NAME,
     QUERY_COLLECTION_NAME,
 )
@@ -159,11 +160,12 @@ def run_single_test(
     db_name: str,
     request: str, 
     model_index: int, 
+    llm_model,
     full_schema: dict, 
     mode: str,
     query_vs: Chroma,
     schema_vs: Chroma
-) -> Tuple[str, str, str | None, str | None, int]:
+):
     """
     Run a single test: generate SQL and validate it.
     
@@ -173,14 +175,10 @@ def run_single_test(
     logger.info("Starting single test execution. Request: '%s', Model: %s, Mode: %s", 
                 truncate_request(request), model_index, mode)
     try:
-        llm_model = get_llm_model(model_index)
-        logger.info("LLM model initialized for model index %s.", model_index)
-        
         logger.info("Entering generation loop for request.")
-        sql, syntax_status, execution_status, execution_output, LLM_feedback, attempt = generation_loop(
+        sql, syntax_status, execution_status, execution_output, feedback_category, attempt = generation_loop(
             user_request=request,
             source=mode,
-            full_schema=full_schema,
             database_name=db_name,
             query_vs=query_vs,
             schema_vs=schema_vs,
@@ -188,10 +186,13 @@ def run_single_test(
         )
 
         if mode != "mysql":
-            syntax_status, execution_status, _, _, LLM_feedback= evaluate_feedback_error(
+            schema_context = get_context(request, schema_vs)
+            syntax_status, execution_status, _, _, feedback_category = evaluate_feedback_error(
                 request=request,
                 sql=sql,
                 source=mode,
+                context=schema_context,
+                database_name=db_name,
                 execution_status=execution_status,
                 execution_output=execution_output
             )
@@ -211,7 +212,7 @@ def run_single_test(
             model_index=model_index,
             execution_status=execution_status,
             execution_output=execution_output,
-            LLM_feedback=LLM_feedback
+            LLM_feedback=feedback_category
         )
 
         logger.info("Storing query feedback in vector store.")
@@ -227,7 +228,7 @@ def run_single_test(
             sql,
             metadata.status,
             str(metadata.rows_fetched) if metadata.status == "OK" else metadata.error_message,
-            LLM_feedback,
+            feedback_category,
             attempt,
         )
             
@@ -241,12 +242,13 @@ def run_test_with_timeout(
     db_name: str,
     request: str, 
     model_index: int, 
+    llm_model,
     full_schema: dict,
     mode: str,
     query_vs: Chroma,
     schema_vs: Chroma,
     timeout: int = TIMEOUT_PER_MODEL
-) -> Tuple[str, str, str, str | None, int]:
+) -> Tuple[str, str, str, str, int]:
     """
     Run test with timeout to prevent hanging.
     """
@@ -259,7 +261,7 @@ def run_test_with_timeout(
     def worker():
         try:
             logger.debug("Timeout worker thread started for request: '%s'", truncate_request(request))
-            result = run_single_test(db_name, request, model_index, full_schema, mode, query_vs, schema_vs)
+            result = run_single_test(db_name, request, model_index, llm_model, full_schema, mode, query_vs, schema_vs)
             result_queue.put(result)
             logger.debug("Worker thread completed successfully.")
         except Exception as e:
@@ -275,7 +277,7 @@ def run_test_with_timeout(
     if thread.is_alive():
         # Thread is still running - timeout occurred
         logger.warning("Test exceeded timeout of %s seconds for request: '%s'", timeout, truncate_request(request))
-        return "", "TIMEOUT", f"Test exceeded {timeout}s timeout", "TIMEOUT", 0
+        return "TIMEOUT", f"Test exceeded {timeout}s timeout", "", "", 0
     else:
         try:
             result = result_queue.get_nowait()
@@ -283,17 +285,16 @@ def run_test_with_timeout(
             return result
         except queue.Empty:
             logger.error("No result returned from worker thread. Queue is empty.")
-            return "", "UNKNOWN_ERROR", "No result returned", "UNKNOWN_ERROR", 0
+            return "UNKNOWN_ERROR", "No result returned", "", "", 0
 
 def format_result_line(
-    request: str,
     model_name: str,
     sql_query: str,
     status: str,
     outcome: str,
-    llm_feedback: str | None,
+    feedback_category: str,
     attempts: int,
-    request_time: float,
+    model_time: float,
 ) -> str:
     """
     Format a single result line according to the template.
@@ -312,61 +313,50 @@ def format_result_line(
     else:
         status_detail = f"{status}, {outcome} rows fetched"
 
-    feedback_value = llm_feedback if llm_feedback else "N/A"
     return (
-        f"Request: {truncate_request(request)}\n\n"
         f"🤖 Model: {model_name}\n\n"
         "🧮 Query:\n\n\n"
-        f"{clean_sql}\n\n"
+        f"{clean_sql}\n\n\n"
         f"🏁 Status and outcome: {status_detail}\n\n"
-        f"💡 LLM feedback: {feedback_value}\n\n"
+        f"💡 LLM feedback: {feedback_category}\n\n"
         f"Attempts: {attempts}\n\n"
-        f"⌚Request time: {request_time:.1f}s\n\n\n\n"
+        f"⌚Request time: {model_time:.1f}s\n\n\n\n"
     )
 
 def write_test_results(
     results: List[
-        Tuple[str, Dict[str, Tuple[str, str, str | None, str | None, int, float]], float]
+        Tuple[str, Dict[str, Tuple[str, str, str, str, int, float]], float]
     ],
     output_file: str,
 ):
     """
-    Write all test results to output file following the template.
+    Write all test results grouped by request.
     """
-    n = 1
-    with open(output_file, 'w', encoding='utf-8') as f:
-        for request, model_results, request_time in results:
-            # Write results for each model
-            for index in range(5, len(AVAILABLE_MODELS) - 1):
-                model_name = AVAILABLE_MODELS[index]
-                if model_name in model_results:
-                    sql, status, outcome, llm_feedback, attempts, model_time = model_results[model_name]
-                    line = format_result_line(
-                        request,
-                        model_name,
-                        sql,
-                        status,
-                        outcome or "",
-                        llm_feedback,
-                        attempts,
-                        request_time,
-                    )
-                    f.write(f"{n}. {line}")
-                else:
-                    f.write(
-                        f"{n}. "
-                        f"Request: {truncate_request(request)}\n"
-                        f"🤖 Model: {model_name}\n"
-                        "🧮 Query:\n"
-                        "Status and outcome: MODEL_NOT_AVAILABLE/MODEL_NOT_AVAILABLE\n"
-                        "LLM feedback: N/A\n"
-                        "Attempts: 0\n"
-                        f"Request time: {request_time:.1f}s\n\n"
-                    )
-                n += 1
-    
+    with open(output_file, "w", encoding="utf-8") as f:
+        for req_index, (request, model_results, _) in enumerate(results, 1):
+            # === Request header ===
+            f.write(f"{req_index}. Request: {truncate_request(request)}\n\n")
+
+            # === Models ===
+            for model_name, (sql, status, outcome, feedback_category, attempts, model_time) in model_results.items():
+                block = format_result_line(
+                    model_name=model_name,
+                    sql_query=sql,
+                    status=status,
+                    outcome=outcome,
+                    feedback_category=feedback_category,
+                    attempts=attempts,
+                    model_time=model_time,
+                )
+
+                f.write(f"-" * 200 + "\n\n")
+                f.write(block)
+
+            f.write("\n" + "=" * 200 + "\n\n")
+
     print(f"✅ Results written to {output_file}")
     logger.info("Results written to %s.", output_file)
+
 
 def sanitize_request_filename(request: str, max_length: int = 15) -> str:
     """
@@ -380,10 +370,9 @@ def sanitize_request_filename(request: str, max_length: int = 15) -> str:
 
 def write_request_results(
     request: str,
-    model_results: Dict[str, Tuple[str, str, str | None, str | None, int, float]],
+    model_results: Dict[str, Tuple[str, str, str, str, int, float]],
     output_dir: Path,
     index: int,
-    request_time: float,
 ) -> str:
     """
     Write a single request's results to its own file.
@@ -391,9 +380,33 @@ def write_request_results(
     output_dir.mkdir(parents=True, exist_ok=True)
     request_slug = sanitize_request_filename(request)
     output_file = output_dir / f"{index:03d}_{request_slug}.txt"
-    write_test_results([(request, model_results, request_time)], str(output_file))
+    write_test_results([(request, model_results, 0.0)], str(output_file))
     logger.info("Request results written to %s.", output_file)
     return str(output_file)
+
+def print_table(title: str, headers: list[str], rows: list[list[str]]) -> list[str]:
+    """
+    Build an ASCII table and return it as a list of lines.
+    """
+    lines = []
+    lines.append(f"\n{title}")
+    lines.append("-" * 60)
+
+    col_widths = [
+        max(len(str(cell)) for cell in [header] + [row[i] for row in rows])
+        for i, header in enumerate(headers)
+    ]
+
+    def format_row(row):
+        return " | ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
+
+    lines.append(format_row(headers))
+    lines.append("-+-".join("-" * w for w in col_widths))
+
+    for row in rows:
+        lines.append(format_row(row))
+
+    return lines
 
 def print_test_summary(
     results: List[
@@ -401,11 +414,10 @@ def print_test_summary(
     ],
     output_file: str,
 ):
-    """Print a summary of test results."""
     summary_lines = []
-    summary_lines.append("\n" + LOGINFO_SEPARATOR)
+    summary_lines.append("/°" * 200 + "/\n\n")
     summary_lines.append("📊 TEST SUMMARY")
-    summary_lines.append(LOGINFO_SEPARATOR)
+    summary_lines.append("\n\n" + "/°" * 200 + "/")
     
     total_tests = 0
     passed_tests = 0
@@ -414,168 +426,135 @@ def print_test_summary(
     timeouts = 0
     other_errors = 0
     total_attempts = 0
-    llm_feedback_counts = {}
-    total_correct_feedback = 0
     total_time = 0.0
+
     model_stats: Dict[str, Dict[str, float]] = {}
-    
+
     for request, model_results, request_time in results:
         total_time += request_time
-        for model_name, (sql, status, error, llm_feedback, attempts, model_time) in model_results.items():
-            model_summary = model_stats.setdefault(
+        for model_name, (_, status, _, _, attempts, model_time) in model_results.items():
+            stats = model_stats.setdefault(
                 model_name,
-                {
-                    "attempts_total": 0.0,
-                    "attempts_count": 0.0,
-                    "time_total": 0.0,
-                    "time_count": 0.0,
-                    "ok": 0.0,
-                    "runtime": 0.0,
-                    "syntax": 0.0,
-                },
+                dict(
+                    ok=0,
+                    runtime=0,
+                    syntax=0,
+                    attempts_total=0,
+                    attempts_count=0,
+                    time_total=0,
+                    time_count=0,
+                ),
             )
+
             total_tests += 1
             total_attempts += attempts
-            model_summary["attempts_total"] += attempts
-            model_summary["attempts_count"] += 1
-            model_summary["time_total"] += model_time
-            model_summary["time_count"] += 1
+            stats["attempts_total"] += attempts
+            stats["attempts_count"] += 1
+            stats["time_total"] += model_time
+            stats["time_count"] += 1
+
             if status == "OK":
                 passed_tests += 1
-                model_summary["ok"] += 1
+                stats["ok"] += 1
             elif status == "SYNTAX_ERROR":
                 syntax_errors += 1
-                model_summary["syntax"] += 1
+                stats["syntax"] += 1
             elif status == "RUNTIME_ERROR":
                 runtime_errors += 1
-                model_summary["runtime"] += 1
+                stats["runtime"] += 1
             elif status == "TIMEOUT":
                 timeouts += 1
             else:
                 other_errors += 1
 
-            feedback_value = llm_feedback if llm_feedback else "N/A"
-            llm_feedback_counts[feedback_value] = llm_feedback_counts.get(feedback_value, 0) + 1
-            if feedback_value == "CORRECT_QUERY":
-                total_correct_feedback += 1
-    
-    summary_lines.append(f"Total requests tested: {len(results)}")
-    summary_lines.append(f"Total model executions: {total_tests}")
-    summary_lines.append(f"✅ Successful queries: {passed_tests}")
-    summary_lines.append(f"⚠️  Syntax errors: {syntax_errors}")
-    summary_lines.append(f"❌ Runtime errors: {runtime_errors}")
-    summary_lines.append(f"⏰ Timeouts: {timeouts}")
-    summary_lines.append(f"🔧 Other errors: {other_errors}")
-    summary_lines.append(f"🧠 Total LLM feedback = CORRECT_QUERY: {total_correct_feedback}")
-    if llm_feedback_counts:
-        most_feedback = max(llm_feedback_counts.items(), key=lambda item: item[1])[0]
-        summary_lines.append(f"🧠 Most LLM feedback: {most_feedback}")
+    # === GLOBAL STATS ===
+    summary_lines.extend([
+        "",
+        f"Total requests tested : {len(results)}",
+        f"Total model executions: {total_tests}",
+        f"✅ Successful queries : {passed_tests}",
+        f"⚠️  Syntax errors     : {syntax_errors}",
+        f"❌ Runtime errors    : {runtime_errors}",
+        f"⏰ Timeouts          : {timeouts}",
+        f"🔧 Other errors      : {other_errors}",
+        f"🔁 Total attempts    : {total_attempts}",
+        f"⏱️  Total time        : {total_time:.1f}s",
+        "",
+    ])
 
-    if len(results) > 0:
-        summary_lines.append(
-            f"🔁 Avg attempts per request+model: {total_attempts / total_tests:.2f}"
-            if total_tests > 0
-            else "🔁 Avg attempts per request+model: 0.00"
+    # === BUILD RANKINGS ===
+    attempts_avg = sorted(
+        model_stats.items(),
+        key=lambda x: x[1]["attempts_total"] / x[1]["attempts_count"],
+    )
+
+    time_avg = sorted(
+        model_stats.items(),
+        key=lambda x: x[1]["time_total"] / x[1]["time_count"],
+    )
+
+    status_rank = sorted(
+        model_stats.items(),
+        key=lambda x: (-x[1]["ok"], x[1]["runtime"], x[1]["syntax"]),
+    )
+
+    # === TABLES ===
+    summary_lines.extend(
+        print_table(
+            "🏁 Attempts ranking (avg)",
+            ["Rank", "Model", "Avg Attempts", "Total Attempts"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    f"{stats['attempts_total'] / stats['attempts_count']:.2f}",
+                    f"{stats['attempts_total']:.0f}",
+                ]
+                for i, (model, stats) in enumerate(attempts_avg)
+            ],
         )
-        summary_lines.append(f"🔁 Total attempts: {total_attempts}")
-        summary_lines.append(f"⏱️  Avg time per request: {total_time / len(results):.1f}s")
-        summary_lines.append(f"⏱️  Total time: {total_time:.1f}s")
-    
-    if total_tests > 0:
-        success_rate = (passed_tests / total_tests) * 100
-        summary_lines.append(f"\n📈 Success rate: {success_rate:.1f}%")
-    
-    if model_stats:
-        attempts_total_ranking = sorted(
-            model_stats.items(), key=lambda item: (item[1]["attempts_total"], item[0])
+    )
+
+    summary_lines.extend(
+        print_table(
+            "🏁 Time ranking (avg)",
+            ["Rank", "Model", "Avg Time (s)", "Total Time (s)"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    f"{stats['time_total'] / stats['time_count']:.2f}",
+                    f"{stats['time_total']:.1f}",
+                ]
+                for i, (model, stats) in enumerate(time_avg)
+            ],
         )
-        attempts_avg_ranking = sorted(
-            model_stats.items(),
-            key=lambda item: (
-                item[1]["attempts_total"] / item[1]["attempts_count"],
-                item[0],
-            ),
+    )
+
+    summary_lines.extend(
+        print_table(
+            "🏁 Status ranking",
+            ["Rank", "Model", "OK", "RUNTIME", "SYNTAX"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    str(int(stats["ok"])),
+                    str(int(stats["runtime"])),
+                    str(int(stats["syntax"])),
+                ]
+                for i, (model, stats) in enumerate(status_rank)
+            ],
         )
-        time_total_ranking = sorted(
-            model_stats.items(), key=lambda item: (item[1]["time_total"], item[0])
-        )
-        time_avg_ranking = sorted(
-            model_stats.items(),
-            key=lambda item: (item[1]["time_total"] / item[1]["time_count"], item[0]),
-        )
-        status_ranking = sorted(
-            model_stats.items(),
-            key=lambda item: (-item[1]["ok"], item[1]["runtime"], item[1]["syntax"], item[0]),
-        )
+    )
 
-        summary_lines.append("\n🏁 Attempts ranking (total)")
-        for position, (model_name, stats) in enumerate(attempts_total_ranking, 1):
-            avg_attempts = stats["attempts_total"] / stats["attempts_count"]
-            summary_lines.append(
-                f"{position}. {model_name}: total={stats['attempts_total']:.0f}, avg={avg_attempts:.2f}"
-            )
+    # === BEST MODEL ===
+    best_model = status_rank[0][0] if status_rank else "N/A"
+    summary_lines.append(f"\n🏆 Best overall model: {best_model}")
+    summary_lines.append("=" * 60)
 
-        summary_lines.append("\n🏁 Attempts ranking (avg)")
-        for position, (model_name, stats) in enumerate(attempts_avg_ranking, 1):
-            avg_attempts = stats["attempts_total"] / stats["attempts_count"]
-            summary_lines.append(
-                f"{position}. {model_name}: avg={avg_attempts:.2f}, total={stats['attempts_total']:.0f}"
-            )
-
-        summary_lines.append("\n🏁 Status ranking (OK, RUNTIME, SYNTAX)")
-        for position, (model_name, stats) in enumerate(status_ranking, 1):
-            summary_lines.append(
-                f"{position}. {model_name}: OK={stats['ok']:.0f}, RUNTIME={stats['runtime']:.0f}, SYNTAX={stats['syntax']:.0f}"
-            )
-
-        summary_lines.append("\n🏁 Time ranking (total)")
-        for position, (model_name, stats) in enumerate(time_total_ranking, 1):
-            avg_time = stats["time_total"] / stats["time_count"]
-            summary_lines.append(
-                f"{position}. {model_name}: total={stats['time_total']:.1f}s, avg={avg_time:.1f}s"
-            )
-
-        summary_lines.append("\n🏁 Time ranking (avg)")
-        for position, (model_name, stats) in enumerate(time_avg_ranking, 1):
-            avg_time = stats["time_total"] / stats["time_count"]
-            summary_lines.append(
-                f"{position}. {model_name}: avg={avg_time:.1f}s, total={stats['time_total']:.1f}s"
-            )
-
-        attempts_avg_positions = {
-            model_name: position
-            for position, (model_name, _) in enumerate(attempts_avg_ranking, 1)
-        }
-        status_positions = {
-            model_name: position
-            for position, (model_name, _) in enumerate(status_ranking, 1)
-        }
-        time_avg_positions = {
-            model_name: position
-            for position, (model_name, _) in enumerate(time_avg_ranking, 1)
-        }
-
-        best_model = min(
-            model_stats.keys(),
-            key=lambda model_name: (
-                attempts_avg_positions[model_name]
-                + status_positions[model_name]
-                + time_avg_positions[model_name],
-                model_name,
-            ),
-        )
-        best_score = (
-            attempts_avg_positions[best_model]
-            + status_positions[best_model]
-            + time_avg_positions[best_model]
-        )
-        summary_lines.append(
-            f"\n🏆 Best model: {best_model} (score={best_score}, attempts rank={attempts_avg_positions[best_model]}, status rank={status_positions[best_model]}, time rank={time_avg_positions[best_model]})"
-        )
-
-    summary_lines.append("="*60)
-
-    with open(output_file, 'a', encoding='utf-8') as f:
+    # === OUTPUT ===
+    with open(output_file, "a", encoding="utf-8") as f:
         for line in summary_lines:
             print(line)
             f.write(line + "\n")
@@ -618,77 +597,131 @@ def run_comprehensive_tests(mode: str, db_name: str, output_dir: Path):
     print(f"✅ Loaded vector stores from {QVS_DIR} and {SVS_DIR}")
     logger.info("Loaded vector stores from %s and %s.", QVS_DIR, SVS_DIR)
     
-    # 4. Run tests for each request
-    all_results = []
+    # 4. Select all SQL-capable models and initialize them outside worker threads
+    testable_models = [
+        (idx, model_name)
+        for idx, model_name in AZURE_MODELS.items()
+        if idx != 0 and "embed" not in model_name.lower()
+    ]
+    if not testable_models:
+        raise RuntimeError("❌ No testable model found in AVAILABLE_MODELS")
+
+    selected_model_names = ", ".join(model_name for _, model_name in testable_models)
+    print(f"✅ Models selected for this run: {selected_model_names}")
+    logger.info("Models selected for this run: %s", selected_model_names)
+
+    # 5. Run tests model-first: for each model, execute all requests
+    all_results_map = {
+        i: {
+            "request": request,
+            "model_results": {},
+            "request_time": 0.0,
+        }
+        for i, request in enumerate(test_requests, 1)
+    }
     request_output_dir = output_dir / "intermediate"
-    
-    for i, request in enumerate(test_requests, 1):
-        request_slug = sanitize_request_filename(request)
-        request_log_file = request_output_dir / "logs" / f"{i:03d}_{request_slug}.log"
-        request_log_handler = add_request_log_handler(request_log_file)
-        try:
-            print(f"\n{'='*60}")
-            print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
-            print(f"{'='*60}")
-            logger.info("Starting request %s/%s: %s", i, len(test_requests), truncate_request(request))
-            logger.info("Request log file: %s", request_log_file)
-            
-            model_results = {}
-            request_start_time = time.time()
-            
-            # Test each available model
-            for index in range(5, len(AVAILABLE_MODELS) - 1):
-                name = AVAILABLE_MODELS[index]
-                print(f"\nTesting with model: {name}\n")
-                logger.info("!#" * 100 + "\n\n")
-                logger.info("Starting Testing with model: %s\n\n", name)
+
+    for model_idx, model_name in testable_models:
+        print(f"\n{'#' * 60}")
+        print(f"🤖 Running all requests with model: {model_name}")
+        print(f"{'#' * 60}")
+        logger.info("Running all requests for model: %s (index=%s)", model_name, model_idx)
+        llm_model = get_llm_model(model_idx)
+
+        for i, request in enumerate(test_requests, 1):
+            request_slug = sanitize_request_filename(request)
+            request_log_file = request_output_dir / "logs" / f"{i:03d}_{request_slug}.log"
+            request_log_handler = add_request_log_handler(request_log_file)
+            try:
+                print(f"\n{'='*60}")
+                print(f"📝 Request {i}/{len(test_requests)}: {truncate_request(request)}")
+                print(f"{'='*60}")
+                logger.info("/°" * 100)
+                logger.info("/°" * 100 + "\n\n\n\n")
+                logger.info(
+                    "Starting request %s/%s for model %s: %s",
+                    i,
+                    len(test_requests),
+                    model_name,
+                    truncate_request(request),
+                )
+                logger.info("Request log file: %s\n\n\n\n", request_log_file)
+                logger.info("/°" * 100)
+                logger.info("/°" * 100)
+
+                print(f"\nTesting with model: {model_name}\n")
+                logger.info("!#" * 100)
+                logger.info("!#" * 100 + "\n\n\n")
+                logger.info("Starting Testing with model: %s\n\n\n", model_name)
+                logger.info("!#" * 100)
                 logger.info("!#" * 100)
                 model_start_time = time.time()
-                
-                sql_query, status, outcome, llm_feedback, attempts = run_test_with_timeout(
-                    db_name, request, index, full_schema, mode, query_vs, schema_vs, TIMEOUT_PER_MODEL
+
+                sql_query, status, outcome, feedback_category, attempts = run_test_with_timeout(
+                    db_name,
+                    request,
+                    model_idx,
+                    llm_model,
+                    full_schema,
+                    mode,
+                    query_vs,
+                    schema_vs,
+                    TIMEOUT_PER_MODEL,
                 )
-                
+
                 model_time = time.time() - model_start_time
                 print(f"   Status: {status} ({model_time:.1f}s)\n")
-                logger.info("Model %s status: %s (%.1fs)", name, status, model_time)
-                
+                logger.info("Model %s status: %s (%.1fs)", model_name, status, model_time)
+
                 if sql_query:
                     print(f"   Generated SQL:\n\n {sql_query}")
                     logger.info("Generated SQL: %s\n", sql_query)
                 if outcome and status not in ["OK", "SYNTAX"]:
                     print(f"   Error: {outcome[:200]}...")
                     logger.warning("Error output: %s", outcome[:200])
-                
-                model_results[name] = (
+
+                req_entry = all_results_map[i]
+                req_entry["model_results"][model_name] = (
                     sql_query,
                     status,
                     outcome,
-                    llm_feedback,
+                    feedback_category,
                     attempts,
                     model_time,
                 )
-            
-            request_time = time.time() - request_start_time
-            print(f"\n⏱️  Total time for this request: {request_time:.1f}s")
-            logger.info("Total time for request: %.1fs", request_time)
-            
-            all_results.append((request, model_results, request_time))
-            request_output_file = write_request_results(
-                request,
-                model_results,
-                request_output_dir,
-                i,
-                request_time,
-            )
-            print(f"📄 Request log saved to: {request_output_file}")
-        finally:
-            remove_request_log_handler(request_log_handler)
-    
-    # 5. Write final aggregated results
+                req_entry["request_time"] += model_time
+
+                print(f"\n⏱️  Aggregated time for this request: {req_entry['request_time']:.1f}s")
+                logger.info(
+                    "Aggregated request time for request %s after model %s: %.1fs",
+                    i,
+                    model_name,
+                    req_entry["request_time"],
+                )
+
+                request_output_file = write_request_results(
+                    request,
+                    req_entry["model_results"],
+                    request_output_dir,
+                    i,
+                )
+                print(f"📄 Request log saved to: {request_output_file}")
+            finally:
+                remove_request_log_handler(request_log_handler)
+
+    all_results = [
+        (
+            data["request"],
+            data["model_results"],
+            data["request_time"],
+        )
+        for _, data in sorted(all_results_map.items())
+    ]
+
+    # 6. Write final aggregated results
     write_test_results(all_results, OUTPUT_FILE)
     
-    # 6. Print summary
+    # 7. Print summary
     print_test_summary(all_results, OUTPUT_FILE)
     
     print(f"\n🎉 Testing completed!")
@@ -712,7 +745,7 @@ def run_full_cycle_without_llm(
     template = create_prompt(
         user_request=user_request,
         source=mode,
-        full_schema=schema,
+        database_name="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
@@ -926,7 +959,7 @@ def test_complex_prompt_creation_only(schema, vector_stores, capsys):
     create_prompt(
         user_request="Show total sales by customer",
         source="mysql",
-        full_schema=schema,
+        database_name="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )
@@ -944,7 +977,7 @@ def test_simple_prompt_creation_only(schema, vector_stores, capsys):
     create_prompt(
         user_request="Show total sales by customer",
         source="text",
-        full_schema=schema,
+        database_name="none",
         query_vs=query_vs,
         schema_vs=schema_vs,
     )

@@ -1,0 +1,68 @@
+1. Request: Most expensive product in each category. For each category, show the most expensive product and its price
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT c.category_name, p.product_name, p.price
+FROM products p
+JOIN categories c ON p.category_id = c.category_id
+WHERE p.price = (
+    SELECT MAX(p2.price)
+    FROM products p2
+    WHERE p2.category_id = p.category_id
+);
+
+
+🏁 Status and outcome: OK, 22238 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 14.4s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+SELECT
+  c.category_id,
+  c.category_name,
+  p.product_id,
+  p.product_name,
+  p.price
+FROM
+  categories AS c
+JOIN products AS p
+  ON p.category_id = c.category_id
+  AND p.price = (
+    SELECT MAX(p2.price)
+    FROM products AS p2
+    WHERE p2.category_id = c.category_id
+  )
+ORDER BY
+  c.category_id;
+
+
+🏁 Status and outcome: OK, 22238 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 32.6s
+
+
+
+
+========================================================================================================================================================================================================
+

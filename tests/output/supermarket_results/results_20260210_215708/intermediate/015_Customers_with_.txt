@@ -1,0 +1,111 @@
+1. Request: Customers with consistent monthly spending pattern. Find customers whose spending in each month of 2024 was within 20% of their average monthly spending (Customers who spend consistently month-to-month). Show customer name, average monthly spending, and consistency flag
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT 
+        o.customer_id,
+        CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+        DATE_FORMAT(o.order_date, '%Y-%m') AS order_month,
+        SUM(o.total_amount) AS monthly_spending
+    FROM 
+        orders o
+    JOIN 
+        customers c ON o.customer_id = c.customer_id
+    WHERE 
+        o.order_date BETWEEN '2024-01-01' AND '2024-12-31'
+    GROUP BY 
+        o.customer_id, CONCAT(c.first_name, ' ', c.last_name), DATE_FORMAT(o.order_date, '%Y-%m')
+),
+AverageMonthlySpending AS (
+    SELECT 
+        customer_id,
+        customer_name,
+        AVG(monthly_spending) AS avg_monthly_spending
+    FROM 
+        MonthlySpending
+    GROUP BY 
+        customer_id, customer_name
+),
+CustomerConsistency AS (
+    SELECT 
+        ms.customer_id,
+        ams.customer_name,
+        ams.avg_monthly_spending,
+        MAX(ABS(ms.monthly_spending - ams.avg_monthly_spending)) <= (ams.avg_monthly_spending * 0.20) AS is_consistent
+    FROM 
+        MonthlySpending ms
+    JOIN 
+        Av...
+
+
+🏁 Status and outcome: SYNTAX_ERROR, Query failed syntactic check
+
+💡 LLM feedback: None
+
+Attempts: 3
+
+⌚Request time: 15.9s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL
+  SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL
+  SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12
+),
+order_monthly AS (
+  SELECT
+    o.customer_id,
+    EXTRACT(MONTH FROM o.order_date) AS mon,
+    SUM(o.total_amount) AS month_spend
+  FROM orders o
+  WHERE o.order_date >= DATE '2024-01-01' AND o.order_date < DATE '2025-01-01'
+  GROUP BY o.customer_id, EXTRACT(MONTH FROM o.order_date)
+),
+cust_months AS (
+  SELECT
+    c.customer_id,
+    c.first_name,
+    c.last_name,
+    m.mon,
+    COALESCE(om.month_spend, 0) AS month_spend
+  FROM customers c
+  CROSS JOIN months m
+  LEFT JOIN order_monthly om
+    ON om.customer_id = c.customer_id
+   AND om.mon = m.mon
+),
+cust_stats AS (
+  SELECT
+    cm.customer_id,
+    cm.first_name,
+    cm.last_name,
+    AVG(cm.month_spend) AS avg_monthly_spend,
+    MIN(cm.month_spend) AS min_monthly_spend,
+    MAX(cm.month_spend) AS max_monthly_...
+
+
+🏁 Status and outcome: SYNTAX_ERROR, Query failed syntactic check
+
+💡 LLM feedback: None
+
+Attempts: 3
+
+⌚Request time: 55.9s
+
+
+
+
+========================================================================================================================================================================================================
+

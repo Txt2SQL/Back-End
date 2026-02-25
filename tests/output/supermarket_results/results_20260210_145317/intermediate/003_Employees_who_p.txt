@@ -1,0 +1,201 @@
+1. Request: Employees who processed more orders than average. Find employees who have processed more orders than the average number of orders per employee
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: codellama:13b
+
+🧮 Query:
+
+
+SELECT 
+    employees.first_name, employees.last_name, COUNT(orders.order_id) as order_count
+FROM
+    orders 
+        INNER JOIN employees ON orders.employee_id = employees.employee_id
+GROUP BY
+    employees.first_name, employees.last_name
+HAVING
+    COUNT(orders.order_id) > AVG(COUNT(orders.order_id)) OVER (PARTITION BY employees.first_name);
+
+
+🏁 Status and outcome: RUNTIME_ERROR, 3593 (HY000): You cannot use the window function 'avg' in this context.'
+
+💡 LLM feedback: RUNTIME_ERROR
+
+Attempts: 3
+
+⌚Request time: 209.1s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: codestral:22b
+
+🧮 Query:
+
+
+SELECT
+       e.first_name, e.last_name
+   FROM
+       employees AS e
+           LEFT JOIN orders AS o ON e.employee_id = o.employee_id
+   GROUP BY
+       e.employee_id, e.first_name, e.last_name
+   HAVING
+       COUNT(o.order_id) > (SELECT AVG(order_count) FROM (SELECT COUNT(COALESCE(order_id, 0)) as order_count FROM employees LEFT JOIN orders ON employees.employee_id = orders.employee_id GROUP BY employees.employee_id) AS derived_table);
+
+
+🏁 Status and outcome: OK, 140 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 515.1s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: sqlcoder:15b
+
+🧮 Query:
+
+
+SELECT 
+    employees.first_name,
+    employees.last_name,
+    count(orders.order_id) as order_count
+FROM   orders join employees on orders.employee_id = employees.employee_id
+GROUP BY employees.first_name,
+         employees.last_name
+HAVING count(orders.order_id) > (select avg(cnt)
+                                 from (select count(*) cnt
+                                      from orders group by employee_id) t);
+
+
+🏁 Status and outcome: OK, 140 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 1
+
+⌚Request time: 129.6s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: deepseek-coder-v2:16b
+
+🧮 Query:
+
+
+SELECT 
+    e.employee_id, e.first_name, e.last_name
+FROM
+    employees e
+        INNER JOIN orders o ON e.employee_id = o.employee_id
+GROUP BY
+    e.employee_id, e.first_name, e.last_name
+HAVING
+    COUNT(o.order_id) > (SELECT AVG(order_count) FROM (SELECT employee_id, COUNT(order_id) as order_count FROM orders GROUP BY employee_id) subquery);
+
+
+🏁 Status and outcome: OK, 140 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 1
+
+⌚Request time: 39.1s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-4o
+
+🧮 Query:
+
+
+SELECT 
+    e.first_name, 
+    e.last_name, 
+    COUNT(o.order_id) AS order_count
+FROM 
+    employees e
+LEFT JOIN 
+    orders o 
+ON 
+    e.employee_id = o.employee_id
+GROUP BY 
+    e.employee_id, e.first_name, e.last_name
+HAVING 
+    COUNT(o.order_id) > (
+        SELECT 
+            AVG(employee_order_count)
+        FROM 
+            (SELECT 
+                e2.employee_id, 
+                COUNT(o2.order_id) AS employee_order_count
+             FROM 
+                employees e2
+             LEFT JOIN 
+                orders o2 
+             ON 
+                e2.employee_id = o2.employee_id
+             GROUP BY 
+                e2.employee_id
+            ) subquery
+    );
+
+
+🏁 Status and outcome: OK, 2554 rows fetched
+
+💡 LLM feedback: INCORRECT_QUERY
+
+Attempts: 3
+
+⌚Request time: 32.6s
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🤖 Model: gpt-5-mini
+
+🧮 Query:
+
+
+SELECT
+  e.employee_id,
+  e.first_name,
+  e.last_name,
+  COUNT(o.order_id) AS order_count
+FROM employees e
+LEFT JOIN orders o ON o.employee_id = e.employee_id
+GROUP BY e.employee_id, e.first_name, e.last_name
+HAVING COUNT(o.order_id) > (
+  SELECT AVG(emp_count) FROM (
+    SELECT COUNT(o2.order_id) AS emp_count
+    FROM orders o2
+    GROUP BY o2.employee_id
+  ) AS emp_counts
+);
+
+
+🏁 Status and outcome: OK, 140 rows fetched
+
+💡 LLM feedback: CORRECT_QUERY
+
+Attempts: 2
+
+⌚Request time: 20.4s
+
+
+
+
+========================================================================================================================================================================================================
+

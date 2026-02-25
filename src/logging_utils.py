@@ -2,7 +2,7 @@ import os
 import logging
 from datetime import datetime
 from pathlib import Path
-from src.config.settings import MAX_OUTPUT_LENGTH, LOGINFO_SEPARATOR
+from src.config import MAX_OUTPUT_LENGTH, LOGINFO_SEPARATOR
 from langchain_chroma import Chroma
 
 # Global variable to track if the single log file has been configured
@@ -44,17 +44,17 @@ def setup_single_project_logger():
     log_file = get_project_log_file()
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.DEBUG)
 
     # REMOVE ALL existing handlers
     root_logger.handlers.clear()
 
     # ADD FILE HANDLER ONLY
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter(
-        '%(asctime)s - [%(name)s] - %(levelname)s - %(message)s'
+        '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d] - %(levelname)s - %(message)s'
     )
     file_handler.setFormatter(formatter)
 
@@ -86,7 +86,7 @@ def setup_logger(name: str) -> logging.Logger:
     
     # Create logger with the module name
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     
     # Ensure this logger doesn't add any console handlers
     for handler in logger.handlers[:]:
@@ -115,7 +115,7 @@ def get_logger(name: str) -> logging.Logger:
 def add_request_log_handler(log_file: Path) -> logging.FileHandler:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(log_file, encoding="utf-8")
-    handler.setLevel(logging.INFO)
+    handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter(
         '%(asctime)s - [%(name)s:%(funcName)s:%(lineno)d] - %(levelname)s - %(message)s'
     )
@@ -178,10 +178,10 @@ def print_llm_prompt(prompt_text: str) -> None:
     Logs the final prompt that will be sent to the LLM.
     Useful for debugging and understanding what context the model receives.
     """
-    logger.info(LOGINFO_SEPARATOR)
-    logger.info("📋 FINAL PROMPT SENT TO LLM")
-    logger.info(LOGINFO_SEPARATOR)
-    logger.info(prompt_text)
+    logger.info(LOGINFO_SEPARATOR + "\n\n")
+    logger.info("📋 FINAL PROMPT SENT TO LLM\n\n")
+    logger.info(LOGINFO_SEPARATOR + "\n")
+    logger.info(prompt_text + "\n")
     logger.info(LOGINFO_SEPARATOR)
     
 def print_schema_context(schema_context: str):
@@ -194,15 +194,15 @@ def print_schema_context(schema_context: str):
     logger.info("===========================================================\n")
 
 def print_vector_store(vector_store: Chroma):
-    logger.info("\n🔎 Current content of the vector store:")
+    print("\n🔎 Current content of the vector store:")
     all_docs = vector_store.get(include=["metadatas", "documents"])
 
     for i, (doc_text, meta) in enumerate(zip(all_docs["documents"], all_docs["metadatas"])):  # type: ignore
-        logger.info(f"\n🧱 Document #{i+1}")
-        logger.info("📘 Table:%s", meta.get("table", "N/A"))
-        logger.info("📄 Content:")
-        logger.info(doc_text)
-        logger.info("-" * 50)
+        print(f"\n🧱 Document #{i+1}")
+        print("📘 Table:%s", meta.get("table", "N/A"))
+        print("📄 Content:")
+        print(doc_text)
+        print("-" * 50)
         
         if not doc_text:
-            logger.error(f"⚠️ Document #{i+1} is empty.")
+            print(f"⚠️ Document #{i+1} is empty.")
