@@ -18,9 +18,11 @@ class Schema:
         self,
         database_name: str,
         schema_source: SchemaSource,  # "mysql" or "text"
+        save_json: bool = True
     ):
         self.database_name = database_name
         self.source = schema_source
+        self.save_json = save_json
 
         self.file_path = SCHEMA_DIR / f"{self.database_name}_schema.json"
 
@@ -186,6 +188,8 @@ class Schema:
     def _save_schema(self):
         if self.tables is None:
             raise ValueError("Cannot save an empty schema.")
+        if not self.save_json:
+            return
 
         final_schema = {
             "database_name": self.database_name,

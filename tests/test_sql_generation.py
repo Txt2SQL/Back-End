@@ -21,7 +21,7 @@ from src.classes.domain_states.schema import Schema
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import SchemaStore
-from src.config import PROJECT_ROOT, QUERY_GENERATION_MODELS
+from src.config import QUERY_GENERATION_MODELS
 
 # ==================== CONFIGURATION ====================
 BASE_DIR = Path(__file__).resolve().parent
@@ -69,17 +69,15 @@ def choose_database(database_client: DatabaseClient, selected_db: str | None) ->
         print(f"  {index}. {db_name}")
 
     while True:
-        choice = input("\n👉 Select a database by number or exact name: ").strip()
+        choice = input("\n👉 Select a database by number: ").strip()
         if choice.isdigit() and 1 <= int(choice) <= len(available):
             return available[int(choice) - 1]
-        if choice in available:
-            return choice
         print("❌ Invalid selection, try again.")
 
 
 def initialize_output_structure(database_name: str) -> Dict[str, Path]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = PROJECT_ROOT / "output" / "runs" / f"{database_name}_results" / f"results_{timestamp}"
+    root = BASE_DIR / "output" / "runs" / f"{database_name}_results" / f"results_{timestamp}"
     query_dir = root / "querys"
     logs_dir = root / "logs"
 
@@ -94,9 +92,8 @@ def initialize_output_structure(database_name: str) -> Dict[str, Path]:
     }
 
 
-def load_requests(input_file: Path) -> List[str]:
-    if not input_file.exists():
-        raise FileNotFoundError(f"Input file not found: {input_file}")
+def load_requests(database_name: str) -> List[str]:
+    input_file = BASE_DIR / "input" / "requests" / f"{database_name}_requests.txt"
 
     lines = [line.strip() for line in input_file.read_text(encoding="utf-8").splitlines()]
     return [line for line in lines if line and not line.startswith("#")]
@@ -106,7 +103,7 @@ def build_rag(database_name: str) -> SchemaStore:
     database_client = DatabaseClient(database_name)
     mysql_schema = database_client.extract_schema()
 
-    schema = Schema(database_name=database_name, schema_source=SchemaSource.MYSQL)
+    schema = Schema(database_name=database_name, schema_source=SchemaSource.MYSQL, save_json=False)
     schema.parse_response(mysql_schema)
     
     schema_store = SchemaStore(SVS_DIR)
@@ -139,6 +136,7 @@ def format_run_result(indexed_pos: int, result: RunResult) -> str:
 
 
 def run_single_generation(
+    mode: str,
     database_name: str,
     request_index: int,
     request_text: str,
@@ -158,6 +156,9 @@ def run_single_generation(
     )
 
     query_session = orchestrator.generation(request_text)
+
+    # TODO: if the mode is "text", we should execute and validate the SQL either with also llm_feedback
+
     elapsed = time.perf_counter() - start
 
     feedback = query_session.llm_feedback.feedback_status.value
@@ -262,7 +263,7 @@ def run_workflow(mode: str, selected_db: str) -> Path:
     database_name = choose_database(bootstrap_client, selected_db)
 
     output_paths = initialize_output_structure(database_name)
-    requests = load_requests(input_file)
+    requests = load_requests(database_name)
 
     # Schema retrieval from MySQL and RAG setup for schema/query memory.
     schema_store = build_rag(database_name)
@@ -290,6 +291,7 @@ def run_workflow(mode: str, selected_db: str) -> Path:
                 futures.append(
                     pool.submit(
                         run_single_generation,
+                        mode,
                         database_name,
                         index,
                         request,
@@ -323,8 +325,8 @@ def run_workflow(mode: str, selected_db: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run end-to-end QueryOrchestrator SQL generation workflow")
-    parser.add_argument("--mode", choices=["mysql", "text"], required=True, help="Schema mode")
-    parser.add_argument("--db", type=str, required=True, help="Database name to use")
+    parser.add_argument("--mode", choices=["mysql", "text"], default="mysql", help="Schema mode")
+    parser.add_argument("--db", type=str, help="Database name to use")
 
     args = parser.parse_args()
     output_root = run_workflow(args.mode, args.db)

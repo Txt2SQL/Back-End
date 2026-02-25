@@ -32,9 +32,9 @@ class QueryOrchestrator(BaseOrchestrator):
     def __init__(
         self,
         database_name: str,
-        query_store: QueryStore,
         schema_store: SchemaStore,
         user_request: str,
+        query_store: Optional[QueryStore] = None,
         model_name: Optional[str] = None,
         max_attempts: int = 3,
     ):
@@ -43,10 +43,9 @@ class QueryOrchestrator(BaseOrchestrator):
         self.max_attempts = max_attempts
         self.schema_store = schema_store
         self.query_store = query_store
-        self.database_client = DatabaseClient(self.database_name)
+        self.database_client: Optional[DatabaseClient] = None
         self.request = user_request
 
-        self.schema: Optional[Schema] = None
         self.current_query: QuerySession = QuerySession(user_request=user_request)
         self.schema_context: Optional[str] = None
 
@@ -143,7 +142,10 @@ class QueryOrchestrator(BaseOrchestrator):
 
             self.current_query.llm_feedback.attempt += 1
 
-        self.query_store.store_query(self.current_query)
+        if self.schema.source == SchemaSource.MYSQL:
+            if self.query_store is None:
+                raise Exception("QueryStore not found")
+            self.query_store.store_query(self.current_query)
         self._log_generation_result()
 
         return self.current_query
@@ -160,8 +162,11 @@ class QueryOrchestrator(BaseOrchestrator):
 
         if self.schema is None:
             raise Exception("Schema not found")
+        if self.query_store is None:
+            raise Exception("QueryStore not found")
 
         if self.schema.source == SchemaSource.MYSQL:
+            self.database_client = DatabaseClient(self.database_name)
             self.failed_queries = self.query_store.retrieve_failed_queries(
                 user_request
             )
@@ -198,6 +203,8 @@ class QueryOrchestrator(BaseOrchestrator):
     # --------------------------------------------------
 
     def _execute_and_evaluate_query(self) -> None:
+        if self.database_client is None:
+            raise Exception("Database client not found")
 
         self.current_query = self.database_client.execute_query(
             self.current_query
