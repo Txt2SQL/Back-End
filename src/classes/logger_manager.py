@@ -3,8 +3,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
-from src.config import MAX_OUTPUT_LENGTH
+from config import MAX_OUTPUT_LENGTH
 
 
 class LoggerManager:

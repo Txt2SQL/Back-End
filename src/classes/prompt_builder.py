@@ -1,8 +1,8 @@
 from datetime import datetime
 from langchain_core.documents import Document
-from classes.domain_states.query import QuerySession
+from src.classes.domain_states.query import QuerySession
 from .logger_manager import LoggerManager
-from src.config import LOGGER_LEVEL
+from config import LOGGER_LEVEL
 
 logger = LoggerManager.get_logger(__name__)
 

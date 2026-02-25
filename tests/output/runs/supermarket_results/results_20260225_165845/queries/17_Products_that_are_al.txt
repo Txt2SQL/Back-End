@@ -1,0 +1,113 @@
+[Request]
+Products that are always sold together (co-purchased 100% of the time). Find pairs of products where whenever product A is purchased, product B is also in the same order, and vice versa (bidirectional relationship). Show product pairs and the number of times they appear together
+
+1. [gpt-4o]
+
+Query:
+SELECT 
+    p1.product_name AS product_a,
+    p2.product_name AS product_b,
+    COUNT(*) AS times_purchased_together
+FROM order_items oi1
+JOIN order_items oi2 
+    ON oi1.order_id = oi2.order_id AND oi1.product_id < oi2.product_id
+JOIN products p1 
+    ON oi1.product_id = p1.product_id
+JOIN products p2 
+    ON oi2.product_id = p2.product_id
+GROUP BY p1.product_name, p2.product_name
+HAVING COUNT(*) = (
+    SELECT COUNT(*) 
+    FROM order_items oi3 
+    WHERE oi3.product_id = oi1.product_id
+)
+AND COUNT(*) = (
+    SELECT COUNT(*) 
+    FROM order_items oi4 
+    WHERE oi4.product_id = oi2.product_id
+);
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 12.68s
+
+2. [gpt-5-mini]
+
+Query:
+WITH prod_orders AS (
+  SELECT
+    oi.product_id,
+    p.product_name,
+    COUNT(DISTINCT oi.order_id) AS orders_count
+  FROM order_items oi
+  JOIN products p ON p.product_id = oi.product_id
+  GROUP BY oi.product_id, p.product_name
+),
+pairs AS (
+  SELECT
+    oi1.product_id AS product_id_a,
+    oi2.product_id AS product_id_b,
+    COUNT(DISTINCT oi1.order_id) AS together_count
+  FROM order_items oi1
+  JOIN order_items oi2
+    ON oi1.order_id = oi2.order_id
+    AND oi1.product_id < oi2.product_id
+  GROUP BY oi1.product_id, oi2.product_id
+)
+SELECT
+  pa.product_name AS product_a,
+  pb.product_name AS product_b,
+  p.together_count AS times_together
+FROM pairs p
+JOIN prod_orders pa ON pa.product_id = p.product_id_a
+JOIN prod_orders pb ON pb.product_id = p.product_id_b
+WHERE p.together_count = pa.orders_count
+  AND p.together_count = pb.orders_count
+ORDER BY pa.product_name, pb.product_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 79.35s
+
+3. [codestral:22b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.52s
+
+4. [codellama:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.45s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.50s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.51s
+

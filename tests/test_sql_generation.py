@@ -1,337 +1,437 @@
-import argparse
-import os
-import re
-import sys
-import tempfile
-import threading
-import time
-PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, PROJECT_DIR)
-sys.path.insert(0, os.path.join(PROJECT_DIR, 'src'))
+"""
+Test script for QueryOrchestrator.
+Runs multiple requests against all configured LLM models concurrently,
+writes per-request result files, and produces a summary statistics file.
+"""
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+import argparse
+import sys
+import os
+import time
+import threading
+import queue
+import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import List, Dict, Optional, Any
+from dataclasses import dataclass
 
-from src.classes.clients.database_client import DatabaseClient
-from src.classes.domain_states.enums import QueryStatus, SchemaSource
-from src.classes.domain_states.schema import Schema
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
-from src.classes.RAG_service.query_store import QueryStore
+from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
+from src.classes.clients.database_client import DatabaseClient
 from src.classes.RAG_service.schema_store import SchemaStore
-from src.config import QUERY_GENERATION_MODELS
+from src.classes.RAG_service.query_store import QueryStore
+from src.classes.domain_states.query import QuerySession
+from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
+from config import QUERY_GENERATION_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
 
-# ==================== CONFIGURATION ====================
-BASE_DIR = Path(__file__).resolve().parent
-TMP_DIR = BASE_DIR / "tmp"
-TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
-QVS_DIR = TMP_DIR / "query_vector_store"
-SVS_DIR = TMP_DIR / "schema_vector_store"
+
+# ----------------------------------------------------------------------
+# Data class for request results
+# ----------------------------------------------------------------------
+def format_model_key(model_key: str) -> str:
+    model_key = model_key.strip()
+    last_colon = model_key.rfind(':')
+    if last_colon != -1:
+        suffix = model_key[last_colon + 1:]
+        if len(suffix) > 1 and suffix[:-1].isdigit() and suffix[-1] in ('b', 'B'):
+            model_key = model_key[:last_colon]
+
+    return model_key.translate(str.maketrans({
+        '<': '_', '>': '_', ':': '_', '"': '_',
+        '/': '_', '\\': '_', '|': '_', '?': '_', '*': '_',
+    }))
 
 @dataclass
-class RunResult:
+class RequestResult:
     request_index: int
-    request_text: str
     model_name: str
-    sql_code: str
-    query_status: str
-    outcome: str
-    llm_feedback: str
+    sql_code: Optional[str]
+    status: Optional[str]
+    error: Optional[str]
+    feedback_category: Optional[str]
+    feedback_explanation: Optional[str]
     attempts: int
-    request_time_seconds: float
+    time_taken: float  # seconds
+    success: bool  # whether completed without exception
 
 
-def create_temp_instances_dir() -> str:
-    tmp_dir = tempfile.mkdtemp(prefix="query_orchestrator_instances_")
-    print(f"🧪 Temporary instances folder created: {tmp_dir}")
-    return tmp_dir
+# ----------------------------------------------------------------------
+# Thread-safe wrapper for QueryStore
+# ----------------------------------------------------------------------
+class ThreadSafeQueryStore(QueryStore):
+    def __init__(self, path: Path, lock: threading.Lock):
+        super().__init__(path)
+        self._lock = lock
+
+    def store_query(self, query: QuerySession) -> None:
+        with self._lock:
+            super().store_query(query)
 
 
-def choose_database(database_client: DatabaseClient, selected_db: str | None) -> str:
-    available = [
-        db
-        for db in database_client.list_databases()
-        if db not in {"information_schema", "performance_schema", "mysql", "sys"}
-    ]
+# ----------------------------------------------------------------------
+# Generator thread function
+# ----------------------------------------------------------------------
+import concurrent.futures
+import queue
+import time
+from typing import List, Dict
 
-    if not available:
-        raise RuntimeError("No user databases found in MySQL server.")
-
-    if selected_db:
-        if selected_db not in available:
-            raise ValueError(f"Database '{selected_db}' is not available.")
-        return selected_db
-
-    print("\n🗂️ Available databases:")
-    for index, db_name in enumerate(available, start=1):
-        print(f"  {index}. {db_name}")
-
-    while True:
-        choice = input("\n👉 Select a database by number: ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(available):
-            return available[int(choice) - 1]
-        print("❌ Invalid selection, try again.")
-
-
-def initialize_output_structure(database_name: str) -> Dict[str, Path]:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = BASE_DIR / "output" / "runs" / f"{database_name}_results" / f"results_{timestamp}"
-    query_dir = root / "querys"
-    logs_dir = root / "logs"
-
-    query_dir.mkdir(parents=True, exist_ok=True)
-    logs_dir.mkdir(parents=True, exist_ok=True)
-
-    return {
-        "root": root,
-        "query_dir": query_dir,
-        "logs_dir": logs_dir,
-        "stats": root / "final_stats.txt",
-    }
-
-
-def load_requests(database_name: str) -> List[str]:
-    input_file = BASE_DIR / "input" / "requests" / f"{database_name}_requests.txt"
-
-    lines = [line.strip() for line in input_file.read_text(encoding="utf-8").splitlines()]
-    return [line for line in lines if line and not line.startswith("#")]
-
-
-def build_rag(database_name: str) -> SchemaStore:
-    database_client = DatabaseClient(database_name)
-    mysql_schema = database_client.extract_schema()
-
-    schema = Schema(database_name=database_name, schema_source=SchemaSource.MYSQL, save_json=False)
-    schema.parse_response(mysql_schema)
-    
-    schema_store = SchemaStore(SVS_DIR)
-    schema_store.add_schema(schema)
-
-    return schema_store
-
-
-def slug_request_fragment(text: str, limit: int = 28) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9]+", "_", text).strip("_").lower()
-    if not cleaned:
-        cleaned = "request"
-    return cleaned[:limit]
-
-
-def format_run_result(indexed_pos: int, result: RunResult) -> str:
-    body = [
-        f"{indexed_pos}. {result.model_name}",
-        "",
-        "Query:",
-        result.sql_code or "<empty>",
-        "",
-        f"status and outcome: {result.query_status}, {result.outcome}",
-        f"llm_feedback: {result.llm_feedback}",
-        f"attempts: {result.attempts} attempt",
-        f"request time: {result.request_time_seconds:.3f}s",
-        "",
-    ]
-    return "\n".join(body)
-
-
-def run_single_generation(
-    mode: str,
-    database_name: str,
-    request_index: int,
-    request_text: str,
-    model_name: str,
-    query_store: QueryStore,
+def generator_thread(
+    model_key: str,
+    requests: List[str],
+    result_queue: queue.Queue,
+    timeout: int,
     schema_store: SchemaStore,
-    log_path: Path,
-    log_lock: threading.Lock,
-) -> RunResult:
-    start = time.perf_counter()
-    orchestrator = QueryOrchestrator(
-        database_name=database_name,
-        query_store=query_store,
-        schema_store=schema_store,
-        user_request=request_text,
-        model_name=model_name,
-    )
+    query_store: ThreadSafeQueryStore,
+    logs_dir: Path,
+    db_name: str,
+) -> None:
+    """
+    Process all requests for a single model.
+    Each request runs in a separate process (or thread) with a timeout.
+    """
+    # Setup logging
+    log_file = logs_dir / f"{model_key}.log"
+    logger = logging.getLogger(f"thread_{model_key}")
+    logger.setLevel(logging.DEBUG)
+    fh = logging.FileHandler(log_file, encoding='utf-8')
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    logger.addHandler(fh)
+    logger.info(f"Started thread for model {model_key}")
 
-    query_session = orchestrator.generation(request_text)
-
-    # TODO: if the mode is "text", we should execute and validate the SQL either with also llm_feedback
-
-    elapsed = time.perf_counter() - start
-
-    feedback = query_session.llm_feedback.feedback_status.value
-    if query_session.llm_feedback.explanation:
-        feedback = f"{feedback}: {query_session.llm_feedback.explanation}"
-
-    result = RunResult(
-        request_index=request_index,
-        request_text=request_text,
-        model_name=model_name,
-        sql_code=query_session.sql_code or "",
-        query_status=query_session.status.value,
-        outcome=str(query_session.execution_result),
-        llm_feedback=feedback,
-        attempts=query_session.llm_feedback.attempt,
-        request_time_seconds=elapsed,
-    )
-
-    with log_lock:
-        with log_path.open("a", encoding="utf-8") as log_file:
-            log_file.write(
-                (
-                    f"[{datetime.now().isoformat()}] model={model_name} "
-                    f"status={result.query_status} attempts={result.attempts} "
-                    f"time={result.request_time_seconds:.3f}s\n"
-                )
+    def process_one_request(idx: int, request: str) -> RequestResult:
+        """Run a single request and return a RequestResult."""
+        start = time.time()
+        try:
+            orch = QueryOrchestrator(
+                database_name=db_name,
+                schema_store=schema_store,
+                user_request=request,
+                query_store=query_store,
+                model_name=model_key,
+                max_attempts=3,
+            )
+            result_session = orch.generation(request)
+            elapsed = time.time() - start
+            feedback = result_session.llm_feedback
+            return RequestResult(
+                request_index=idx,
+                model_name=model_key,
+                sql_code=result_session.sql_code,
+                status=result_session.status.value if result_session.status else None,
+                error=result_session.execution_result if isinstance(result_session.execution_result, str)
+                    else str(result_session.execution_result) if result_session.execution_result else None,
+                feedback_category=feedback.error_category.value if feedback.error_category else None,
+                feedback_explanation=feedback.explanation,
+                attempts=feedback.attempt,
+                time_taken=elapsed,
+                success=True,
+            )
+        except Exception as e:
+            elapsed = time.time() - start
+            logger.exception(f"Exception in request {idx}")
+            return RequestResult(
+                request_index=idx,
+                model_name=model_key,
+                sql_code=None,
+                status="ERROR",
+                error=str(e),
+                feedback_category=None,
+                feedback_explanation=None,
+                attempts=0,
+                time_taken=elapsed,
+                success=False,
             )
 
-    return result
-
-
-def write_request_outputs(query_file: Path, request_text: str, results: List[RunResult]) -> None:
-    parts = [f"{request_text}\n"]
-    for idx, run in enumerate(results, start=1):
-        parts.append(format_run_result(idx, run))
-
-    query_file.write_text("\n".join(parts), encoding="utf-8")
-
-
-def write_final_statistics(
-    output_file: Path,
-    request_count: int,
-    execution_count: int,
-    all_results: List[RunResult],
-    model_names: List[str],
-) -> None:
-    correct = sum(1 for r in all_results if r.query_status == QueryStatus.SUCCESS.value)
-    runtime = sum(1 for r in all_results if r.query_status == QueryStatus.RUNTIME_ERROR.value)
-    syntax = sum(1 for r in all_results if r.query_status == QueryStatus.SYNTAX_ERROR.value)
-    other = execution_count - correct - runtime - syntax
-    attempts_total = sum(r.attempts for r in all_results)
-
-    ranking_lines: List[str] = []
-    aggregated = []
-    for model_name in model_names:
-        model_runs = [r for r in all_results if r.model_name == model_name]
-        if not model_runs:
-            continue
-
-        avg_time = sum(r.request_time_seconds for r in model_runs) / len(model_runs)
-        avg_attempts = sum(r.attempts for r in model_runs) / len(model_runs)
-        success_rate = (
-            sum(1 for r in model_runs if r.query_status == QueryStatus.SUCCESS.value)
-            / len(model_runs)
-        )
-
-        aggregated.append((model_name, avg_time, avg_attempts, success_rate))
-
-    aggregated.sort(key=lambda row: (-row[3], row[1], row[2]))
-
-    for pos, (model_name, avg_time, avg_attempts, success_rate) in enumerate(aggregated, start=1):
-        ranking_lines.append(
-            f"{pos}. {model_name} | success_rate={success_rate:.2%} | avg_time={avg_time:.3f}s | avg_attempts={avg_attempts:.2f}"
-        )
-
-    content = "\n".join(
-        [
-            "Final statistics",
-            "================",
-            f"Number of requests loaded: {request_count}",
-            f"Number of executions launched: {execution_count}",
-            f"Correct queries: {correct}",
-            f"Queries with runtime errors: {runtime}",
-            f"Queries with syntax errors: {syntax}",
-            f"Other errors: {other}",
-            f"Total sum of attempts across all executions: {attempts_total}",
-            "",
-            "Model rankings",
-            "--------------",
-            *ranking_lines,
-            "",
-        ]
-    )
-
-    output_file.write_text(content, encoding="utf-8")
-
-
-def run_workflow(mode: str, selected_db: str) -> Path:
-    create_temp_instances_dir()
-
-    bootstrap_client = DatabaseClient()
-    database_name = choose_database(bootstrap_client, selected_db)
-
-    output_paths = initialize_output_structure(database_name)
-    requests = load_requests(database_name)
-
-    # Schema retrieval from MySQL and RAG setup for schema/query memory.
-    schema_store = build_rag(database_name)
-    query_store = QueryStore(QVS_DIR)
-
-    models = list(QUERY_GENERATION_MODELS.keys())
-
-    all_results: List[RunResult] = []
-    futures = []
-    result_map: Dict[int, List[RunResult]] = {index: [] for index in range(1, len(requests) + 1)}
-
-    log_locks: Dict[int, threading.Lock] = {}
-    log_paths: Dict[int, Path] = {}
-    query_paths: Dict[int, Path] = {}
-
-    for index, request in enumerate(requests, start=1):
-        suffix = slug_request_fragment(request)
-        log_paths[index] = output_paths["logs_dir"] / f"{index:02d}_{suffix}.log"
-        query_paths[index] = output_paths["query_dir"] / f"{index:02d}_{suffix}.txt"
-        log_locks[index] = threading.Lock()
-
-    with ThreadPoolExecutor(max_workers=max(4, len(models))) as pool:
-        for index, request in enumerate(requests, start=1):
-            for model_name in models:
-                futures.append(
-                    pool.submit(
-                        run_single_generation,
-                        mode,
-                        database_name,
-                        index,
-                        request,
-                        model_name,
-                        query_store,
-                        schema_store,
-                        log_paths[index],
-                        log_locks[index],
-                    )
+    # Use a ThreadPoolExecutor to run each request with a timeout
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        for idx, request in enumerate(requests, start=1):
+            future = executor.submit(process_one_request, idx, request)
+            try:
+                result = future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                # Cancel the future (best effort) and record timeout
+                future.cancel()
+                logger.warning(f"Request {idx} timed out after {timeout}s")
+                result = RequestResult(
+                    request_index=idx,
+                    model_name=model_key,
+                    sql_code=None,
+                    status="TIMEOUT",
+                    error=f"Exceeded timeout of {timeout}s",
+                    feedback_category=None,
+                    feedback_explanation=None,
+                    attempts=0,
+                    time_taken=timeout,
+                    success=False,
                 )
+            result_queue.put((idx, model_key, result))
 
-        for future in as_completed(futures):
-            result = future.result()
-            result_map[result.request_index].append(result)
-            all_results.append(result)
+    logger.info("Thread finished all requests.")
 
-    for index, request in enumerate(requests, start=1):
-        ordered_results = sorted(result_map[index], key=lambda r: r.model_name)
-        write_request_outputs(query_paths[index], request, ordered_results)
 
-    write_final_statistics(
-        output_paths["stats"],
-        request_count=len(requests),
-        execution_count=len(futures),
-        all_results=all_results,
-        model_names=models,
+# ----------------------------------------------------------------------
+# Printer thread function
+# ----------------------------------------------------------------------
+def printer_thread(
+    result_queue: queue.Queue,
+    num_models: int,
+    num_requests: int,
+    queries_dir: Path,
+    logs_dir: Path,
+    requests: List[str],
+) -> None:
+    """
+    Collect results from all threads, write per-request files in order,
+    and finally write a statistics summary.
+    """
+    results_by_index: Dict[int, Dict[str, RequestResult]] = {}
+    completed_indices = set()
+    next_index = 1
+    total_expected = num_models * num_requests
+    received = 0
+
+    logger = logging.getLogger("printer")
+    logger.setLevel(logging.INFO)
+    fh = logging.FileHandler(logs_dir / "printer.log", encoding='utf-8')
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    logger.addHandler(fh)
+
+    logger.info(f"Printer started. Expecting {total_expected} results.")
+
+    while received < total_expected:
+        try:
+            idx, model, res = result_queue.get(timeout=1)
+            received += 1
+            if idx not in results_by_index:
+                results_by_index[idx] = {}
+            results_by_index[idx][model] = res
+
+            # Check if this index is now complete
+            if len(results_by_index[idx]) == num_models:
+                completed_indices.add(idx)
+
+            # Write any consecutive completed indices starting from next_index
+            while next_index in completed_indices:
+                _write_request_file(next_index, results_by_index[next_index], requests, queries_dir)
+                next_index += 1
+
+        except queue.Empty:
+            # No new results, continue loop
+            pass
+
+    # All results received – write any remaining indices in order
+    for idx in sorted(results_by_index.keys()):
+        if idx >= next_index:
+            if len(results_by_index[idx]) == num_models:
+                _write_request_file(idx, results_by_index[idx], requests, queries_dir)
+            else:
+                logger.warning(f"Incomplete results for index {idx} (should not happen)")
+
+    # Write final statistics
+    _write_statistics(results_by_index, num_requests, queries_dir.parent / "final_stats.txt", requests)
+    logger.info("Printer finished.")
+
+
+def _write_request_file(
+    index: int,
+    results: Dict[str, RequestResult],
+    requests: List[str],
+    queries_dir: Path,
+) -> None:
+    """Write a single request output file."""
+    request_text = requests[index - 1]
+    safe_req = request_text.replace(' ', '_')[:20]
+    filename = f"{index:02d}_{safe_req}.txt"
+    filepath = queries_dir / filename
+
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(f"[Request]\n{request_text}\n\n")
+        # Write results in the same order as models (from config)
+        for i, model_key in enumerate(QUERY_GENERATION_MODELS.keys(), 1):
+            res = results.get(model_key)
+            if res is None:
+                f.write(f"{i}. [{model_key}]\n\nNo result\n\n")
+                continue
+            f.write(f"{i}. [{model_key}]\n\n")
+            f.write(f"Query:\n{res.sql_code or 'N/A'}\n\n")
+            f.write(f"Status and outcome: {res.status}, {res.error or 'N/A'}\n")
+            f.write(f"LLM Feedback: {res.feedback_category or 'N/A'} {res.feedback_explanation or ''}\n")
+            f.write(f"Attempts: {res.attempts}\n")
+            f.write(f"Request time: {res.time_taken:.2f}s\n\n")
+
+
+def _write_statistics(
+    results_by_index: Dict[int, Dict[str, RequestResult]],
+    num_requests: int,
+    stats_path: Path,
+    requests: List[str],
+) -> None:
+    """Aggregate statistics and write to final_stats.txt."""
+    total_requests = num_requests
+    successful_executions = 0
+    correct_queries = 0
+    runtime_errors = 0
+    syntax_errors = 0
+    other_errors = 0
+    total_attempts = 0
+
+    # Per-model stats
+    model_stats = {model: {"correct": 0, "total_time": 0.0, "attempts": 0, "count": 0}
+                   for model in QUERY_GENERATION_MODELS.keys()}
+
+    for idx, models_dict in results_by_index.items():
+        for model, res in models_dict.items():
+            if res.success:
+                successful_executions += 1
+                total_attempts += res.attempts
+                model_stats[model]["attempts"] += res.attempts
+                model_stats[model]["total_time"] += res.time_taken
+                model_stats[model]["count"] += 1
+
+                if res.status == QueryStatus.SUCCESS.value:
+                    correct_queries += 1
+                    model_stats[model]["correct"] += 1
+                elif res.status == QueryStatus.RUNTIME_ERROR.value:
+                    runtime_errors += 1
+                elif res.status == QueryStatus.SYNTAX_ERROR.value:
+                    syntax_errors += 1
+                else:
+                    other_errors += 1
+            else:
+                # Exception occurred – count as other error
+                other_errors += 1
+
+    # Build report
+    lines = []
+    lines.append("=== FINAL STATISTICS ===\n")
+    lines.append(f"Total input requests: {total_requests}")
+    lines.append(f"Successful executions (no exception): {successful_executions}")
+    lines.append(f"Correct queries: {correct_queries}")
+    lines.append(f"Runtime errors: {runtime_errors}")
+    lines.append(f"Syntax errors: {syntax_errors}")
+    lines.append(f"Other errors: {other_errors}")
+    lines.append(f"Total attempts across all executions: {total_attempts}\n")
+
+    lines.append("Model rankings (by time, attempts, success rate):")
+    for model, stats in model_stats.items():
+        avg_time = stats["total_time"] / stats["count"] if stats["count"] > 0 else 0
+        avg_attempts = stats["attempts"] / stats["count"] if stats["count"] > 0 else 0
+        success_rate = (stats["correct"] / stats["count"] * 100) if stats["count"] > 0 else 0
+        lines.append(f"  {model}:")
+        lines.append(f"    Avg time: {avg_time:.2f}s")
+        lines.append(f"    Avg attempts: {avg_attempts:.2f}")
+        lines.append(f"    Success rate: {success_rate:.1f}% ({stats['correct']}/{stats['count']})")
+
+    with open(stats_path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(lines))
+
+    print("\n" + "\n".join(lines))
+
+def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
+    # ------------------------------------------------------------------
+    # PHASE ONE: Initialization
+    # ------------------------------------------------------------------
+    print("=== PHASE ONE: Initialization ===")
+
+    # 1. Database selection
+    db_name = database_name
+    if db_name is None:
+        client = DatabaseClient()  # connects without specific database
+        dbs = client.list_databases()
+        client.close_connection()
+        print("Available databases:")
+        for i, db in enumerate(dbs):
+            print(f"{i+1}. {db}")
+        choice = input("Select database by number or name: ").strip()
+        try:
+            idx = int(choice) - 1
+            db_name = dbs[idx]
+        except ValueError:
+            db_name = choice
+        print(f"Using database: {db_name}")
+
+    # 2. Load requests
+    requests_file = TESTS_DIR / 'input' / 'requests' / f"{db_name}_requests.txt"
+    if not requests_file.exists():
+        print(f"Error: Requests file not found: {requests_file}")
+        sys.exit(1)
+    with open(requests_file, 'r', encoding='utf-8') as f:
+        requests = [line.strip() for line in f if line.strip()]
+    print(f"Loaded {len(requests)} requests.")
+
+    # 3. Create output directories
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_dir = TESTS_DIR / 'output' / 'runs' / f"{db_name}_results" / f"results_{timestamp}"
+    queries_dir = output_dir / 'queries'
+    logs_dir = output_dir / 'logs'
+    queries_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Output will be written to: {output_dir}")
+
+    # 4. Acquire schema from MySQL and store in vector store
+    print("Acquiring schema from MySQL...")
+    schema_orc = SchemaOrchestrator(database_name=db_name, source=SchemaSource.MYSQL)
+    schema = schema_orc.acquire_schema()  # This also saves JSON and adds to vector store
+    schema_store = schema_orc.schema_store
+    print("Schema acquisition completed.")
+
+    # 5. Initialize shared query store with lock
+    query_store_lock = threading.Lock()
+    thread_safe_query_store = ThreadSafeQueryStore(VECTOR_STORE_DIR, query_store_lock)
+
+    # ------------------------------------------------------------------
+    # PHASE TWO: Core Execution
+    # ------------------------------------------------------------------
+    print("=== PHASE TWO: Core Execution ===")
+
+    result_queue = queue.Queue()
+    num_models = len(QUERY_GENERATION_MODELS)
+
+    # Start printer thread
+    printer = threading.Thread(
+        target=printer_thread,
+        args=(result_queue, num_models, len(requests), queries_dir, logs_dir, requests)
     )
+    printer.start()
 
-    return output_paths["root"]
+    # Start generator threads (one per model)
+    threads = []
+    for model_key in QUERY_GENERATION_MODELS.keys():
+        t = threading.Thread(
+            target=generator_thread,
+            args=(model_key, requests, result_queue, timeout,
+                  schema_store, thread_safe_query_store, logs_dir, db_name)
+        )
+        t.start()
+        threads.append(t)
 
+    # Wait for all generator threads to finish
+    for t in threads:
+        t.join()
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run end-to-end QueryOrchestrator SQL generation workflow")
-    parser.add_argument("--mode", choices=["mysql", "text"], default="mysql", help="Schema mode")
-    parser.add_argument("--db", type=str, help="Database name to use")
+    # Wait for printer to finish processing all results
+    printer.join()
 
+    print("All threads finished. Output written to:", output_dir)
+# ----------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------
+def main():
+    parser = argparse.ArgumentParser(description="Test QueryOrchestrator with multiple models.")
+    parser.add_argument('--mode', choices=['mysql', 'text'], default='mysql',
+                        help="Schema source mode (mysql or text). Default: mysql")
+    parser.add_argument('--database_name', type=str, default=None,
+                        help="Name of the database. If not provided, list available databases.")
+    parser.add_argument('--timeout', type=int, default=TIMEOUT_PER_REQUEST,
+                        help="Timeout per request in seconds.")
     args = parser.parse_args()
-    output_root = run_workflow(args.mode, args.db)
-    print(f"✅ Workflow completed. Output directory: {output_root}")
 
+    run_stress_test(args.mode, args.database_name, args.timeout)
 
 if __name__ == "__main__":
     main()

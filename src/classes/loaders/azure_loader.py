@@ -1,7 +1,7 @@
 import requests
 from pathlib import Path
 from .exceptions import ConnectionTestError
-from classes.loaders.base_loader import BaseLoader
+from src.classes.loaders.base_loader import BaseLoader
 
 
 class AzureLoader(BaseLoader):

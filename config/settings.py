@@ -98,3 +98,4 @@ ERROR_CATEGORIES = {
 LOGGER_LEVEL = logging.INFO
 LOGINFO_SEPARATOR = "//" *80
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
+TIMEOUT_PER_REQUEST = 600   # 10 minutes timeout per model per request

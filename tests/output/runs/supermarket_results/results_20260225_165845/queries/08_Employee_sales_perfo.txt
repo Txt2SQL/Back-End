@@ -1,0 +1,92 @@
+[Request]
+Employee sales performance with customer details. Show each employee's sales performance including: Employee name, number of orders processed, total revenue, and their top customer
+
+1. [gpt-4o]
+
+Query:
+SELECT e.employee_name, 
+       COUNT(o.order_id) AS number_of_orders_processed, 
+       SUM(o.total_amount) AS total_revenue, 
+       c.customer_name AS top_customer
+FROM employees e
+JOIN orders o ON e.employee_id = o.employee_id
+JOIN (
+    SELECT o.employee_id, o.customer_id, COUNT(o.order_id) AS customer_order_count
+    FROM orders o
+    GROUP BY o.employee_id, o.customer_id
+    ORDER BY COUNT(o.order_id) DESC
+    LIMIT 1
+) t ON e.employee_id = t.employee_id
+JOIN customers c ON t.customer_id = c.customer_id
+GROUP BY e.employee_name, c.customer_name;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'e.employee_name' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 6.74s
+
+2. [gpt-5-mini]
+
+Query:
+SELECT
+  e.employee_name,
+  COUNT(o.order_id) AS orders_processed,
+  COALESCE(SUM(o.total_amount), 0) AS total_revenue,
+  (
+    SELECT c2.customer_name
+    FROM customers c2
+    JOIN orders o2 ON c2.customer_id = o2.customer_id
+    WHERE o2.employee_id = e.employee_id
+    GROUP BY c2.customer_name, c2.customer_id
+    ORDER BY SUM(o2.total_amount) DESC
+    LIMIT 1
+  ) AS top_customer
+FROM employees e
+LEFT JOIN orders o ON e.employee_id = o.employee_id
+GROUP BY e.employee_id, e.employee_name;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'e.employee_name' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 85.65s
+
+3. [codestral:22b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.52s
+
+4. [codellama:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.52s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.50s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.51s
+

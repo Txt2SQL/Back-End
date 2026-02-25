@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from classes.loaders.base_loader import BaseLoader
+from src.classes.loaders.base_loader import BaseLoader
 
 class BaseLLM(ABC):
     response: str

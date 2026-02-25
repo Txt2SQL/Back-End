@@ -5,9 +5,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from dotenv import dotenv_values
 from typing import Any, Type
-from classes.logger_manager import LoggerManager
-from src.config import ENV_DIR
-from classes.loaders.exceptions import (
+from config import ENV_DIR
+from src.classes.logger_manager import LoggerManager
+from src.classes.loaders.exceptions import (
     MissingVariableError,
     UninitializedVariableError,
     InvalidTypeError,
@@ -25,7 +25,7 @@ class BaseLoader(ABC):
     env_path: Path
 
     def __init__(self, env_name: str, values: dict[str, Type]):
-        self.env_path = ENV_DIR /  env_name
+        self.env_path = ENV_DIR / env_name
         self.values = values
         self.config = {}
 

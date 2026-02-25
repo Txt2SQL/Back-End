@@ -7,17 +7,17 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from pathlib import Path
 from typing import Optional, List
 
-from classes.orchestrators.base_orchestrator import BaseOrchestrator
-from classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
-from classes.domain_states.schema import Schema
-from classes.domain_states import QuerySession
-from classes.RAG_service.schema_store import SchemaStore
-from classes.RAG_service.query_store import QueryStore
-from classes.RAG_service.schema_store import Document
-from classes.clients.database_client import DatabaseClient
-from classes.logger_manager import LoggerManager
+from src.classes.orchestrators.base_orchestrator import BaseOrchestrator
+from src.classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
+from src.classes.domain_states.schema import Schema
+from src.classes.domain_states import QuerySession
+from src.classes.RAG_service.schema_store import SchemaStore
+from src.classes.RAG_service.query_store import QueryStore
+from src.classes.RAG_service.schema_store import Document
+from src.classes.clients.database_client import DatabaseClient
+from src.classes.logger_manager import LoggerManager
 
-from src.config import QUERY_GENERATION_MODELS, SCHEMA_DIR
+from config import QUERY_GENERATION_MODELS, SCHEMA_DIR
 from src.classes.domain_states import QueryStatus, FeedbackStatus, SchemaSource
 
 logger = LoggerManager.get_logger(__name__)

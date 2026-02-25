@@ -8,8 +8,8 @@ class OpenWebUILLM(BaseLLM):
         self.loader = OWUILoader()
         cfg = self.loader.config
         
-        self.url = cfg["base_url"]
-        self.api_key = cfg["api_key"]
+        self.url = cfg["SERVER_ADDRESS"]
+        self.api_key = cfg["API_KEY"]
         self.model = model
 
     def generate(self, prompt: str, **kwargs) -> str:

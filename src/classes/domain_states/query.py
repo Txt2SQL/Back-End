@@ -9,7 +9,7 @@ from .enums import (
     FeedbackStatus,
 )
 from src.classes.domain_states.feedback import LLMFeedback
-from classes.logger_manager import LoggerManager
+from src.classes.logger_manager import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

@@ -14,6 +14,7 @@ from .settings import (
     LOGGER_LEVEL,
     LOGINFO_SEPARATOR,
     MAX_OUTPUT_LENGTH,
+    TIMEOUT_PER_REQUEST
 )
 
 from .paths import (
@@ -37,6 +38,7 @@ __all__ = [
     "LOGGER_LEVEL",
     "LOGINFO_SEPARATOR",
     "MAX_OUTPUT_LENGTH",
+    "TIMEOUT_PER_REQUEST",
     
     # Paths exports
     "PROJECT_ROOT",

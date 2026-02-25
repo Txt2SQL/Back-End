@@ -1,0 +1,35 @@
+=== FINAL STATISTICS ===
+
+Total input requests: 18
+Successful executions (no exception): 36
+Correct queries: 6
+Runtime errors: 30
+Syntax errors: 0
+Other errors: 72
+Total attempts across all executions: 144
+
+Model rankings (by time, attempts, success rate):
+  gpt-4o:
+    Avg time: 9.00s
+    Avg attempts: 4.00
+    Success rate: 22.2% (4/18)
+  gpt-5-mini:
+    Avg time: 48.71s
+    Avg attempts: 4.00
+    Success rate: 11.1% (2/18)
+  codestral:22b:
+    Avg time: 0.00s
+    Avg attempts: 0.00
+    Success rate: 0.0% (0/0)
+  codellama:34b:
+    Avg time: 0.00s
+    Avg attempts: 0.00
+    Success rate: 0.0% (0/0)
+  sqlcoder:34b:
+    Avg time: 0.00s
+    Avg attempts: 0.00
+    Success rate: 0.0% (0/0)
+  Qwen3-Coder-Next:
+    Avg time: 0.00s
+    Avg attempts: 0.00
+    Success rate: 0.0% (0/0)

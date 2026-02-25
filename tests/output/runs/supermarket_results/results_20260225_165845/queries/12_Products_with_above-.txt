@@ -1,0 +1,113 @@
+[Request]
+Products with above-average sales in their category. For each product, determine if its total sales quantity is above the average sales quantity of all products in the same category. Show product name, category, total sales, and category average sales
+
+1. [gpt-4o]
+
+Query:
+SELECT 
+    p.product_name,
+    p.category_id,
+    SUM(oi.quantity) AS total_sales,
+    cat_avg.avg_sales AS category_average_sales
+FROM products p
+JOIN order_items oi ON p.product_id = oi.product_id
+JOIN (
+    SELECT 
+        p2.category_id,
+        AVG(sales.total_category_sales) AS avg_sales
+    FROM products p2
+    JOIN (
+        SELECT 
+            p3.category_id,
+            p3.product_id,
+            SUM(oi2.quantity) AS total_category_sales
+        FROM products p3
+        JOIN order_items oi2 ON p3.product_id = oi2.product_id
+        GROUP BY p3.category_id, p3.product_id
+    ) sales ON p2.category_id = sales.category_id
+    GROUP BY p2.category_id
+) cat_avg ON p.category_id = cat_avg.category_id
+GROUP BY p.product_id, p.product_name, p.category_id, cat_avg.avg_sales
+HAVING SUM(oi.quantity) > cat_avg.avg_sales;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 12.63s
+
+2. [gpt-5-mini]
+
+Query:
+WITH product_sales AS (
+  SELECT
+    p.product_id,
+    p.product_name,
+    p.category_id,
+    COALESCE(SUM(oi.quantity), 0) AS total_sales
+  FROM products p
+  LEFT JOIN order_items oi ON oi.product_id = p.product_id
+  GROUP BY p.product_id, p.product_name, p.category_id
+),
+category_avg AS (
+  SELECT
+    ps.category_id,
+    AVG(ps.total_sales) AS category_avg_sales
+  FROM product_sales ps
+  GROUP BY ps.category_id
+)
+SELECT
+  ps.product_name,
+  c.category_name,
+  ps.total_sales,
+  ca.category_avg_sales
+FROM product_sales ps
+LEFT JOIN category_avg ca ON ps.category_id = ca.category_id
+LEFT JOIN categories c ON c.category_id = ps.category_id
+WHERE ps.total_sales > ca.category_avg_sales
+ORDER BY c.category_name, ps.product_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 44.89s
+
+3. [codestral:22b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.53s
+
+4. [codellama:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.44s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.53s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.54s
+

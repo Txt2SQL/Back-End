@@ -4,9 +4,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from typing import List
 from pathlib import Path
 from langchain_core.documents import Document
-from classes.RAG_service.base_vector_store import VectorStore
-from classes.domain_states.query import QuerySession
-from classes.logger_manager import LoggerManager
+from src.classes.RAG_service.base_vector_store import VectorStore
+from src.classes.domain_states.query import QuerySession
+from src.classes.logger_manager import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

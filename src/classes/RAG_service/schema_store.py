@@ -1,9 +1,9 @@
 from typing import List
 from pathlib import Path
-from classes.RAG_service.base_vector_store import VectorStore
+from src.classes.RAG_service.base_vector_store import VectorStore
 from langchain_core.documents import Document
-from classes.domain_states.schema import Schema
-from classes.logger_manager import LoggerManager
+from src.classes.domain_states.schema import Schema
+from src.classes.logger_manager import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

@@ -1,4 +1,4 @@
-from classes.loaders.azure_loader import AzureLoader
+from src.classes.loaders.azure_loader import AzureLoader
 from openai import AzureOpenAI
 from .base_llm import BaseLLM
 

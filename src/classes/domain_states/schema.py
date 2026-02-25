@@ -5,9 +5,9 @@ import json, re, hashlib, time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from src.config import SCHEMA_DIR
+from config import SCHEMA_DIR
 from .enums import SchemaSource
-from classes.logger_manager import LoggerManager
+from src.classes.logger_manager import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

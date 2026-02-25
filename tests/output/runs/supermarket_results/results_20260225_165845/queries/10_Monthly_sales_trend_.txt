@@ -1,0 +1,144 @@
+[Request]
+Monthly sales trend with employee and customer analysis. Show monthly sales trends including: Month, total revenue, top selling product, best performing employee, most active customer
+
+1. [gpt-4o]
+
+Query:
+SELECT 
+    DATE_FORMAT(o.order_date, '%Y-%m') AS month,
+    SUM(oi.quantity * p.price) AS total_revenue,
+    p.product_name AS top_selling_product,
+    CONCAT(e.first_name, ' ', e.last_name) AS best_performing_employee,
+    CONCAT(c.first_name, ' ', c.last_name) AS most_active_customer
+FROM orders o
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+JOIN employees e ON o.employee_id = e.employee_id
+JOIN customers c ON o.customer_id = c.customer_id
+GROUP BY DATE_FORMAT(o.order_date, '%Y-%m'), p.product_name, e.employee_id, c.customer_id
+ORDER BY DATE_FORMAT(o.order_date, '%Y-%m');
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 13.89s
+
+2. [gpt-5-mini]
+
+Query:
+WITH month_revenue AS (
+  SELECT
+    DATE_TRUNC('month', o.order_date) AS month,
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS total_revenue
+  FROM orders o
+  LEFT JOIN order_items oi ON o.order_id = oi.order_id
+  GROUP BY DATE_TRUNC('month', o.order_date)
+),
+product_agg AS (
+  SELECT
+    DATE_TRUNC('month', o.order_date) AS month,
+    p.product_id,
+    p.product_name,
+    SUM(oi.quantity) AS total_qty,
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS revenue
+  FROM orders o
+  LEFT JOIN order_items oi ON o.order_id = oi.order_id
+  LEFT JOIN products p ON oi.product_id = p.product_id
+  GROUP BY DATE_TRUNC('month', o.order_date), p.product_id, p.product_name
+),
+product_ranked AS (
+  SELECT
+    pa.*,
+    ROW_NUMBER() OVER (PARTITION BY pa.month ORDER BY pa.total_qty DESC, pa.revenue DESC) AS rn
+  FROM product_agg pa
+),
+employee_agg AS (
+  SELECT
+    DATE_TRUNC('month', o.order_date) AS month,
+    e.employee_id,
+    e.employee_name,
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS revenue
+  FROM orders o
+  LEFT JOIN order_items oi ON o.order_id = oi.order_id
+  LEFT JOIN employees e ON o.employee_id = e.employee_id
+  GROUP BY DATE_TRUNC('month', o.order_date), e.employee_id, e.employee_name
+),
+employee_ranked AS (
+  SELECT
+    ea.*,
+    ROW_NUMBER() OVER (PARTITION BY ea.month ORDER BY ea.revenue DESC) AS rn
+  FROM employee_agg ea
+),
+customer_agg AS (
+  SELECT
+    DATE_TRUNC('month', o.order_date) AS month,
+    c.customer_id,
+    c.customer_name,
+    COUNT(o.order_id) AS orders_count
+  FROM orders o
+  LEFT JOIN customers c ON o.customer_id = c.customer_id
+  GROUP BY DATE_TRUNC('month', o.order_date), c.customer_id, c.customer_name
+),
+customer_ranked AS (
+  SELECT
+    ca.*,
+    ROW_NUMBER() OVER (PARTITION BY ca.month ORDER BY ca.orders_count DESC) AS rn
+  FROM customer_agg ca
+)
+SELECT
+  mr.month,
+  mr.total_revenue,
+  pr.product_name AS top_selling_product,
+  er.employee_name AS best_performing_employee,
+  cr.customer_name AS most_active_customer
+FROM month_revenue mr
+LEFT JOIN product_ranked pr ON mr.month = pr.month AND pr.rn = 1
+LEFT JOIN employee_ranked er ON mr.month = er.month AND er.rn = 1
+LEFT JOIN customer_ranked cr ON mr.month = cr.month AND cr.rn = 1
+ORDER BY mr.month;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 85.85s
+
+3. [codestral:22b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.52s
+
+4. [codellama:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.48s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.52s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 'base_url'
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 0.53s
+

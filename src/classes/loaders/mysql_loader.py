@@ -1,7 +1,7 @@
 import mysql.connector
 
-from classes.loaders.base_loader import BaseLoader
-from classes.loaders.exceptions import ConnectionTestError
+from src.classes.loaders.base_loader import BaseLoader
+from src.classes.loaders.exceptions import ConnectionTestError
 from pathlib import Path
 
 
