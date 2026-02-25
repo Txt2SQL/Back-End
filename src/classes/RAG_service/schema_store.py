@@ -19,19 +19,26 @@ class SchemaStore(VectorStore):
         if not schema.json_ready:
             raise ValueError("Schema is not ready.")
 
-        doc_data = schema.to_document()
+        docs_data = schema.to_document()
 
-        document = Document(
-            page_content=doc_data["content"],
-            metadata=doc_data["metadata"],
-        )
+        if not docs_data:
+            raise ValueError("Schema produced no documents.")
 
+        documents = [
+            Document(
+                page_content=doc_data["content"],
+                metadata=doc_data["metadata"],
+            )
+            for doc_data in docs_data
+        ]
+        ids = [doc_data["id"] for doc_data in docs_data]
+        
         self._store.add_documents(
-            documents=[document],
-            ids=[doc_data["id"]],
+            documents=documents,
+            ids=ids,
         )
 
-        print(f"Schema {doc_data['id']} stored in vector DB.")
+        logger.info(f"Stored {len(documents)} schema table documents in vector DB.")
 
     # =====================================================
     # RETRIEVE CONTEXT
