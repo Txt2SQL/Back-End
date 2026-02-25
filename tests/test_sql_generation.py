@@ -23,6 +23,12 @@ from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.config import PROJECT_ROOT, QUERY_GENERATION_MODELS
 
+# ==================== CONFIGURATION ====================
+BASE_DIR = Path(__file__).resolve().parent
+TMP_DIR = BASE_DIR / "tmp"
+TIMEOUT_PER_MODEL = 600   # 10 minutes timeout per model per request
+QVS_DIR = TMP_DIR / "query_vector_store"
+SVS_DIR = TMP_DIR / "schema_vector_store"
 
 @dataclass
 class RunResult:
@@ -96,15 +102,17 @@ def load_requests(input_file: Path) -> List[str]:
     return [line for line in lines if line and not line.startswith("#")]
 
 
-def build_schema_and_rag(database_name: str, schema_store: SchemaStore) -> Schema:
+def build_rag(database_name: str) -> SchemaStore:
     database_client = DatabaseClient(database_name)
     mysql_schema = database_client.extract_schema()
 
     schema = Schema(database_name=database_name, schema_source=SchemaSource.MYSQL)
     schema.parse_response(mysql_schema)
+    
+    schema_store = SchemaStore(SVS_DIR)
     schema_store.add_schema(schema)
 
-    return schema
+    return schema_store
 
 
 def slug_request_fragment(text: str, limit: int = 28) -> str:
@@ -256,11 +264,9 @@ def run_workflow(input_file: Path, selected_db: str | None) -> Path:
     output_paths = initialize_output_structure(database_name)
     requests = load_requests(input_file)
 
-    schema_store = SchemaStore()
-    query_store = QueryStore()
-
     # Schema retrieval from MySQL and RAG setup for schema/query memory.
-    build_schema_and_rag(database_name, schema_store)
+    schema_store = build_rag(database_name)
+    query_store = QueryStore(QVS_DIR)
 
     models = list(QUERY_GENERATION_MODELS.keys())
 

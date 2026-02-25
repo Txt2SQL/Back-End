@@ -2,6 +2,7 @@ import os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 
@@ -11,10 +12,10 @@ class VectorStore(ABC):
     persist_directory: str
     _store: Chroma
     
-    def __init__(self, collection_name: str):
+    def __init__(self, path: Path, collection_name: str):
         self.embedding_function = OllamaEmbeddings(model="mxbai-embed-large")
         self.collection_name = collection_name
-        self.persist_directory = f"data/vector_stores/{collection_name}" 
+        self.persist_directory = f"{path}/vector_stores/{collection_name}" 
         self._store = Chroma(
             collection_name=self.collection_name,
             embedding_function=self.embedding_function,
