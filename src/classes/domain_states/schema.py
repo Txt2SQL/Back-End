@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import json, re, hashlib, time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from src.config import SCHEMA_DIR
 from src.logging_utils import setup_logger
@@ -215,39 +215,50 @@ class Schema:
     # RAG DOCUMENT
     # =====================================================
 
-    def to_document(self) -> Dict[str, Any]:
+    def to_documents(self) -> List[Dict[str, Any]]:
         """
-        Convert schema into a document for vector store.
+        Convert schema into per-table documents for the vector store.
         """
 
         if self.tables is None or "tables" not in self.tables:
             raise ValueError("Schema tables are not loaded or are empty.")
 
-        content = f"Database: {self.database_name}\n\n"
+        schema_id = self.schema_id or self._compute_hash(self.tables)
+        created_at = datetime.utcnow().isoformat()
+        semantic_notes = self.tables.get("semantic_notes") or []
 
-        for table in self.tables["tables"]:
-            content += f"Table: {table['name']}\n"
-            for column in table["columns"]:
-                constraints = ", ".join(column["constraints"])
-                content += (
-                    f"  - {column['name']} ({column['type']}) [{constraints}]\n"
-                )
-            content += "\n"
+        documents: List[Dict[str, Any]] = []
 
-        if self.tables.get("semantic_notes"):
-            content += "Semantic Notes:\n"
-            for note in self.tables["semantic_notes"]:
-                content += f"- {note}\n"
+        for idx, table in enumerate(self.tables["tables"]):
+            table_name = table.get("name", f"table_{idx}")
 
-        return {
-            "id": self.schema_id,
-            "content": content,
-            "metadata": {
-                "database_name": self.database_name,
-                "schema_source": self.source,
-                "created_at": datetime.utcnow().isoformat(),
-            },
-        }
+            content = f"Database: {self.database_name}\n"
+            content += f"Table: {table_name}\n"
+
+            for column in table.get("columns", []):
+                constraints = ", ".join(column.get("constraints", []))
+                content += f"  - {column.get('name', 'unknown')} ({column.get('type', 'unknown')}) [{constraints}]\n"
+
+            if semantic_notes:
+                content += "\nSemantic Notes:\n"
+                for note in semantic_notes:
+                    content += f"- {note}\n"
+
+            documents.append(
+                {
+                    "id": f"{schema_id}:{table_name}",
+                    "content": content,
+                    "metadata": {
+                        "database_name": self.database_name,
+                        "schema_source": self.source,
+                        "schema_id": schema_id,
+                        "table": table_name,
+                        "created_at": created_at,
+                    },
+                }
+            )
+
+        return documents
         
     def to_string(self):
         return json.dumps(self.tables, indent=2)

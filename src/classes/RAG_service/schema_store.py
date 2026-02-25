@@ -19,7 +19,7 @@ class SchemaStore(VectorStore):
         if not schema.json_ready:
             raise ValueError("Schema is not ready.")
 
-        docs_data = schema.to_document()
+        docs_data = schema.to_documents()
 
         if not docs_data:
             raise ValueError("Schema produced no documents.")
