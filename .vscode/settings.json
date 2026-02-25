@@ -3,7 +3,15 @@
         "terminal.background": "#00000000",
         "activityBar.background": "#0A3425",
         "titleBar.activeBackground": "#0E4934",
-        "titleBar.activeForeground": "#F3FDF9"
+        "titleBar.activeForeground": "#F3FDF9",
+        "titleBar.inactiveBackground": "#0A3425",
+        "titleBar.inactiveForeground": "#F3FDF9",
+        "statusBar.background": "#0A3425",
+        "statusBar.foreground": "#F3FDF9",
+        "statusBar.debuggingBackground": "#0A3425",
+        "statusBar.debuggingForeground": "#F3FDF9",
+        "statusBar.noFolderBackground": "#0A3425",
+        "statusBar.noFolderForeground": "#F3FDF9"
     },
     "python.testing.pytestArgs": [
         "test"
