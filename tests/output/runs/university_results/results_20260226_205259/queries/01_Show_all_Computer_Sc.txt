@@ -1,0 +1,78 @@
+[Request]
+Show all Computer Science students with their GPA
+
+1. [gpt-4o]
+
+Query:
+SELECT
+    s.student_id,
+    s.first_name,
+    s.last_name,
+    s.gpa
+FROM
+    university.students s
+WHERE
+    s.major_id = (
+        SELECT major_id
+        FROM university.courses
+        WHERE course_name = 'Computer Science'
+    );
+
+Status and outcome: SUCCESS, N/A
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 9.62s
+
+2. [gpt-5-mini]
+
+Query:
+SELECT DISTINCT students.student_id, students.first_name, students.last_name, students.email, students.gpa
+FROM students
+JOIN enrollments ON students.student_id = enrollments.student_id
+JOIN courses ON enrollments.course_id = courses.course_id
+WHERE courses.course_code LIKE 'CS%' OR courses.course_name LIKE '%Computer Science%';
+
+Status and outcome: INCORRECT, [{'student_id': 1, 'first_name': 'John', 'last_name': 'Smith', 'email': 'john.smith@university.edu', 'gpa': Decimal('3.45')}, {'student_id': 2, 'first_name': 'Emma', 'last_name': 'Johnson', 'email': 'emma.johnson@university.edu', 'gpa': Decimal('3.78')}, {'student_id': 9, 'first_name': 'James', 'last_name': 'Rodriguez', 'email': 'james.rodriguez@university.edu', 'gpa': Decimal('3.45')}, {'student_id': 16, 'first_name': 'Amelia', 'last_name': 'Thomas', 'email': 'amelia.thomas@university.edu', 'gpa': Decimal('3.67')}, {'student_id': 24, 'first_name': 'Emily', 'last_name': 'White', 'email': 'emily.white@university.edu', 'gpa': Decimal('3.91')}, {'student_id': 32, 'first_name': 'Ella', 'last_name': 'Young', 'email': 'ella.young@university.edu', 'gpa': Decimal('3.94')}, {'student_id': 40, 'first_name': 'Luna', 'last_name': 'Mitchell', 'email': 'luna.mitchell@university.edu', 'gpa': Decimal('3.88')}, {'student_id': 48, 'first_name': 'Layla', 'last_name': 'Collins', 'email': 'layla.collins@university.edu', 'gpa': Decimal('3.85')}, {'student_id': 56, 'first_name': 'Natalie', 'last_name': 'Cook', 'email': 'natalie.cook@university.edu', 'gpa': Decimal('3.71')}, {'student_id': 64, 'first_name': 'Audrey', 'last_name': 'Gomez', 'email': 'audrey.gomez@university.edu', 'gpa': Decimal('3.93')}, {'student_id': 72, 'first_name': 'Stella', 'last_name': 'Watson', 'email': 'stella.watson@university.edu', 'gpa': Decimal('3.87')}, {'student_id': 3, 'first_name': 'Michael', 'last_name': 'Williams', 'email': 'michael.williams@university.edu', 'gpa': Decimal('3.12')}, {'student_id': 10, 'first_name': 'Isabella', 'last_name': 'Martinez', 'email': 'isabella.martinez@university.edu', 'gpa': Decimal('3.76')}, {'student_id': 17, 'first_name': 'Joseph', 'last_name': 'Taylor', 'email': 'joseph.taylor@university.edu', 'gpa': Decimal('3.43')}, {'student_id': 25, 'first_name': 'Jonathan', 'last_name': 'Harris', 'email': 'jonathan.harris@university.edu', 'gpa': Decimal('3.48')}, {'student_id': 33, 'first_name': 'Dylan', 'last_name': 'King', 'email': 'dylan.king@university.edu', 'gpa': Decimal('3.41')}, {'student_id': 41, 'first_name': 'Nathan', 'last_name': 'Roberts', 'email': 'nathan.roberts@university.edu', 'gpa': Decimal('3.46')}, {'student_id': 49, 'first_name': 'Henry', 'last_name': 'Edwards', 'email': 'henry.edwards@university.edu', 'gpa': Decimal('3.62')}, {'student_id': 57, 'first_name': 'Isaac', 'last_name': 'Rogers', 'email': 'isaac.rogers@university.edu', 'gpa': Decimal('3.47')}, {'student_id': 65, 'first_name': 'Thomas', 'last_name': 'Kelly', 'email': 'thomas.kelly@university.edu', 'gpa': Decimal('3.44')}, {'student_id': 73, 'first_name': 'Jaxon', 'last_name': 'Brooks', 'email': 'jaxon.brooks@university.edu', 'gpa': Decimal('3.61')}, {'student_id': 4, 'first_name': 'Sophia', 'last_name': 'Brown', 'email': 'sophia.brown@university.edu', 'gpa': Decimal('3.91')}, {'student_id': 11, 'first_name': 'Christopher', 'last_name': 'Hernandez', 'email': 'christopher.hernandez@university.edu', 'gpa': Decimal('3.10')}, {'student_id': 18, 'first_name': 'Evelyn', 'last_name': 'Moore', 'email': 'evelyn.moore@university.edu', 'gpa': Decimal('3.78')}, {'student_id': 26, 'first_name': 'Elizabeth', 'last_name': 'Sanchez', 'email': 'elizabeth.sanchez@university.edu', 'gpa': Decimal('3.65')}, {'student_id': 34, 'first_name': 'Madison', 'last_name': 'Scott', 'email': 'madison.scott@university.edu', 'gpa': Decimal('3.68')}, {'student_id': 42, 'first_name': 'Grace', 'last_name': 'Carter', 'email': 'grace.carter@university.edu', 'gpa': Decimal('3.79')}, {'student_id': 50, 'first_name': 'Lily', 'last_name': 'Stewart', 'email': 'lily.stewart@university.edu', 'gpa': Decimal('3.77')}, {'student_id': 58, 'first_name': 'Zoe', 'last_name': 'Morgan', 'email': 'zoe.morgan@university.edu', 'gpa': Decimal('3.69')}, {'student_id': 66, 'first_name': 'Brooklyn', 'last_name': 'Howard', 'email': 'brooklyn.howard@university.edu', 'gpa': Decimal('3.80')}, {'student_id': 74, 'first_name': 'Maya', 'last_name': 'Bennett', 'email': 'maya.bennett@university.edu', 'gpa': Decimal('3.70')}, {'student_id': 5, 'first_name': 'Daniel', 'last_name': 'Jones', 'email': 'daniel.jones@university.edu', 'gpa': Decimal('2.87')}, {'student_id': 12, 'first_name': 'Mia', 'last_name': 'Lopez', 'email': 'mia.lopez@university.edu', 'gpa': Decimal('3.95')}, {'student_id': 19, 'first_name': 'Joshua', 'last_name': 'Jackson', 'email': 'joshua.jackson@university.edu', 'gpa': Decimal('3.15')}, {'student_id': 27, 'first_name': 'Tyler', 'last_name': 'Clark', 'email': 'tyler.clark@university.edu', 'gpa': Decimal('3.19')}, {'student_id': 35, 'first_name': 'Samuel', 'last_name': 'Green', 'email': 'samuel.green@university.edu', 'gpa': Decimal('3.27')}, {'student_id': 43, 'first_name': 'Logan', 'last_name': 'Phillips', 'email': 'logan.phillips@university.edu', 'gpa': Decimal('3.21')}, {'student_id': 51, 'first_name': 'Evan', 'last_name': 'Flores', 'email': 'evan.flores@university.edu', 'gpa': Decimal('3.13')}, {'student_id': 59, 'first_name': 'Julian', 'last_name': 'Peterson', 'email': 'julian.peterson@university.edu', 'gpa': Decimal('3.25')}, {'student_id': 67, 'first_name': 'Jeremiah', 'last_name': 'Ward', 'email': 'jeremiah.ward@university.edu', 'gpa': Decimal('3.11')}, {'student_id': 75, 'first_name': 'Kevin', 'last_name': 'Gray', 'email': 'kevin.gray@university.edu', 'gpa': Decimal('3.20')}, {'student_id': 6, 'first_name': 'Olivia', 'last_name': 'Garcia', 'email': 'olivia.garcia@university.edu', 'gpa': Decimal('3.65')}, {'student_id': 13, 'first_name': 'Matthew', 'last_name': 'Gonzalez', 'email': 'matthew.gonzalez@university.edu', 'gpa': Decimal('3.34')}, {'student_id': 20, 'first_name': 'Abigail', 'last_name': 'Martin', 'email': 'abigail.martin@university.edu', 'gpa': Decimal('3.89')}, {'student_id': 28, 'first_name': 'Sofia', 'last_name': 'Ramirez', 'email': 'sofia.ramirez@university.edu', 'gpa': Decimal('3.87')}, {'student_id': 36, 'first_name': 'Scarlett', 'last_name': 'Baker', 'email': 'scarlett.baker@university.edu', 'gpa': Decimal('3.82')}, {'student_id': 44, 'first_name': 'Chloe', 'last_name': 'Evans', 'email': 'chloe.evans@university.edu', 'gpa': Decimal('3.92')}, {'student_id': 52, 'first_name': 'Hannah', 'last_name': 'Morris', 'email': 'hannah.morris@university.edu', 'gpa': Decimal('3.90')}, {'student_id': 60, 'first_name': 'Leah', 'last_name': 'Cooper', 'email': 'leah.cooper@university.edu', 'gpa': Decimal('3.86')}, {'student_id': 68, 'first_name': 'Claire', 'last_name': 'Cox', 'email': 'claire.cox@university.edu', 'gpa': Decimal('3.68')}, {'student_id': 7, 'first_name': 'David', 'last_name': 'Miller', 'email': 'david.miller@university.edu', 'gpa': Decimal('3.22')}, {'student_id': 14, 'first_name': 'Charlotte', 'last_name': 'Wilson', 'email': 'charlotte.wilson@university.edu', 'gpa': Decimal('3.82')}, {'student_id': 21, 'first_name': 'Ryan', 'last_name': 'Lee', 'email': 'ryan.lee@university.edu', 'gpa': Decimal('3.56')}, {'student_id': 29, 'first_name': 'Brandon', 'last_name': 'Lewis', 'email': 'brandon.lewis@university.edu', 'gpa': Decimal('3.52')}, {'student_id': 37, 'first_name': 'Benjamin', 'last_name': 'Adams', 'email': 'benjamin.adams@university.edu', 'gpa': Decimal('3.59')}, {'student_id': 45, 'first_name': 'Caleb', 'last_name': 'Turner', 'email': 'caleb.turner@university.edu', 'gpa': Decimal('3.54')}, {'student_id': 53, 'first_name': 'Jack', 'last_name': 'Nguyen', 'email': 'jack.nguyen@university.edu', 'gpa': Decimal('3.50')}, {'student_id': 61, 'first_name': 'Charles', 'last_name': 'Reed', 'email': 'charles.reed@university.edu', 'gpa': Decimal('3.58')}, {'student_id': 69, 'first_name': 'Cameron', 'last_name': 'Diaz', 'email': 'cameron.diaz@university.edu', 'gpa': Decimal('3.53')}, {'student_id': 8, 'first_name': 'Ava', 'last_name': 'Davis', 'email': 'ava.davis@university.edu', 'gpa': Decimal('3.88')}, {'student_id': 15, 'first_name': 'Andrew', 'last_name': 'Anderson', 'email': 'andrew.anderson@university.edu', 'gpa': Decimal('2.95')}, {'student_id': 22, 'first_name': 'Harper', 'last_name': 'Perez', 'email': 'harper.perez@university.edu', 'gpa': Decimal('3.72')}, {'student_id': 30, 'first_name': 'Avery', 'last_name': 'Robinson', 'email': 'avery.robinson@university.edu', 'gpa': Decimal('3.76')}, {'student_id': 38, 'first_name': 'Victoria', 'last_name': 'Nelson', 'email': 'victoria.nelson@university.edu', 'gpa': Decimal('3.73')}, {'student_id': 46, 'first_name': 'Riley', 'last_name': 'Torres', 'email': 'riley.torres@university.edu', 'gpa': Decimal('3.67')}, {'student_id': 54, 'first_name': 'Addison', 'last_name': 'Murphy', 'email': 'addison.murphy@university.edu', 'gpa': Decimal('3.83')}, {'student_id': 62, 'first_name': 'Savannah', 'last_name': 'Bailey', 'email': 'savannah.bailey@university.edu', 'gpa': Decimal('3.74')}, {'student_id': 70, 'first_name': 'Ellie', 'last_name': 'Richardson', 'email': 'ellie.richardson@university.edu', 'gpa': Decimal('3.75')}]
+LLM Feedback: UNKNOWN_ERROR The query returns students who have taken a course with code 'CS%' (using enrollments/courses) rather than students whose major is Computer Science. That will include non‑CS majors who took a CS course and omit CS majors who haven't taken one. Fix by filtering on the student's major (e.g., join the majors table and WHERE majors.name = 'Computer Science' or WHERE s.major_id = <CS_major_id>) and remove the enrollments/courses joins so all CS majors (with their GPA) are returned.
+Attempts: 4
+Request time: 39.72s
+
+3. [codestral:22b]
+
+Query:
+SELECT s.student_id, s.first_name, s.last_name, s.gpa
+      FROM students s
+      WHERE s.major_id = (SELECT major_id FROM majors WHERE major_name = 'Computer Science');
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'university.majors' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 13.85s
+
+4. [codellama:34b]
+
+Query:
+SELECT s.student_id, s.first_name, s.last_name, s.email, s.date_of_birth, s.enrollment_date, s.major_id, s.gpa
+FROM students s
+JOIN enrollments e ON s.student_id = e.student_id
+WHERE s.major_id IN (SELECT major_id FROM courses WHERE course_name LIKE '%Computer Science%') AND s.gpa > 3;
+
+Status and outcome: SUCCESS, N/A
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 14.80s
+
+5. [Qwen3-Coder-Next]
+
+Query:
+SELECT s.first_name, s.last_name, s.gpa
+FROM students s
+JOIN enrollments e ON s.student_id = e.student_id
+JOIN courses c ON e.course_id = c.course_id
+WHERE c.course_name LIKE '%Computer Science%';
+
+Status and outcome: SUCCESS, N/A
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 11.27s
+

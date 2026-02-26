@@ -9,8 +9,6 @@ from config import SCHEMA_DIR
 from .enums import SchemaSource
 from src.classes.logger import LoggerManager
 
-logger = LoggerManager.get_logger(__name__)
-
 
 class Schema:
 
@@ -37,13 +35,17 @@ class Schema:
         # -------------------------------------------------
         if self.file_path.exists():
             self._load_existing()
+    
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
             
     # =====================================================
     # LLM RESPONSE PARSING
     # =====================================================
 
     def parse_response(self, text: Any):
-        logger.info("📝 Starting parsing LLM response...")
+        self.logger.info("📝 Starting parsing LLM response...")
         
         if isinstance(text, Dict):
             self.tables = text
@@ -59,17 +61,17 @@ class Schema:
         ]
 
         for attempt in attempts:
-            logger.info("📝 Attempting to parse LLM response with attempts: %s", attempt)
+            self.logger.info("📝 Attempting to parse LLM response with attempts: %s", attempt)
             parsed = attempt(text)
             if parsed:
-                logger.info("✅ LLM response parsed successfully")
+                self.logger.info("✅ LLM response parsed successfully")
                 if self._validate_structure(parsed):
                     self.tables = parsed
                     self.json_ready = True
                     self._save_schema()
                     return
             else:
-                logger.info("❌ LLM response parsing failed")
+                self.logger.info("❌ LLM response parsing failed")
 
         raise ValueError("Failed to extract valid schema JSON from LLM response.")
 
@@ -203,11 +205,12 @@ class Schema:
         final_schema["schema_id"] = self.schema_id
         self.tables = final_schema
 
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.file_path, "w", encoding="utf-8") as f:
             json.dump(final_schema, f, indent=2)
 
-        print("\nSchema successfully saved:")
-        print(json.dumps(final_schema, indent=2))
+        self.logger.info("\nSchema successfully saved:\n\n")
+        self.logger.info(json.dumps(final_schema, indent=2))
 
     # =====================================================
     # HASH

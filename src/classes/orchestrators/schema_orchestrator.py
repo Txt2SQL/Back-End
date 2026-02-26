@@ -12,8 +12,6 @@ from src.classes.domain_states import SchemaSource
 from src.classes.logger import LoggerManager
 from config import SCHEMA_MODELS, DATA_DIR
 
-logger = LoggerManager.get_logger(__name__)
-
 
 class SchemaOrchestrator(BaseOrchestrator):
     """
@@ -37,6 +35,10 @@ class SchemaOrchestrator(BaseOrchestrator):
             schema_source=self.source,
             path=self.instance_path / "schema"
         )
+    
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
         
     def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
         if choice is None:
@@ -52,7 +54,7 @@ class SchemaOrchestrator(BaseOrchestrator):
         Returns the schema object after processing.
         """
         if self.schema and self.schema.json_ready:
-            logger.info(f"Schema already exists and is valid for {self.database_name}")
+            self.logger.info(f"Schema already exists and is valid for {self.database_name}")
             return self.schema
             
         if self.source == SchemaSource.MYSQL:
@@ -63,15 +65,15 @@ class SchemaOrchestrator(BaseOrchestrator):
         else:
             raise ValueError(f"Invalid schema source: {self.source}")
         
-        logger.info(f"LLM response: {response}")
+        self.logger.info(f"LLM response: {response}")
         # Parse response
         self.schema.parse_response(response)
         # Store in vector database
         if self.schema.json_ready:
             self.schema_store.add_schema(self.schema)
-            logger.info(f"Schema for {self.database_name} acquired and stored successfully")
+            self.logger.info(f"Schema for {self.database_name} acquired and stored successfully")
         else:
-            logger.warning(f"Failed to acquire schema for {self.database_name}")
+            self.logger.warning(f"Failed to acquire schema for {self.database_name}")
         
         return self.schema
     
@@ -104,7 +106,7 @@ class SchemaOrchestrator(BaseOrchestrator):
             raise ValueError("LLM is None cannot generate or update the schema")
         
         if self.schema.json_ready:
-            logger.info(f"Schema already exists and is valid for {self.database_name}")
+            self.logger.info(f"Schema already exists and is valid for {self.database_name}")
             schema_from_llm = self._update_current_schema(user_text)
         else:
             schema_from_llm = self._acquire_new_schema(user_text)
@@ -114,7 +116,7 @@ class SchemaOrchestrator(BaseOrchestrator):
     def _update_current_schema(self, user_text: str):
         update_type = self.schema.classify_update(user_text)
         if update_type == "unknown":
-            logger.info("Unknown update type, asking llm detect update type")
+            self.logger.info("Unknown update type, asking llm detect update type")
             prompt = self.prompt_builder.update_classification_prompt(user_text)
             update_type = self.llm.generate(prompt) # pyright: ignore[reportOptionalMemberAccess]
         

@@ -13,8 +13,6 @@ from src.classes.loaders.exceptions import (
     InvalidTypeError,
 )
 
-logger = LoggerManager.get_logger(__name__)
-
 class BaseLoader(ABC):
     """
     Abstract configuration loader.
@@ -35,6 +33,10 @@ class BaseLoader(ABC):
         self._validate_types()
         self._test_connection()
     
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
+    
     def _load_or_prompt(self):
         if not self.env_path.exists():
             print(f"\n⚙️  Configuration file not found at {self.env_path}\n")
@@ -42,7 +44,7 @@ class BaseLoader(ABC):
 
         raw_config = dotenv_values(self.env_path)
         
-        logger.info(f"📂 Loaded configuration from {self.env_path}"
+        self.logger.info(f"📂 Loaded configuration from {self.env_path}"
                     f" with values: {raw_config}")
         self.config = dict(raw_config)
 

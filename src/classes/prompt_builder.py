@@ -4,8 +4,6 @@ from src.classes.domain_states.query import QuerySession
 from src.classes.logger import LoggerManager
 from config import LOGGER_LEVEL
 
-logger = LoggerManager.get_logger(__name__)
-
 class PromptBuilder:
     """
     Responsible only for building LLM prompts.
@@ -14,6 +12,10 @@ class PromptBuilder:
 
     def __init__(self):
         self.timestamp = datetime.utcnow().isoformat()
+    
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
 
     def explanation_prompt(self, sql: str, context: str, execution_output: str):
         template = f"""
@@ -38,7 +40,7 @@ class PromptBuilder:
     def evaluation_prompt(self, sql: str, request: str, context: str, execution_output: list) -> str:
         # Take only the first 20 rows to avoid token explosion
         preview_rows = execution_output[:20]
-        logger.debug("Using first %s rows for evaluation", len(preview_rows))
+        self.logger.debug("Using first %s rows for evaluation", len(preview_rows))
 
         # Convert rows to a readable string
         rows_text = "\n".join(str(row) for row in preview_rows)
@@ -87,9 +89,9 @@ Rules:
         """
         Create prompt for SQL generation.
         """
-        logger.info("Creating prompt for request: '%s'", user_request)
+        self.logger.info("Creating prompt for request: '%s'", user_request)
 
-        logger.debug("Schema context length: %s characters", len(schema_context))
+        self.logger.debug("Schema context length: %s characters", len(schema_context))
 
         template = f""" 
     You are an expert SQL database assistant.
@@ -252,7 +254,7 @@ Rules:
     
     def _build_penalty_section(self, failed_queries: list[Document]) -> str:
         if not failed_queries:
-            logger.info("ℹ️ No failed queries to build penalties.")
+            self.logger.info("ℹ️ No failed queries to build penalties.")
             return ""
 
         lines = []
@@ -279,7 +281,7 @@ Rules:
             else:
                 lines.append("RULE: Avoid repeating this query structure.")
 
-        logger.info(f"📋 Penalty section built for {len(failed_queries)} failures.")
+        self.logger.info(f"📋 Penalty section built for {len(failed_queries)} failures.")
         return "\n".join(lines)
     
     def _build_relation_section(self, relations: list[str]) -> str:
@@ -314,8 +316,8 @@ Rules:
         """
         Logs the full prompt only if DEBUG level is enabled.
         """
-        if logger.isEnabledFor(LOGGER_LEVEL):
-            logger.debug(
+        if self.logger.isEnabledFor(LOGGER_LEVEL):
+            self.logger.debug(
                 "\n\n===== GENERATED PROMPT: %s =====\n%s\n===== END PROMPT =====\n",
                 name,
                 prompt

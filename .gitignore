@@ -6,3 +6,4 @@ data/schema/
 *.log
 *.env
 tests/tmp
+tests/output/runs/supermarket_results/

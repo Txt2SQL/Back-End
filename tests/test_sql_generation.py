@@ -26,8 +26,10 @@ from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
-from src.classes.logger import LoggerManager, ThreadLogContext
+from src.classes.logger import LoggerManager
 from config import QUERY_GENERATION_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
+
+TMP_DIR = TESTS_DIR / "tmp"
 
 # Initialize LoggerManager at the start
 LoggerManager.setup_project_logger()
@@ -74,24 +76,35 @@ def generator_thread(
 ) -> None:
     """
     Process all requests for a single model.
-    For each request, run QueryOrchestrator and put a RequestResult into the queue.
+    Each model uses its own isolated logger writing to its own log file.
     """
-    # Setup per-thread log file
+
+    # Create dedicated log file for this model
     log_file = logs_dir / QUERY_GENERATION_MODELS[model_key]["log_file"]
+
+    # Create isolated per-model logger (thread-safe, no propagation)
+    logger = LoggerManager.get_logger(
+        name=f"thread_{model_key}",
+        log_file=log_file
+    )
     
-    # Use thread context to capture all logs from all objects in this thread
-    with ThreadLogContext(log_file):
-        # Get thread-specific logger
-        logger = LoggerManager.get_logger(f"generator_{model_key}")
-        logger.info(f"Started thread for model {model_key}")
+    LoggerManager.set_thread_logger(logger)
+
+    try:
+        logger.info(f"Started generator thread for model: {model_key}")
+        logger.info(f"Log file: {log_file}")
 
         for idx, request in enumerate(requests, start=1):
-            logger.info(f"Processing request {idx}: {LoggerManager.truncate_request(request)}")
+
+            truncated_request = LoggerManager.truncate_request(request)
+
+            logger.info(f"[Request {idx}] Processing: {truncated_request}")
+
             start_time = time.time()
-            
+
             try:
-                # Create orchestrator for this request
-                # Any logs from QueryOrchestrator will automatically go to the thread log file
+                logger.debug(f"[Request {idx}] Creating QueryOrchestrator")
+
                 orch = QueryOrchestrator(
                     database_name=db_name,
                     schema_store=schema_store,
@@ -99,36 +112,53 @@ def generator_thread(
                     query_store=query_store,
                     model_name=model_key,
                     max_attempts=3,
-                    instance_path=TESTS_DIR / "tmp"
+                    instance_path=TMP_DIR
                 )
 
-                # Run generation (blocking)
-                logger.debug(f"Starting generation for request {idx}")
+                logger.debug(f"[Request {idx}] Starting generation")
+
                 result_session = orch.generation(request)
-                logger.debug(f"Generation completed for request {idx}")
 
                 elapsed = time.time() - start_time
+
+                logger.debug(f"[Request {idx}] Generation completed in {elapsed:.2f}s")
+
                 feedback = result_session.llm_feedback
-                
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
                     sql_code=result_session.sql_code,
                     status=result_session.status.value if result_session.status else None,
-                    error=result_session.execution_result if isinstance(result_session.execution_result, str)
-                    else str(result_session.execution_result) if result_session.execution_result else None,
-                    feedback_category=feedback.error_category.value if feedback.error_category else None,
+                    error=(
+                        result_session.execution_result
+                        if isinstance(result_session.execution_result, str)
+                        else str(result_session.execution_result)
+                        if result_session.execution_result else None
+                    ),
+                    feedback_category=(
+                        feedback.error_category.value
+                        if feedback.error_category else None
+                    ),
                     feedback_explanation=feedback.explanation,
                     attempts=feedback.attempt,
                     time_taken=elapsed,
                     success=True,
                 )
-                
-                logger.info(f"Finished request {idx} in {elapsed:.2f}s")
-                
+
+                logger.info(
+                    f"[Request {idx}] Finished successfully "
+                    f"(attempts={res.attempts}, time={elapsed:.2f}s)"
+                )
+
             except TimeoutError as e:
-                logger.exception(f"Timeout processing request {idx}")
-                elapsed = time.time() - start_time
+
+                elapsed = TIMEOUT_PER_REQUEST
+
+                logger.exception(
+                    f"[Request {idx}] Timeout after {elapsed}s"
+                )
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
@@ -138,13 +168,18 @@ def generator_thread(
                     feedback_category=None,
                     feedback_explanation=None,
                     attempts=0,
-                    time_taken=TIMEOUT_PER_REQUEST,
+                    time_taken=elapsed,
                     success=False,
                 )
-                
+
             except Exception as e:
-                logger.exception(f"Error processing request {idx}")
+
                 elapsed = time.time() - start_time
+
+                logger.exception(
+                    f"[Request {idx}] Failed with exception after {elapsed:.2f}s"
+                )
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
@@ -157,11 +192,13 @@ def generator_thread(
                     time_taken=elapsed,
                     success=False,
                 )
-                
+
+            # Send result to printer thread
             result_queue.put((idx, model_key, res))
 
-    logger.info("Thread finished all requests.")
-
+        logger.info(f"Generator thread finished for model: {model_key}")
+    finally:
+        LoggerManager.clear_thread_logger()
 
 # ----------------------------------------------------------------------
 # Printer thread function
@@ -319,8 +356,12 @@ def _write_statistics(
     
 def select_database():
     client = MySQLClient()  # connects without specific database
-    dbs = client.list_databases()
+    system_dbs = {"information_schema", "mysql", "performance_schema", "sys"}
+    dbs = [db for db in client.list_databases() if db.lower() not in system_dbs]
     client.close_connection()
+    if not dbs:
+        print("No user databases available.")
+        sys.exit(1)
     print("Available databases:")
     for i, db in enumerate(dbs):
         print(f"{i+1}. {db}")
@@ -354,10 +395,10 @@ def create_output_dir(db_name: str) -> tuple[Path, Path, Path]:
     print(f"Output will be written to: {output_dir}")
     return output_dir, queries_dir, logs_dir
 
-def build_schema_rag(db_name: str, source: SchemaSource) -> SchemaStore:
+def build_schema_rag(db_name: str, source: SchemaSource) -> SchemaStore: # always acquire the schema from mysql but put inside the schema the source specified in the args 
     print("Acquiring schema from MySQL...")
     main_logger.info(f"Acquiring schema from {db_name}")
-    schema = Schema(database_name=db_name, schema_source=source, path=TESTS_DIR / "schema")
+    schema = Schema(database_name=db_name, schema_source=source, path=TMP_DIR / "schema")
     schema_dict = MySQLClient(db_name).extract_schema()
     schema.parse_response(schema_dict)
     schema_store = SchemaStore()

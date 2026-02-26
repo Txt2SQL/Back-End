@@ -3,8 +3,6 @@ from config import ERROR_CATEGORIES
 from .enums import FeedbackStatus, ErrorType
 from src.classes.logger import LoggerManager
 
-logger = LoggerManager.get_logger(__name__)
-
 
 class LLMFeedback:
 
@@ -14,6 +12,10 @@ class LLMFeedback:
         self.error_category: Optional[ErrorType] = None
         self.explanation: Optional[str] = None
         self.retry_instruction: Optional[str] = None
+    
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
 
     # --------------------------------------------------
     # PARSING
@@ -62,7 +64,7 @@ class LLMFeedback:
     # --------------------------------------------------
 
     def _build_targeted_retry_instruction(self) -> None:
-        logger.info(
+        self.logger.info(
             "Building retry instruction for error category: %s",
             self.error_category,
         )

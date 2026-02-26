@@ -15,7 +15,9 @@ class VectorStore(ABC):
     def __init__(self, path: Path, collection_name: str):
         self.embedding_function = OllamaEmbeddings(model="mxbai-embed-large")
         self.collection_name = collection_name
-        self.persist_directory = f"{path}/vector_stores/{collection_name}" 
+        persist_path = path / "vector_stores" / collection_name
+        persist_path.mkdir(parents=True, exist_ok=True)
+        self.persist_directory = str(persist_path)
         self._store = Chroma(
             collection_name=self.collection_name,
             embedding_function=self.embedding_function,

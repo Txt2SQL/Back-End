@@ -37,11 +37,11 @@ QUERY_GENERATION_MODELS = {
         "id": "ollama@isarco02.codellama:34b",
         "log_file": "codellama.log",
     },
-    "sqlcoder:34b": {
-        "provider": "openwebui",
-        "id": "sqlcoder-34b-alpha",
-        "log_file": "sqlcoder.log",
-    },
+    # "sqlcoder:34b": {
+    #     "provider": "openwebui",
+    #     "id": "sqlcoder-34b-alpha",
+    #     "log_file": "sqlcoder.log",
+    # },
     "Qwen3-Coder-Next": {
         "provider": "openwebui",
         "id": "qwen3-coder-next",

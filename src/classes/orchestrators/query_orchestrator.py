@@ -20,7 +20,6 @@ from src.classes.logger import LoggerManager
 from config import QUERY_GENERATION_MODELS, DATA_DIR
 from src.classes.domain_states import QueryStatus, FeedbackStatus, SchemaSource
 
-logger = LoggerManager.get_logger(__name__)
 
 
 class QueryOrchestrator(BaseOrchestrator):
@@ -54,13 +53,17 @@ class QueryOrchestrator(BaseOrchestrator):
         self.failed_queries: Optional[List[Document]] = None
 
         self._load_schema()
+    
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
 
     # --------------------------------------------------
     # LLM INITIALIZATION
     # --------------------------------------------------
 
     def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
-        logger.info("Getting LLM model for choice: %s", choice)
+        self.logger.info("Getting LLM model for choice: %s", choice)
 
         if choice is None:
             return None
@@ -81,7 +84,7 @@ class QueryOrchestrator(BaseOrchestrator):
         schema_path = self.instance_path / "schema" / f"{self.database_name}_schema.json"
 
         if not schema_path.exists():
-            logger.warning("Schema file not found: %s", schema_path)
+            self.logger.warning("Schema file not found: %s", schema_path)
             self.schema = None
             return
 
@@ -89,7 +92,7 @@ class QueryOrchestrator(BaseOrchestrator):
             schema_data = json.load(schema_file)
 
         if not schema_data:
-            logger.warning("Schema data is empty for database '%s'", self.database_name)
+            self.logger.warning("Schema data is empty for database '%s'", self.database_name)
             self.schema = None
             return
 
@@ -109,7 +112,7 @@ class QueryOrchestrator(BaseOrchestrator):
 
     def generation(self, user_request: str) -> QuerySession:
 
-        logger.info(
+        self.logger.info(
             "Generating SQL for request: %s",
             LoggerManager.truncate_request(user_request),
         )
@@ -121,7 +124,7 @@ class QueryOrchestrator(BaseOrchestrator):
 
         while self.current_query.llm_feedback.attempt <= self.max_attempts:
 
-            logger.info("Attempt #%s", self.current_query.llm_feedback.attempt)
+            self.logger.info("Attempt #%s", self.current_query.llm_feedback.attempt)
 
             self._generate_sql_attempt(user_request)
 
@@ -280,12 +283,12 @@ class QueryOrchestrator(BaseOrchestrator):
     def _log_generation_result(self) -> None:
 
         if self.current_query.status is QueryStatus.SUCCESS:
-            logger.info(
+            self.logger.info(
                 "✅ Query generated successfully: %s",
                 self.current_query.sql_code,
             )
         else:
-            logger.warning(
+            self.logger.warning(
                 "⚠️ Query generation issue: %s",
                 self.current_query.status.value,
             )

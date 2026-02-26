@@ -11,8 +11,6 @@ from .enums import (
 from src.classes.domain_states.feedback import LLMFeedback
 from src.classes.logger import LoggerManager
 
-logger = LoggerManager.get_logger(__name__)
-
 
 class QuerySession:
 
@@ -39,16 +37,20 @@ class QuerySession:
 
         self.llm_feedback: LLMFeedback = LLMFeedback()
         self.timestamp: float = time.time()
+    
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
 
     # --------------------------------------------------
     # SQL CLEANING
     # --------------------------------------------------
 
     def clean_sql_from_llm(self, raw_llm_response: str) -> None:
-        logger.debug("Cleaning LLM response")
+        self.logger.debug("Cleaning LLM response")
 
         if not raw_llm_response:
-            logger.warning("No LLM response to clean")
+            self.logger.warning("No LLM response to clean")
             return
 
         sql_query = raw_llm_response
