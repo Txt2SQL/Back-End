@@ -10,7 +10,6 @@ import os
 import time
 import threading
 import queue
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
@@ -26,25 +25,8 @@ from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
-from src.classes.logger_manager import LoggerManager
+from src.classes.logger import LoggerManager, ThreadLogContext
 from config import QUERY_GENERATION_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
-
-
-# ----------------------------------------------------------------------
-# Data class for request results
-# ----------------------------------------------------------------------
-def format_model_key(model_key: str) -> str:
-    model_key = model_key.strip()
-    last_colon = model_key.rfind(':')
-    if last_colon != -1:
-        suffix = model_key[last_colon + 1:]
-        if len(suffix) > 1 and suffix[:-1].isdigit() and suffix[-1] in ('b', 'B'):
-            model_key = model_key[:last_colon]
-
-    return model_key.translate(str.maketrans({
-        '<': '_', '>': '_', ':': '_', '"': '_',
-        '/': '_', '\\': '_', '|': '_', '?': '_', '*': '_',
-    }))
 
 @dataclass
 class RequestResult:
@@ -76,11 +58,6 @@ class ThreadSafeQueryStore(QueryStore):
 # ----------------------------------------------------------------------
 # Generator thread function
 # ----------------------------------------------------------------------
-import concurrent.futures
-import queue
-import time
-from typing import List, Dict
-
 def generator_thread(
     model_key: str,
     requests: List[str],
@@ -96,76 +73,86 @@ def generator_thread(
     """
     # Setup per-thread log file
     log_file = logs_dir / QUERY_GENERATION_MODELS[model_key]["log_file"]
-    logger = logging.getLogger(f"thread_{model_key}")
-    logger.setLevel(logging.DEBUG)
-    fh = logging.FileHandler(log_file, encoding='utf-8')
-    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-    logger.addHandler(fh)
-    logger.info(f"Started thread for model {model_key}")
+    
+    # Use thread context to capture all logs from all objects in this thread
+    with ThreadLogContext(log_file):
+        # Get thread-specific logger
+        logger = LoggerManager.get_logger(f"generator_{model_key}")
+        logger.info(f"Started thread for model {model_key}")
 
-    for idx, request in enumerate(requests, start=1):
-        logger.info(f"Processing request {idx}: {request[:50]}...")
-        start_time = time.time()
-        try:
-            # Create orchestrator for this request
-            orch = QueryOrchestrator(
-                database_name=db_name,
-                schema_store=schema_store,
-                user_request=request,
-                query_store=query_store,          # thread-safe wrapper
-                model_name=model_key,
-                max_attempts=3,                   # could be made configurable
-            )
+        for idx, request in enumerate(requests, start=1):
+            logger.info(f"Processing request {idx}: {LoggerManager.truncate_request(request)}")
+            start_time = time.time()
+            
+            try:
+                # Create orchestrator for this request
+                # Any logs from QueryOrchestrator will automatically go to the thread log file
+                orch = QueryOrchestrator(
+                    database_name=db_name,
+                    schema_store=schema_store,
+                    user_request=request,
+                    query_store=query_store,
+                    model_name=model_key,
+                    max_attempts=3,
+                )
 
-            # Run generation (blocking)
-            result_session = orch.generation(request)
+                # Run generation (blocking)
+                logger.debug(f"Starting generation for request {idx}")
+                result_session = orch.generation(request)
+                logger.debug(f"Generation completed for request {idx}")
 
-            elapsed = time.time() - start_time
-            feedback = result_session.llm_feedback
-            res = RequestResult(
-                request_index=idx,
-                model_name=model_key,
-                sql_code=result_session.sql_code,
-                status=result_session.status.value if result_session.status else None,
-                error=result_session.execution_result if isinstance(result_session.execution_result, str)
-                else str(result_session.execution_result) if result_session.execution_result else None,
-                feedback_category=feedback.error_category.value if feedback.error_category else None,
-                feedback_explanation=feedback.explanation,
-                attempts=feedback.attempt,
-                time_taken=elapsed,
-                success=True,
-            )
-            logger.info(f"Finished request {idx} in {elapsed:.2f}s")
-        except TimeoutError as e:
-            logger.exception(f"Timeout processing request {idx}")
-            res = RequestResult(
-                request_index=idx,
-                model_name=model_key,
-                sql_code=None,
-                status="TIMEOUT",
-                error=str(e),
-                feedback_category=None,
-                feedback_explanation=None,
-                attempts=0,
-                time_taken=TIMEOUT_PER_REQUEST,
-                success=False,
-            )
-        except Exception as e:
-            logger.exception(f"Error processing request {idx}")
-            elapsed = time.time() - start_time
-            res = RequestResult(
-                request_index=idx,
-                model_name=model_key,
-                sql_code=None,
-                status="ERROR",
-                error=str(e),
-                feedback_category=None,
-                feedback_explanation=None,
-                attempts=0,
-                time_taken=elapsed,
-                success=False,
-            )
-        result_queue.put((idx, model_key, res))
+                elapsed = time.time() - start_time
+                feedback = result_session.llm_feedback
+                
+                res = RequestResult(
+                    request_index=idx,
+                    model_name=model_key,
+                    sql_code=result_session.sql_code,
+                    status=result_session.status.value if result_session.status else None,
+                    error=result_session.execution_result if isinstance(result_session.execution_result, str)
+                    else str(result_session.execution_result) if result_session.execution_result else None,
+                    feedback_category=feedback.error_category.value if feedback.error_category else None,
+                    feedback_explanation=feedback.explanation,
+                    attempts=feedback.attempt,
+                    time_taken=elapsed,
+                    success=True,
+                )
+                
+                logger.info(f"Finished request {idx} in {elapsed:.2f}s")
+                
+            except TimeoutError as e:
+                logger.exception(f"Timeout processing request {idx}")
+                elapsed = time.time() - start_time
+                res = RequestResult(
+                    request_index=idx,
+                    model_name=model_key,
+                    sql_code=None,
+                    status="TIMEOUT",
+                    error=str(e),
+                    feedback_category=None,
+                    feedback_explanation=None,
+                    attempts=0,
+                    time_taken=TIMEOUT_PER_REQUEST,
+                    success=False,
+                )
+                
+            except Exception as e:
+                logger.exception(f"Error processing request {idx}")
+                elapsed = time.time() - start_time
+                res = RequestResult(
+                    request_index=idx,
+                    model_name=model_key,
+                    sql_code=None,
+                    status="ERROR",
+                    error=str(e),
+                    feedback_category=None,
+                    feedback_explanation=None,
+                    attempts=0,
+                    time_taken=elapsed,
+                    success=False,
+                )
+                
+            result_queue.put((idx, model_key, res))
 
     logger.info("Thread finished all requests.")
 
@@ -191,12 +178,8 @@ def printer_thread(
     total_expected = num_models * num_requests
     received = 0
 
-    logger = logging.getLogger("printer")
-    logger.setLevel(logging.INFO)
-    fh = logging.FileHandler(logs_dir / "printer.log", encoding='utf-8')
-    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-    logger.addHandler(fh)
-
+    # Use LoggerManager for printer thread
+    logger = LoggerManager.get_logger("printer", log_file=logs_dir / "printer.log")
     logger.info(f"Printer started. Expecting {total_expected} results.")
 
     while received < total_expected:
@@ -361,13 +344,20 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     # ------------------------------------------------------------------
     print("=== PHASE ONE: Initialization ===")
 
+    # Initialize LoggerManager at the start
+    LoggerManager.setup_project_logger()
+    main_logger = LoggerManager.get_logger("main")
+    main_logger.info("Starting stress test")
+
     # 1. Database selection
     db_name = database_name
     if db_name is None:
         db_name = select_database()
+    main_logger.info(f"Using database: {db_name}")
 
     # 2. Load requests
     requests = load_requests(db_name)
+    main_logger.info(f"Loaded {len(requests)} requests")
 
     # 3. Create output directories
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -377,14 +367,17 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     queries_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output will be written to: {output_dir}")
+    main_logger.info(f"Output directory: {output_dir}")
 
     # 4. Acquire schema from MySQL and store in vector store
     source = SchemaSource.MYSQL if mode == 'mysql' else SchemaSource.TEXT
     print("Acquiring schema from MySQL...")
+    main_logger.info(f"Acquiring schema from {mode}")
     schema_orc = SchemaOrchestrator(database_name=db_name, source=source)
     schema = schema_orc.acquire_schema()  # This also saves JSON and adds to vector store
     schema_store = schema_orc.schema_store
     print("Schema acquisition completed.")
+    main_logger.info("Schema acquisition completed")
 
     # 5. Initialize shared query store with lock
     query_store_lock = threading.Lock()
@@ -394,6 +387,7 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     # PHASE TWO: Core Execution
     # ------------------------------------------------------------------
     print("=== PHASE TWO: Core Execution ===")
+    main_logger.info("Starting core execution phase")
 
     result_queue = queue.Queue()
     num_models = len(QUERY_GENERATION_MODELS)
@@ -404,19 +398,21 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
         args=(result_queue, num_models, len(requests), queries_dir, logs_dir, requests)
     )
     printer.start()
+    main_logger.info("Printer thread started")
 
     # Start generator threads (one per model)
     threads = []
     for model_key in QUERY_GENERATION_MODELS.keys():
         t = threading.Thread(
             target=generator_thread,
-            args=(format_model_key(model_key), 
-                  requests, result_queue, timeout,
+            args=(model_key, 
+                  requests, result_queue,
                   schema_store, thread_safe_query_store, 
                   logs_dir, db_name)
         )
         t.start()
         threads.append(t)
+        main_logger.info(f"Generator thread started for model: {model_key}")
 
     # Wait for all generator threads to finish
     for t in threads:
@@ -426,6 +422,8 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     printer.join()
 
     print("All threads finished. Output written to:", output_dir)
+    main_logger.info(f"Stress test completed. Output written to: {output_dir}")
+
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------

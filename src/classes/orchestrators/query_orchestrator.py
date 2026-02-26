@@ -15,7 +15,7 @@ from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import Document
 from src.classes.clients.mysql_client import MySQLClient
-from src.classes.logger_manager import LoggerManager
+from src.classes.logger import LoggerManager
 
 from config import QUERY_GENERATION_MODELS, SCHEMA_DIR
 from src.classes.domain_states import QueryStatus, FeedbackStatus, SchemaSource

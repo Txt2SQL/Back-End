@@ -2,9 +2,9 @@ import os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config import VECTOR_STORE_DIR, SCHEMA_MODELS
-from classes.orchestrators.schema_orchestrator import SchemaOrchestrator
-from classes.domain_states import SchemaSource
-from classes.logger_manager import LoggerManager
+from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
+from src.classes.domain_states import SchemaSource
+from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

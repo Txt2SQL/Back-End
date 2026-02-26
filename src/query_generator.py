@@ -1,11 +1,11 @@
 import hashlib, json, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from classes.orchestrators.query_orchestrator import QueryOrchestrator
-from classes.RAG_service.query_store import QueryStore
-from classes.RAG_service.schema_store import SchemaStore
-from src.config import QUERY_GENERATION_MODELS
-from classes.logger_manager import LoggerManager
+from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
+from src.classes.RAG_service.query_store import QueryStore
+from src.classes.RAG_service.schema_store import SchemaStore
+from config import QUERY_GENERATION_MODELS
+from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

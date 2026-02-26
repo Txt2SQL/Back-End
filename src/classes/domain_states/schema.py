@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from config import SCHEMA_DIR
 from .enums import SchemaSource
-from src.classes.logger_manager import LoggerManager
+from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

@@ -4,7 +4,7 @@ import mysql.connector
 from src.classes.domain_states.query import QuerySession
 from collections import defaultdict
 from src.classes.loaders.mysql_loader import MySQLLoader
-from src.classes.logger_manager import LoggerManager
+from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

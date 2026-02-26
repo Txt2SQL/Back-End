@@ -44,7 +44,7 @@ QUERY_GENERATION_MODELS = {
     },
     "Qwen3-Coder-Next": {
         "provider": "openwebui",
-        "id": "Qwen3-Coder-Next-UD-Q4_K_XL.gguf",
+        "id": "qwen3-coder-next",
         "log_file": "Qwen3-Coder-Next.log",
     },
 }

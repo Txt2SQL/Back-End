@@ -4,7 +4,7 @@ from typing import Optional, Any
 
 from src.classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
 from src.classes.prompt_builder import PromptBuilder
-from src.classes.logger_manager import LoggerManager
+from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

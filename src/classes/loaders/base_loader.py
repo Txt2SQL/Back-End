@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 from typing import Any, Type
 from config import ENV_DIR
-from src.classes.logger_manager import LoggerManager
+from src.classes.logger import LoggerManager
 from src.classes.loaders.exceptions import (
     MissingVariableError,
     UninitializedVariableError,

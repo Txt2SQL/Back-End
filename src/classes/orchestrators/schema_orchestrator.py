@@ -8,7 +8,7 @@ from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states.schema import Schema
 from src.classes.clients.mysql_client import MySQLClient
 from src.classes.domain_states import SchemaSource
-from src.classes.logger_manager import LoggerManager
+from src.classes.logger import LoggerManager
 from config import SCHEMA_MODELS, VECTOR_STORE_DIR
 
 logger = LoggerManager.get_logger(__name__)

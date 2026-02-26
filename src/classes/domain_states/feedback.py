@@ -1,7 +1,7 @@
 from typing import Optional
 from config import ERROR_CATEGORIES
 from .enums import FeedbackStatus, ErrorType
-from src.classes.logger_manager import LoggerManager
+from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 

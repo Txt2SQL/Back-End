@@ -6,14 +6,15 @@ from pathlib import Path
 from langchain_core.documents import Document
 from src.classes.RAG_service.base_vector_store import VectorStore
 from src.classes.domain_states.query import QuerySession
-from src.classes.logger_manager import LoggerManager
+from config import VECTOR_STORE_DIR
+from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 
 
 class QueryStore(VectorStore):
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path = VECTOR_STORE_DIR):
         self.half_life_days = 7
         super().__init__(path, "query_store")
 
