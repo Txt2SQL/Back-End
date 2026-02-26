@@ -18,13 +18,14 @@ class Schema:
         self,
         database_name: str,
         schema_source: SchemaSource,  # "mysql" or "text"
-        save_json: bool = True
+        path: Path,
+        save_json: bool = True,
     ):
         self.database_name = database_name
         self.source = schema_source
         self.save_json = save_json
 
-        self.file_path = SCHEMA_DIR / f"{self.database_name}_schema.json"
+        self.file_path = path / f"{self.database_name}_schema.json"
 
         self.tables: Optional[Dict] = None
         self.semantic_notes: list[str] = []

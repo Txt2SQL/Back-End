@@ -2,6 +2,7 @@ import json, os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from typing import Optional
+from pathlib import Path
 from src.classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
 from src.classes.orchestrators.base_orchestrator import BaseOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore
@@ -9,7 +10,7 @@ from src.classes.domain_states.schema import Schema
 from src.classes.clients.mysql_client import MySQLClient
 from src.classes.domain_states import SchemaSource
 from src.classes.logger import LoggerManager
-from config import SCHEMA_MODELS, VECTOR_STORE_DIR
+from config import SCHEMA_MODELS, DATA_DIR
 
 logger = LoggerManager.get_logger(__name__)
 
@@ -25,14 +26,16 @@ class SchemaOrchestrator(BaseOrchestrator):
         database_name: str, 
         source: SchemaSource = SchemaSource.TEXT,  # "mysql" or "text"
         llm_model: Optional[str] = None,
+        instance_path: Path = DATA_DIR
     ):
-        super().__init__(database_name, llm_model)
+        super().__init__(database_name, instance_path, llm_model)
         
         self.source = source
-        self.schema_store = SchemaStore(VECTOR_STORE_DIR)
+        self.schema_store = SchemaStore(DATA_DIR)
         self.schema: Schema = Schema(
             database_name=self.database_name,
-            schema_source=self.source
+            schema_source=self.source,
+            path=self.instance_path / "schema"
         )
         
     def _initialize_llm(self, choice: str | None) -> BaseLLM | None:

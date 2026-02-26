@@ -21,12 +21,17 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
 from src.classes.clients.mysql_client import MySQLClient
+from src.classes.RAG_service.schema_store import Schema
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
 from src.classes.logger import LoggerManager, ThreadLogContext
 from config import QUERY_GENERATION_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
+
+# Initialize LoggerManager at the start
+LoggerManager.setup_project_logger()
+main_logger = LoggerManager.get_logger("main")
 
 @dataclass
 class RequestResult:
@@ -94,6 +99,7 @@ def generator_thread(
                     query_store=query_store,
                     model_name=model_key,
                     max_attempts=3,
+                    instance_path=TESTS_DIR / "tmp"
                 )
 
                 # Run generation (blocking)
@@ -338,15 +344,34 @@ def load_requests(db_name: str) -> List[str]:
     print(f"Loaded {len(requests)} requests.")
     return requests
 
+def create_output_dir(db_name: str) -> tuple[Path, Path, Path]:
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_dir = TESTS_DIR / 'output' / 'runs' / f"{db_name}_results" / f"results_{timestamp}"
+    queries_dir = output_dir / 'queries'
+    logs_dir = output_dir / 'logs'
+    queries_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Output will be written to: {output_dir}")
+    return output_dir, queries_dir, logs_dir
+
+def build_schema_rag(db_name: str, source: SchemaSource) -> SchemaStore:
+    print("Acquiring schema from MySQL...")
+    main_logger.info(f"Acquiring schema from {db_name}")
+    schema = Schema(database_name=db_name, schema_source=source, path=TESTS_DIR / "schema")
+    schema_dict = MySQLClient(db_name).extract_schema()
+    schema.parse_response(schema_dict)
+    schema_store = SchemaStore()
+    schema_store.add_schema(schema)
+    print("Schema acquired and saved successfully.")
+    main_logger.info("Schema acquired and saved successfully")
+    return schema_store
+    
 def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     # ------------------------------------------------------------------
     # PHASE ONE: Initialization
     # ------------------------------------------------------------------
     print("=== PHASE ONE: Initialization ===")
 
-    # Initialize LoggerManager at the start
-    LoggerManager.setup_project_logger()
-    main_logger = LoggerManager.get_logger("main")
     main_logger.info("Starting stress test")
 
     # 1. Database selection
@@ -360,24 +385,12 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     main_logger.info(f"Loaded {len(requests)} requests")
 
     # 3. Create output directories
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_dir = TESTS_DIR / 'output' / 'runs' / f"{db_name}_results" / f"results_{timestamp}"
-    queries_dir = output_dir / 'queries'
-    logs_dir = output_dir / 'logs'
-    queries_dir.mkdir(parents=True, exist_ok=True)
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Output will be written to: {output_dir}")
-    main_logger.info(f"Output directory: {output_dir}")
+    output_dir, queries_dir, logs_dir = create_output_dir(db_name)
+    main_logger.info("Output directories created")
 
     # 4. Acquire schema from MySQL and store in vector store
     source = SchemaSource.MYSQL if mode == 'mysql' else SchemaSource.TEXT
-    print("Acquiring schema from MySQL...")
-    main_logger.info(f"Acquiring schema from {mode}")
-    schema_orc = SchemaOrchestrator(database_name=db_name, source=source)
-    schema = schema_orc.acquire_schema()  # This also saves JSON and adds to vector store
-    schema_store = schema_orc.schema_store
-    print("Schema acquisition completed.")
-    main_logger.info("Schema acquisition completed")
+    schema_store = build_schema_rag(db_name, source)
 
     # 5. Initialize shared query store with lock
     query_store_lock = threading.Lock()

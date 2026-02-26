@@ -1,0 +1,102 @@
+[Request]
+Supplier performance analysis. For each supplier, show: Total products supplied, total quantity sold, and total revenue generated, Include suppliers with no sales
+
+1. [gpt-4o]
+
+Query:
+SELECT 
+  s.supplier_id,
+  s.supplier_name,
+  COUNT(p.product_id) AS total_products_supplied,
+  COALESCE(SUM(oi.quantity), 0) AS total_quantity_sold,
+  COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS total_revenue_generated
+FROM suppliers s
+LEFT JOIN products p ON s.supplier_id = p.supplier_id
+LEFT JOIN order_items oi ON p.product_id = oi.product_id
+GROUP BY s.supplier_id, s.supplier_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 6.82s
+
+2. [gpt-5-mini]
+
+Query:
+SELECT s.supplier_id,
+       s.supplier_name,
+       COUNT(DISTINCT p.product_id) AS total_products_supplied,
+       COALESCE(SUM(oi.quantity), 0) AS total_quantity_sold,
+       COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS total_revenue_generated
+FROM suppliers s
+LEFT JOIN products p ON s.supplier_id = p.supplier_id
+LEFT JOIN order_items oi ON p.product_id = oi.product_id
+GROUP BY s.supplier_id, s.supplier_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 35.69s
+
+3. [codestral:22b]
+
+Query:
+SELECT
+      s.supplier_id,
+      s.supplier_name,
+      COUNT(DISTINCT p.product_id) AS total_products_supplied,
+      COALESCE(SUM(oi.quantity), 0) AS total_quantity_sold,
+      COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS total_revenue_generated
+    FROM suppliers s
+    LEFT JOIN products p ON s.supplier_id = p.supplier_id
+    LEFT JOIN order_items oi ON p.product_id = oi.product_id
+    GROUP BY s.supplier_id, s.supplier_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 9.67s
+
+4. [codellama:34b]
+
+Query:
+SELECT s.supplier_id, s.supplier_name, COUNT(p.product_id) AS total_products_supplied, COALESCE(SUM(oi.quantity), 0) AS total_quantity_sold, COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS total_revenue_generated
+FROM suppliers s
+LEFT JOIN products p ON s.supplier_id = p.supplier_id
+LEFT JOIN order_items oi ON p.product_id = oi.product_id
+GROUP BY s.supplier_id, s.supplier_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 11.04s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 400 Client Error: Bad Request for url: https://chat.bears.disi.unitn.it/api/chat/completions
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 1.21s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+SELECT
+    s.supplier_id,
+    s.supplier_name,
+    COUNT(DISTINCT p.product_id) AS total_products_supplied,
+    COALESCE(SUM(oi.quantity), 0) AS total_quantity_sold,
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS total_revenue_generated
+FROM suppliers s
+LEFT JOIN products p ON s.supplier_id = p.supplier_id
+LEFT JOIN order_items oi ON p.product_id = oi.product_id
+GROUP BY s.supplier_id, s.supplier_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 13.91s
+

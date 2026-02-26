@@ -1,0 +1,98 @@
+[Request]
+Customer purchase history with details. Show complete purchase history for each customer including: Customer name, order date, product names, quantities, and total per order
+
+1. [gpt-4o]
+
+Query:
+SELECT 
+    c.customer_name,
+    o.order_date,
+    p.product_name,
+    oi.quantity,
+    (oi.quantity * oi.unit_price) AS order_total
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+ORDER BY c.customer_name, o.order_date;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 8.91s
+
+2. [gpt-5-mini]
+
+Query:
+SELECT c.customer_name,
+       o.order_date,
+       p.product_name,
+       oi.quantity,
+       ot.total_per_order
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+JOIN (
+    SELECT oi2.order_id, SUM(oi2.quantity * oi2.unit_price) AS total_per_order
+    FROM order_items oi2
+    GROUP BY oi2.order_id
+) ot ON oi.order_id = ot.order_id;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 48.64s
+
+3. [codestral:22b]
+
+Query:
+SELECT c.customer_name, o.order_date, p.product_name, od.quantity, (od.quantity * p.unit_price) AS total_per_order
+    FROM customers c
+    INNER JOIN orders o ON c.customer_id = o.customer_id
+    INNER JOIN order_details od ON o.order_id = od.order_id
+    INNER JOIN products p ON od.product_id = p.product_id;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'c.customer_name' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 7.77s
+
+4. [codellama:34b]
+
+Query:
+SELECT c.customer_name, o.order_date, p.product_name, oi.quantity, oi.unit_price
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 8.89s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 400 Client Error: Bad Request for url: https://chat.bears.disi.unitn.it/api/chat/completions
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 1.60s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+SELECT c.customer_name, o.order_date, p.product_name, od.quantity, (od.quantity * od.unit_price) AS total_per_order
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_details od ON o.order_id = od.order_id
+JOIN products p ON od.product_id = p.product_id;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'c.customer_name' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 9.87s
+

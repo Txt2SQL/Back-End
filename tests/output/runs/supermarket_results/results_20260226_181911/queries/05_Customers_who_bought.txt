@@ -1,0 +1,133 @@
+[Request]
+Customers who bought the most popular product. Find customers who purchased the product that has been sold the most times
+
+1. [gpt-4o]
+
+Query:
+WITH product_sales AS (
+    SELECT 
+        o.product_id, 
+        COUNT(*) AS sales_count
+    FROM orders o
+    GROUP BY o.product_id
+    ORDER BY sales_count DESC
+    LIMIT 1
+),
+customers_with_popular_product AS (
+    SELECT DISTINCT
+        o.customer_id
+    FROM orders o
+    JOIN product_sales ps ON o.product_id = ps.product_id
+)
+SELECT 
+    c.customer_id, 
+    c.customer_name
+FROM customers c
+JOIN customers_with_popular_product cpp ON c.customer_id = cpp.customer_id;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'o.product_id' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 9.14s
+
+2. [gpt-5-mini]
+
+Query:
+WITH product_sales AS (
+  SELECT oi.product_id, SUM(oi.quantity) AS total_sold
+  FROM order_items oi
+  GROUP BY oi.product_id
+),
+max_sold AS (
+  SELECT MAX(ps.total_sold) AS max_total
+  FROM product_sales ps
+),
+most_popular AS (
+  SELECT ps.product_id
+  FROM product_sales ps
+  JOIN max_sold m ON ps.total_sold = m.max_total
+)
+SELECT DISTINCT c.customer_id, c.customer_name
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN most_popular mp ON oi.product_id = mp.product_id;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 41.13s
+
+3. [codestral:22b]
+
+Query:
+WITH popular_product AS (
+       SELECT product_id
+       FROM orders
+       GROUP BY product_id
+       ORDER BY COUNT(*) DESC
+       LIMIT 1
+    ),
+    customers_with_popular_product AS (
+       SELECT customer_id
+       FROM orders
+       WHERE product_id = (SELECT product_id FROM popular_product)
+    )
+    SELECT c.customer_id, c.customer_name
+    FROM customers c
+    WHERE c.customer_id IN (SELECT customer_id FROM customers_with_popular_product);
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'c.customer_name' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 8.10s
+
+4. [codellama:34b]
+
+Query:
+SELECT o.customer_id, c.customer_name
+FROM orders o
+JOIN customers c ON o.customer_id = c.customer_id
+JOIN (
+    SELECT product_id, COUNT(*) AS sales_count
+    FROM orders
+    GROUP BY product_id
+    ORDER BY sales_count DESC
+    LIMIT 1
+) ps ON o.product_id = ps.product_id;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'product_id' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 9.60s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 400 Client Error: Bad Request for url: https://chat.bears.disi.unitn.it/api/chat/completions
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 1.59s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+SELECT o.customer_id
+FROM orders o
+GROUP BY o.customer_id, o.product_id
+HAVING COUNT(*) = (
+    SELECT MAX(sales_count)
+    FROM (
+        SELECT product_id, COUNT(*) AS sales_count
+        FROM orders
+        GROUP BY product_id
+    ) AS product_sales
+);
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'o.product_id' in 'group statement'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 8.24s
+

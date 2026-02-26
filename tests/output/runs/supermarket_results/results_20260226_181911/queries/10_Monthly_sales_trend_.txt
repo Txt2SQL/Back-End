@@ -1,0 +1,166 @@
+[Request]
+Monthly sales trend with employee and customer analysis. Show monthly sales trends including: Month, total revenue, top selling product, best performing employee, most active customer
+
+1. [gpt-4o]
+
+Query:
+SELECT 
+    DATE_FORMAT(o.order_date, '%Y-%m') AS month,
+    SUM(oi.quantity * oi.unit_price) AS total_revenue,
+    p.product_name AS top_selling_product,
+    e.employee_name AS best_performing_employee,
+    c.customer_name AS most_active_customer
+FROM orders o
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+JOIN employees e ON o.employee_id = e.employee_id
+JOIN customers c ON o.customer_id = c.customer_id
+GROUP BY DATE_FORMAT(o.order_date, '%Y-%m'), p.product_name, e.employee_name, c.customer_name
+ORDER BY month;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 6.37s
+
+2. [gpt-5-mini]
+
+Query:
+SELECT
+    DATE_FORMAT(o.order_date, '%Y-%m') AS month,
+    SUM(oi.quantity * oi.unit_price) AS total_revenue,
+    (
+        SELECT p2.product_name
+        FROM order_items oi2
+        JOIN orders o2 ON oi2.order_id = o2.order_id
+        JOIN products p2 ON oi2.product_id = p2.product_id
+        WHERE DATE_FORMAT(o2.order_date, '%Y-%m') = DATE_FORMAT(o.order_date, '%Y-%m')
+        GROUP BY p2.product_id, p2.product_name
+        ORDER BY SUM(oi2.quantity * oi2.unit_price) DESC
+        LIMIT 1
+    ) AS top_selling_product,
+    (
+        SELECT e2.employee_name
+        FROM orders o3
+        JOIN employees e2 ON o3.employee_id = e2.employee_id
+        JOIN order_items oi3 ON o3.order_id = oi3.order_id
+        WHERE DATE_FORMAT(o3.order_date, '%Y-%m') = DATE_FORMAT(o.order_date, '%Y-%m')
+        GROUP BY e2.employee_id, e2.employee_name
+        ORDER BY SUM(oi3.quantity * oi3.unit_price) DESC
+        LIMIT 1
+    ) AS best_performing_employee,
+    (
+        SELECT c2.customer_name
+        FROM orders o4
+        JOIN customers c2 ON o4.customer_id = c2.customer_id
+        WHERE DATE_FORMAT(o4.order_date, '%Y-%m') = DATE_FORMAT(o.order_date, '%Y-%m')
+        GROUP BY c2.customer_id, c2.customer_name
+        ORDER BY COUNT(o4.order_id) DESC
+        LIMIT 1
+    ) AS most_active_customer
+FROM orders o
+JOIN order_items oi ON o.order_id = oi.order_id
+GROUP BY DATE_FORMAT(o.order_date, '%Y-%m')
+ORDER BY month;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 73.71s
+
+3. [codestral:22b]
+
+Query:
+SELECT
+        DATE_FORMAT(o.order_date, '%Y-%m') AS month,
+        SUM(oi.quantity * oi.unit_price) AS total_revenue,
+        p.product_name AS top_selling_product,
+        e.employee_id AS best_performing_employee,
+        c.customer_id AS most_active_customer
+    FROM orders o
+    JOIN order_items oi ON o.order_id = oi.order_id
+    JOIN products p ON oi.product_id = p.product_id
+    JOIN employees e ON o.employee_id = e.employee_id
+    JOIN customers c ON o.customer_id = c.customer_id
+    GROUP BY month, top_selling_product, best_performing_employee, most_active_customer;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 20.18s
+
+4. [codellama:34b]
+
+Query:
+INSERT INTO employees (employee_id, employee_name) VALUES (1, 'John Doe');
+INSERT INTO customers (customer_id, customer_name) VALUES (1, 'Jane Doe');
+INSERT INTO orders (order_id, order_date, customer_id, employee_id, total_amount) VALUES (1, '2022-01-01', 1, 1, 100.00);
+INSERT INTO order_items (order_item_id, order_id, product_name, quantity, unit_price) VALUES (1, 1, 'Product A', 2, 50.00);
+SELECT DATE_FORMAT(o.order_date, '%Y-%m') AS month, SUM(oi.quantity * oi.unit_price) AS total_revenue, p.product_name AS top_selling_product, e.employee_name AS best_performing_employee, c.customer_name AS most_active_customer
+FROM orders o
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+JOIN employees e ON o.employee_id = e.employee_id
+JOIN customers c ON o.customer_id = c.customer_id
+GROUP BY DATE_FORMAT(o.order_date, '%Y-%m'), p.product_name, e.employee_name, c.customer_name
+ORDER BY month;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'employee_name' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 15.16s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 400 Client Error: Bad Request for url: https://chat.bears.disi.unitn.it/api/chat/completions
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 1.15s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+SELECT 
+    DATE_FORMAT(o.order_date, '%Y-%m') AS month,
+    SUM(oi.quantity * oi.unit_price) AS total_revenue,
+    (
+        SELECT p2.product_name
+        FROM order_items oi2
+        JOIN orders o2 ON oi2.order_id = o2.order_id
+        JOIN products p2 ON oi2.product_id = p2.product_id
+        WHERE DATE_FORMAT(o2.order_date, '%Y-%m') = DATE_FORMAT(o.order_date, '%Y-%m')
+        GROUP BY p2.product_name
+        ORDER BY SUM(oi2.quantity) DESC
+        LIMIT 1
+    ) AS top_selling_product,
+    (
+        SELECT e2.employee_name
+        FROM orders o3
+        JOIN employees e2 ON o3.employee_id = e2.employee_id
+        WHERE DATE_FORMAT(o3.order_date, '%Y-%m') = DATE_FORMAT(o.order_date, '%Y-%m')
+        GROUP BY e2.employee_id, e2.employee_name
+        ORDER BY COUNT(o3.order_id) DESC
+        LIMIT 1
+    ) AS best_performing_employee,
+    (
+        SELECT c2.customer_name
+        FROM orders o4
+        JOIN customers c2 ON o4.customer_id = c2.customer_id
+        WHERE DATE_FORMAT(o4.order_date, '%Y-%m') = DATE_FORMAT(o.order_date, '%Y-%m')
+        GROUP BY c2.customer_id, c2.customer_name
+        ORDER BY COUNT(o4.order_id) DESC
+        LIMIT 1
+    ) AS most_active_customer
+FROM orders o
+JOIN order_items oi ON o.order_id = oi.order_id
+GROUP BY DATE_FORMAT(o.order_date, '%Y-%m')
+ORDER BY month;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 35.07s
+

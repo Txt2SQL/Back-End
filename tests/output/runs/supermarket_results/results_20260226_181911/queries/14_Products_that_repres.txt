@@ -1,0 +1,158 @@
+[Request]
+Products that represent more than 30% of their category's revenue. Identify products whose total revenue contributes to more than 30% of the total revenue of their respective category. Show product name, category, product revenue, category revenue, and percentage contribution
+
+1. [gpt-4o]
+
+Query:
+SELECT 
+    p.product_name,
+    c.category_name,
+    SUM(oi.quantity * oi.unit_price) AS product_revenue,
+    cat_revenue.category_revenue,
+    (SUM(oi.quantity * oi.unit_price) / cat_revenue.category_revenue) * 100 AS percentage_contribution
+FROM products p
+JOIN categories c ON p.category_id = c.category_id
+JOIN order_items oi ON p.product_id = oi.product_id
+JOIN (
+    SELECT 
+        p.category_id,
+        SUM(oi.quantity * oi.unit_price) AS category_revenue
+    FROM products p
+    JOIN order_items oi ON p.product_id = oi.product_id
+    GROUP BY p.category_id
+) cat_revenue ON p.category_id = cat_revenue.category_id
+GROUP BY p.product_id, p.product_name, c.category_name, cat_revenue.category_revenue
+HAVING (SUM(oi.quantity * oi.unit_price) / cat_revenue.category_revenue) > 0.3;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 12.85s
+
+2. [gpt-5-mini]
+
+Query:
+WITH product_totals AS (
+  SELECT
+    p.product_id,
+    p.product_name,
+    p.category_id,
+    SUM(oi.quantity * oi.unit_price) AS product_revenue
+  FROM products p
+  JOIN order_items oi ON p.product_id = oi.product_id
+  GROUP BY p.product_id, p.product_name, p.category_id
+),
+product_category_totals AS (
+  SELECT
+    pt.product_id,
+    pt.product_name,
+    pt.category_id,
+    pt.product_revenue,
+    SUM(pt.product_revenue) OVER (PARTITION BY pt.category_id) AS category_revenue
+  FROM product_totals pt
+)
+SELECT
+  pct.product_name,
+  c.category_name,
+  pct.product_revenue,
+  pct.category_revenue,
+  (pct.product_revenue * 100.0 / pct.category_revenue) AS percentage_contribution
+FROM product_category_totals pct
+JOIN categories c ON pct.category_id = c.category_id
+WHERE pct.product_revenue > 0.3 * pct.category_revenue;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 45.91s
+
+3. [codestral:22b]
+
+Query:
+SELECT
+        p.product_name,
+        c.category_name,
+        SUM(oi.quantity * oi.unit_price) AS product_revenue,
+        cat_revenue.category_revenue,
+        (SUM(oi.quantity * oi.unit_price) / cat_revenue.category_revenue) * 100 AS percentage_contribution
+    FROM products p
+    JOIN categories c ON p.category_id = c.category_id
+    JOIN order_items oi ON p.product_id = oi.product_id
+    JOIN (
+        SELECT
+            category_id,
+            SUM(quantity * unit_price) AS category_revenue
+        FROM products
+        JOIN order_items ON products.product_id = order_items.product_id
+        GROUP BY category_id
+    ) cat_revenue ON p.category_id = cat_revenue.category_id
+    GROUP BY p.product_id, p.product_name, c.category_name, cat_revenue.category_revenue
+    HAVING (SUM(oi.quantity * oi.unit_price) / cat_revenue.category_revenue) > 0.3;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 15.21s
+
+4. [codellama:34b]
+
+Query:
+SELECT p.product_name, c.category_name, SUM(oi.quantity) AS total_sales, AVG(subquery.total_sales) OVER (PARTITION BY p.category_id) AS category_avg_sales
+FROM products p
+JOIN categories c ON p.category_id = c.category_id
+JOIN order_items oi ON p.product_id = oi.product_id
+JOIN (
+    SELECT category_id, SUM(quantity) AS total_sales
+    FROM order_items
+    GROUP BY category_id
+) subquery ON p.category_id = subquery.category_id
+GROUP BY p.product_name, c.category_name;
+HAVING SUM(oi.quantity) > AVG(subquery.total_sales);
+
+Status and outcome: SYNTAX_ERROR, Invalid expression / Unexpected token. Line 11, Col: 6.
+  ory_id
+) subquery ON p.category_id = subquery.category_id
+GROUP BY p.product_name, c.category_name;
+[4mHAVING[0m SUM(oi.quantity) > AVG(subquery.total_sales);
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 14.94s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 400 Client Error: Bad Request for url: https://chat.bears.disi.unitn.it/api/chat/completions
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 1.34s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+SELECT 
+    p.product_name,
+    c.category_name,
+    SUM(oi.quantity * oi.unit_price) AS product_revenue,
+    cat_revenue.category_revenue,
+    (SUM(oi.quantity * oi.unit_price) * 100.0 / cat_revenue.category_revenue) AS percentage_contribution
+FROM products p
+JOIN categories c ON p.category_id = c.category_id
+JOIN order_items oi ON p.product_id = oi.product_id
+JOIN (
+    SELECT 
+        p2.category_id,
+        SUM(oi2.quantity * oi2.unit_price) AS category_revenue
+    FROM products p2
+    JOIN order_items oi2 ON p2.product_id = oi2.product_id
+    GROUP BY p2.category_id
+) cat_revenue ON p.category_id = cat_revenue.category_id
+GROUP BY p.product_id, p.product_name, c.category_name, cat_revenue.category_revenue
+HAVING (SUM(oi.quantity * oi.unit_price) * 1.0 / cat_revenue.category_revenue) > 0.3;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 20.14s
+

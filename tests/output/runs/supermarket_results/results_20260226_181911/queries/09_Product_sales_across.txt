@@ -1,0 +1,143 @@
+[Request]
+Product sales across categories with supplier info For each category, show: Category name, total products, total sales quantity, and the main supplier
+
+1. [gpt-4o]
+
+Query:
+SELECT 
+    c.category_name,
+    COUNT(p.product_id) AS total_products,
+    SUM(oi.quantity) AS total_sales_quantity,
+    s.supplier_name AS main_supplier
+FROM categories c
+JOIN products p ON c.category_id = p.category_id
+JOIN order_items oi ON p.product_id = oi.product_id
+JOIN suppliers s ON p.supplier_id = s.supplier_id
+GROUP BY c.category_name, s.supplier_name
+ORDER BY c.category_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 7.61s
+
+2. [gpt-5-mini]
+
+Query:
+SELECT
+  c.category_name,
+  COALESCE(pc.total_products, 0) AS total_products,
+  COALESCE(ts.total_sales_quantity, 0) AS total_sales_quantity,
+  ms.supplier_name AS main_supplier
+FROM categories c
+LEFT JOIN (
+  SELECT p.category_id, COUNT(DISTINCT p.product_id) AS total_products
+  FROM products p
+  GROUP BY p.category_id
+) pc ON c.category_id = pc.category_id
+LEFT JOIN (
+  SELECT p.category_id, SUM(oi.quantity) AS total_sales_quantity
+  FROM products p
+  JOIN order_items oi ON p.product_id = oi.product_id
+  GROUP BY p.category_id
+) ts ON c.category_id = ts.category_id
+LEFT JOIN (
+  SELECT t.category_id, t.supplier_name FROM (
+    SELECT
+      p.category_id,
+      p.supplier_id,
+      s.supplier_name,
+      SUM(oi.quantity) AS supplier_sales,
+      ROW_NUMBER() OVER (PARTITION BY p.category_id ORDER BY SUM(oi.quantity) DESC) AS rn
+    FROM products p
+    JOIN suppliers s ON p.supplier_id = s.supplier_id
+    JOIN order_items oi ON p.product_id = oi.product_id
+    GROUP BY p.category_id, p.supplier_id, s.supplier_name
+  ) t
+  WHERE t.rn = 1
+) ms ON c.category_id = ms.category_id;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 92.96s
+
+3. [codestral:22b]
+
+Query:
+SELECT
+        c.category_name,
+        COUNT(DISTINCT p.product_id) AS total_products,
+        SUM(oi.quantity) AS total_sales_quantity,
+        s.supplier_name AS main_supplier
+    FROM
+        categories c
+    JOIN
+        products p ON c.category_id = p.category_id
+    JOIN
+        order_items oi ON p.product_id = oi.product_id
+    JOIN
+        suppliers s ON p.supplier_id = s.supplier_id
+    GROUP BY
+        c.category_name,
+        s.supplier_name
+    ORDER BY
+        c.category_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 9.12s
+
+4. [codellama:34b]
+
+Query:
+CREATE VIEW view_name AS
+SELECT category_id, category_name, supplier_id, AVG(unit_price) as avg_unit_price
+FROM products
+GROUP BY category_id;
+
+SELECT category_name, COUNT(DISTINCT product_id) AS total_products, SUM(quantity) AS total_sales_quantity, main_supplier
+FROM view_name v
+INNER JOIN orders o ON v.category_id = o.order_id
+INNER JOIN order_items oi ON o.order_id = oi.order_id
+INNER JOIN products p ON oi.product_id = p.product_id
+INNER JOIN suppliers s ON p.supplier_id = s.supplier_id
+WHERE v.avg_unit_price > (SELECT AVG(avg_unit_price) FROM view_name WHERE category_id = 1)
+GROUP BY category_name, main_supplier
+ORDER BY total_sales_quantity DESC;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'category_name' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 11.19s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 400 Client Error: Bad Request for url: https://chat.bears.disi.unitn.it/api/chat/completions
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 1.10s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+SELECT 
+    c.category_name,
+    COUNT(DISTINCT p.product_id) AS total_products,
+    SUM(oi.quantity) AS total_sales_quantity,
+    s.supplier_name AS main_supplier
+FROM categories c
+JOIN products p ON c.category_id = p.category_id
+JOIN suppliers s ON p.supplier_id = s.supplier_id
+LEFT JOIN order_items oi ON p.product_id = oi.product_id
+GROUP BY c.category_id, c.category_name, s.supplier_name;
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 13.85s
+

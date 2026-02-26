@@ -17,7 +17,7 @@ from src.classes.RAG_service.schema_store import Document
 from src.classes.clients.mysql_client import MySQLClient
 from src.classes.logger import LoggerManager
 
-from config import QUERY_GENERATION_MODELS, SCHEMA_DIR
+from config import QUERY_GENERATION_MODELS, DATA_DIR
 from src.classes.domain_states import QueryStatus, FeedbackStatus, SchemaSource
 
 logger = LoggerManager.get_logger(__name__)
@@ -34,11 +34,12 @@ class QueryOrchestrator(BaseOrchestrator):
         database_name: str,
         schema_store: SchemaStore,
         user_request: str,
-        query_store: Optional[QueryStore] = None,
+        query_store: Optional[QueryStore] = None, # query_store should not be created if source = "text"
         model_name: Optional[str] = None,
         max_attempts: int = 3,
+        instance_path: Path = DATA_DIR,
     ):
-        super().__init__(database_name, model_name)
+        super().__init__(database_name, instance_path, model_name)
 
         self.max_attempts = max_attempts
         self.schema_store = schema_store
@@ -77,7 +78,7 @@ class QueryOrchestrator(BaseOrchestrator):
     # --------------------------------------------------
 
     def _load_schema(self) -> None:
-        schema_path = SCHEMA_DIR / f"{self.database_name}_schema.json"
+        schema_path = self.instance_path / "schema" / f"{self.database_name}_schema.json"
 
         if not schema_path.exists():
             logger.warning("Schema file not found: %s", schema_path)

@@ -1,0 +1,93 @@
+[Request]
+Most expensive product in each category. For each category, show the most expensive product and its price
+
+1. [gpt-4o]
+
+Query:
+SELECT p.category_id, p.product_name, p.unit_price
+FROM products p
+WHERE p.unit_price = (
+    SELECT MAX(p2.unit_price)
+    FROM products p2
+    WHERE p2.category_id = p.category_id
+)
+ORDER BY p.category_id;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'p.unit_price' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 5.26s
+
+2. [gpt-5-mini]
+
+Query:
+SELECT c.category_name, p.product_name, p.unit_price
+FROM products p
+JOIN categories c ON c.category_id = p.category_id
+JOIN (
+    SELECT category_id, MAX(unit_price) AS max_price
+    FROM products
+    GROUP BY category_id
+) m ON p.category_id = m.category_id AND p.unit_price = m.max_price;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'unit_price' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 25.30s
+
+3. [codestral:22b]
+
+Query:
+SELECT p.category_id, p.product_name, MAX(p.unit_price) as max_price
+    FROM products p
+    GROUP BY p.category_id;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'p.unit_price' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 6.87s
+
+4. [codellama:34b]
+
+Query:
+SELECT p.product_name, 
+       p.category_id, 
+       SUM(oi.quantity) AS total_sales, 
+       avg(SUM(oi.quantity)) OVER (PARTITION BY p.category_id) AS category_avg_sales
+FROM products p
+JOIN order_items oi ON p.product_id = oi.product_id
+GROUP BY p.product_name, 
+       p.category_id
+HAVING SUM(oi.quantity) > (SELECT AVG(SUM(oi.quantity)) FROM order_items GROUP BY product_id);
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 8.08s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 400 Client Error: Bad Request for url: https://chat.bears.disi.unitn.it/api/chat/completions
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 1.10s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+SELECT category_id, product_name, unit_price
+FROM (
+    SELECT category_id, product_name, unit_price,
+           ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY unit_price DESC) AS rn
+    FROM products
+) ranked
+WHERE rn = 1;
+
+Status and outcome: RUNTIME_ERROR, 1054 (42S22): Unknown column 'unit_price' in 'field list'
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 8.08s
+

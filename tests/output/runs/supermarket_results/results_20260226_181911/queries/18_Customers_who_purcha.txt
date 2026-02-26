@@ -1,0 +1,122 @@
+[Request]
+Customers who purchased the complete set of a product line. Identify customers who have purchased at least one product from each supplier they have bought from (i.e., if a customer buys from 3 suppliers, they should have bought at least one product from each). Show customer name and count of distinct suppliers they've purchased from
+
+1. [gpt-4o]
+
+Query:
+SELECT c.customer_name, COUNT(DISTINCT p.supplier_id) AS distinct_supplier_count
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+GROUP BY c.customer_name
+HAVING COUNT(DISTINCT p.supplier_id) = (SELECT COUNT(DISTINCT p2.supplier_id) 
+                                         FROM orders o2
+                                         JOIN order_items oi2 ON o2.order_id = oi2.order_id
+                                         JOIN products p2 ON oi2.product_id = p2.product_id
+                                         WHERE o2.customer_id = c.customer_id);
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 6.94s
+
+2. [gpt-5-mini]
+
+Query:
+SELECT c.customer_name, COUNT(DISTINCT p.supplier_id) AS supplier_count
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+GROUP BY c.customer_id, c.customer_name
+HAVING COUNT(DISTINCT p.supplier_id) = (SELECT COUNT(*) FROM suppliers);
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 37.62s
+
+3. [codestral:22b]
+
+Query:
+WITH customer_suppliers AS (
+          SELECT c.customer_id, COUNT(DISTINCT p.supplier_id) as supplier_count, c.customer_name
+          FROM customers c
+          INNER JOIN orders o ON c.customer_id = o.customer_id
+          INNER JOIN order_items oi ON o.order_id = oi.order_id
+          INNER JOIN products p ON oi.product_id = p.product_id
+          GROUP BY c.customer_id, c.customer_name
+      ),
+      customer_products AS (
+          SELECT o.customer_id, p.supplier_id
+          FROM orders o
+          INNER JOIN order_items oi ON o.order_id = oi.order_id
+          INNER JOIN products p ON oi.product_id = p.product_id
+      )
+    SELECT cs.customer_name, cs.supplier_count
+    FROM customer_suppliers cs
+    WHERE NOT EXISTS (
+        SELECT cp.supplier_id
+        FROM customer_products cp
+        WHERE cp.customer_id = cs.customer_id
+        GROUP BY cp.supplier_id
+        HAVING COUNT(*) < 1);
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 11.66s
+
+4. [codellama:34b]
+
+Query:
+SELECT c.customer_name, COUNT(DISTINCT p.supplier_id) AS distinct_suppliers
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+GROUP BY c.customer_name
+HAVING COUNT(DISTINCT p.supplier_id) >= (SELECT COUNT(DISTINCT p2.supplier_id) 
+                                         FROM orders o2
+                                         JOIN order_items oi2 ON o2.order_id = oi2.order_id
+                                         JOIN products p2 ON oi2.product_id = p2.product_id
+                                         WHERE o2.customer_id = c.customer_id);
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 13.95s
+
+5. [sqlcoder:34b]
+
+Query:
+N/A
+
+Status and outcome: ERROR, 400 Client Error: Bad Request for url: https://chat.bears.disi.unitn.it/api/chat/completions
+LLM Feedback: N/A 
+Attempts: 0
+Request time: 1.40s
+
+6. [Qwen3-Coder-Next]
+
+Query:
+SELECT c.customer_name, COUNT(DISTINCT p.supplier_id) AS supplier_count
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+GROUP BY c.customer_id, c.customer_name
+HAVING COUNT(DISTINCT p.supplier_id) = (
+    SELECT COUNT(DISTINCT p2.supplier_id)
+    FROM orders o2
+    JOIN order_items oi2 ON o2.order_id = oi2.order_id
+    JOIN products p2 ON oi2.product_id = p2.product_id
+    WHERE o2.customer_id = c.customer_id
+);
+
+Status and outcome: RUNTIME_ERROR, 1146 (42S02): Table 'supermarket.order_items' doesn't exist
+LLM Feedback: N/A 
+Attempts: 4
+Request time: 9.76s
+
