@@ -202,9 +202,7 @@ class LoggerManager:
                 return existing
 
             # Create isolated logger
-            logger = logging.getLogger(
-                f"model.{name}.{abs(hash(logger_key))}"
-            )
+            logger = logging.getLogger(name)
 
             logger.setLevel(cls.THREAD_LOG_LEVEL)
 

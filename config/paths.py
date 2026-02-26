@@ -9,7 +9,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 TESTS_DIR = PROJECT_ROOT / "tests"
 
 SAMPLE_QUERY_PATH = DATA_DIR / "sample_query.sql"
-VECTOR_STORE_DIR = DATA_DIR / "vector_store"
+VECTOR_STORE_DIR = DATA_DIR / "vector_stores"
 SCHEMA_DIR = DATA_DIR / "schema"
 
 ENV_DIR = PROJECT_ROOT / "config"

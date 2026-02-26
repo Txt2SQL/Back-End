@@ -38,7 +38,7 @@ class MySQLClient:
             raise
     
     def execute_query(self, query: QuerySession) -> QuerySession:
-        self.logger.info(f"📌 Received SQL query:\n{query}")
+        self.logger.info(f"📌 Received SQL query:\n{query.sql_code}")
 
         try:
             self.logger.info("🔌 Connecting to MySQL database...")

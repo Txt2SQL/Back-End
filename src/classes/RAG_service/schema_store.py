@@ -3,14 +3,14 @@ from pathlib import Path
 from src.classes.RAG_service.base_vector_store import VectorStore
 from langchain_core.documents import Document
 from src.classes.domain_states.schema import Schema
-from config import VECTOR_STORE_DIR as VE
+from config import VECTOR_STORE_DIR
 from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 
 class SchemaStore(VectorStore):
 
-    def __init__(self, path: Path = VE):
+    def __init__(self, path: Path = VECTOR_STORE_DIR):
         super().__init__(path, "schema_store")
 
     # =====================================================

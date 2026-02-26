@@ -4,12 +4,7 @@ Runs multiple requests against all configured LLM models concurrently,
 writes per-request result files, and produces a summary statistics file.
 """
 
-import argparse
-import sys
-import os
-import time
-import threading
-import queue
+import argparse, sys, os, time, threading, queue
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
@@ -80,11 +75,12 @@ def generator_thread(
     """
 
     # Create dedicated log file for this model
-    log_file = logs_dir / QUERY_GENERATION_MODELS[model_key]["log_file"]
+    log_name = QUERY_GENERATION_MODELS[model_key]["log_file"] 
+    log_file = logs_dir / f"{log_name}.log"
 
     # Create isolated per-model logger (thread-safe, no propagation)
     logger = LoggerManager.get_logger(
-        name=f"thread_{model_key}",
+        name=f"thread_{log_name}",
         log_file=log_file
     )
     
@@ -229,23 +225,27 @@ def printer_thread(
         try:
             idx, model, res = result_queue.get(timeout=1)
             received += 1
+            logger.info(f"Received result for index {idx}, model {model}")
             if idx not in results_by_index:
                 results_by_index[idx] = {}
             results_by_index[idx][model] = res
 
             # Check if this index is now complete
             if len(results_by_index[idx]) == num_models:
+                logger.info(f"Index {idx} completed")
                 completed_indices.add(idx)
 
             # Write any consecutive completed indices starting from next_index
             while next_index in completed_indices:
+                logger.info(f"Writing index {next_index}")
                 _write_request_file(next_index, results_by_index[next_index], requests, queries_dir)
                 next_index += 1
 
         except queue.Empty:
             # No new results, continue loop
             pass
-
+    
+    logger.info("Printer received all results. Writing statistics now.")
     # All results received – write any remaining indices in order
     for idx in sorted(results_by_index.keys()):
         if idx >= next_index:
@@ -401,7 +401,7 @@ def build_schema_rag(db_name: str, source: SchemaSource) -> SchemaStore: # alway
     schema = Schema(database_name=db_name, schema_source=source, path=TMP_DIR / "schema")
     schema_dict = MySQLClient(db_name).extract_schema()
     schema.parse_response(schema_dict)
-    schema_store = SchemaStore()
+    schema_store = SchemaStore(TMP_DIR / "vector_stores")
     schema_store.add_schema(schema)
     print("Schema acquired and saved successfully.")
     main_logger.info("Schema acquired and saved successfully")
@@ -435,7 +435,7 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
 
     # 5. Initialize shared query store with lock
     query_store_lock = threading.Lock()
-    thread_safe_query_store = ThreadSafeQueryStore(VECTOR_STORE_DIR, query_store_lock)
+    thread_safe_query_store = ThreadSafeQueryStore(TMP_DIR / "vector_stores", query_store_lock)
 
     # ------------------------------------------------------------------
     # PHASE TWO: Core Execution
