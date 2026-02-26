@@ -1,9 +1,13 @@
 from abc import ABC, abstractmethod
 from src.classes.loaders.base_loader import BaseLoader
+from config import TIMEOUT_PER_REQUEST
 
 class BaseLLM(ABC):
     response: str
     loader: BaseLoader
+    
+    def __init__(self, timeout: int = TIMEOUT_PER_REQUEST):
+        self.timeout = timeout
     
     @abstractmethod
     def generate(self, prompt: str, **kwargs) -> str:

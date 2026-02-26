@@ -6,7 +6,7 @@ from src.classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
 from src.classes.orchestrators.base_orchestrator import BaseOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states.schema import Schema
-from src.classes.clients.database_client import DatabaseClient
+from src.classes.clients.mysql_client import MySQLClient
 from src.classes.domain_states import SchemaSource
 from src.classes.logger_manager import LoggerManager
 from config import SCHEMA_MODELS, VECTOR_STORE_DIR
@@ -77,7 +77,7 @@ class SchemaOrchestrator(BaseOrchestrator):
         Extract schema from MySQL database.
         This would need implementation based on your MySQL connector.
         """
-        self.database_client = DatabaseClient(self.database_name)
+        self.database_client = MySQLClient(self.database_name)
         return self.database_client.extract_schema()
         
     

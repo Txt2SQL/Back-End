@@ -1,7 +1,7 @@
 import os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.config import VECTOR_STORE_DIR, SCHEMA_MODELS
+from config import VECTOR_STORE_DIR, SCHEMA_MODELS
 from classes.orchestrators.schema_orchestrator import SchemaOrchestrator
 from classes.domain_states import SchemaSource
 from classes.logger_manager import LoggerManager

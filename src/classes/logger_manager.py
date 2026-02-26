@@ -13,6 +13,7 @@ class LoggerManager:
 
     _configured: bool = False
     _project_log_file: Optional[str] = None
+    _thread_loggers: dict = {}  # Store thread-specific loggers
 
     # ✅ SINGLE PLACE TO CONTROL DEFAULT LEVEL
     LOG_LEVEL = logging.DEBUG
@@ -90,15 +91,37 @@ class LoggerManager:
         return root_logger
 
     @classmethod
-    def get_logger(cls, name: str) -> logging.Logger:
+    def get_logger(cls, name: str, log_file: Optional[Path] = None) -> logging.Logger:
+        """
+        Get a logger. If log_file is provided, create a file handler for that specific file.
+        Otherwise, return the project logger.
+        """
         if not cls._configured:
             cls.setup_project_logger()
 
-        logger = logging.getLogger(name)
-        logger.setLevel(cls.LOG_LEVEL)
-        logger.propagate = True
-
-        return logger
+        if log_file:
+            # Create a unique key for this logger
+            logger_key = f"{name}_{log_file}"
+            
+            if logger_key not in cls._thread_loggers:
+                logger = logging.getLogger(f"thread_{name}")
+                logger.setLevel(cls.LOG_LEVEL)
+                logger.handlers.clear()  # Remove any existing handlers
+                logger.propagate = False
+                
+                # Create file handler for this specific log file
+                fh = logging.FileHandler(log_file, encoding='utf-8')
+                fh.setLevel(cls.LOG_LEVEL)
+                formatter = logging.Formatter('%(asctime)s - %(message)s')
+                fh.setFormatter(formatter)
+                logger.addHandler(fh)
+                
+                cls._thread_loggers[logger_key] = logger
+            
+            return cls._thread_loggers[logger_key]
+        else:
+            # Return project logger
+            return logging.getLogger(name)
 
     @staticmethod
     def truncate_request(request: str,

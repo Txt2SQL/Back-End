@@ -21,11 +21,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
-from src.classes.clients.database_client import DatabaseClient
+from src.classes.clients.mysql_client import MySQLClient
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
+from src.classes.logger_manager import LoggerManager
 from config import QUERY_GENERATION_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
 
 
@@ -84,7 +85,6 @@ def generator_thread(
     model_key: str,
     requests: List[str],
     result_queue: queue.Queue,
-    timeout: int,
     schema_store: SchemaStore,
     query_store: ThreadSafeQueryStore,
     logs_dir: Path,
@@ -92,10 +92,10 @@ def generator_thread(
 ) -> None:
     """
     Process all requests for a single model.
-    Each request runs in a separate process (or thread) with a timeout.
+    For each request, run QueryOrchestrator and put a RequestResult into the queue.
     """
-    # Setup logging
-    log_file = logs_dir / f"{model_key}.log"
+    # Setup per-thread log file
+    log_file = logs_dir / QUERY_GENERATION_MODELS[model_key]["log_file"]
     logger = logging.getLogger(f"thread_{model_key}")
     logger.setLevel(logging.DEBUG)
     fh = logging.FileHandler(log_file, encoding='utf-8')
@@ -103,38 +103,57 @@ def generator_thread(
     logger.addHandler(fh)
     logger.info(f"Started thread for model {model_key}")
 
-    def process_one_request(idx: int, request: str) -> RequestResult:
-        """Run a single request and return a RequestResult."""
-        start = time.time()
+    for idx, request in enumerate(requests, start=1):
+        logger.info(f"Processing request {idx}: {request[:50]}...")
+        start_time = time.time()
         try:
+            # Create orchestrator for this request
             orch = QueryOrchestrator(
                 database_name=db_name,
                 schema_store=schema_store,
                 user_request=request,
-                query_store=query_store,
+                query_store=query_store,          # thread-safe wrapper
                 model_name=model_key,
-                max_attempts=3,
+                max_attempts=3,                   # could be made configurable
             )
+
+            # Run generation (blocking)
             result_session = orch.generation(request)
-            elapsed = time.time() - start
+
+            elapsed = time.time() - start_time
             feedback = result_session.llm_feedback
-            return RequestResult(
+            res = RequestResult(
                 request_index=idx,
                 model_name=model_key,
                 sql_code=result_session.sql_code,
                 status=result_session.status.value if result_session.status else None,
                 error=result_session.execution_result if isinstance(result_session.execution_result, str)
-                    else str(result_session.execution_result) if result_session.execution_result else None,
+                else str(result_session.execution_result) if result_session.execution_result else None,
                 feedback_category=feedback.error_category.value if feedback.error_category else None,
                 feedback_explanation=feedback.explanation,
                 attempts=feedback.attempt,
                 time_taken=elapsed,
                 success=True,
             )
+            logger.info(f"Finished request {idx} in {elapsed:.2f}s")
+        except TimeoutError as e:
+            logger.exception(f"Timeout processing request {idx}")
+            res = RequestResult(
+                request_index=idx,
+                model_name=model_key,
+                sql_code=None,
+                status="TIMEOUT",
+                error=str(e),
+                feedback_category=None,
+                feedback_explanation=None,
+                attempts=0,
+                time_taken=TIMEOUT_PER_REQUEST,
+                success=False,
+            )
         except Exception as e:
-            elapsed = time.time() - start
-            logger.exception(f"Exception in request {idx}")
-            return RequestResult(
+            logger.exception(f"Error processing request {idx}")
+            elapsed = time.time() - start_time
+            res = RequestResult(
                 request_index=idx,
                 model_name=model_key,
                 sql_code=None,
@@ -146,30 +165,7 @@ def generator_thread(
                 time_taken=elapsed,
                 success=False,
             )
-
-    # Use a ThreadPoolExecutor to run each request with a timeout
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        for idx, request in enumerate(requests, start=1):
-            future = executor.submit(process_one_request, idx, request)
-            try:
-                result = future.result(timeout=timeout)
-            except concurrent.futures.TimeoutError:
-                # Cancel the future (best effort) and record timeout
-                future.cancel()
-                logger.warning(f"Request {idx} timed out after {timeout}s")
-                result = RequestResult(
-                    request_index=idx,
-                    model_name=model_key,
-                    sql_code=None,
-                    status="TIMEOUT",
-                    error=f"Exceeded timeout of {timeout}s",
-                    feedback_category=None,
-                    feedback_explanation=None,
-                    attempts=0,
-                    time_taken=timeout,
-                    success=False,
-                )
-            result_queue.put((idx, model_key, result))
+        result_queue.put((idx, model_key, res))
 
     logger.info("Thread finished all requests.")
 
@@ -331,6 +327,33 @@ def _write_statistics(
         f.write("\n".join(lines))
 
     print("\n" + "\n".join(lines))
+    
+def select_database():
+    client = MySQLClient()  # connects without specific database
+    dbs = client.list_databases()
+    client.close_connection()
+    print("Available databases:")
+    for i, db in enumerate(dbs):
+        print(f"{i+1}. {db}")
+    
+    while True:
+        choice = input("Select database by number: ").strip()
+        if not choice.isdigit() or int(choice) < 1 or int(choice) > len(dbs):
+            print("Invalid choice. Write again")
+        else:
+            db_name = dbs[int(choice) - 1]
+            print(f"Using database: {db_name}")
+            return db_name
+
+def load_requests(db_name: str) -> List[str]:
+    requests_file = TESTS_DIR / 'input' / 'requests' / f"{db_name}_requests.txt"
+    if not requests_file.exists():
+        print(f"Error: Requests file not found: {requests_file}")
+        sys.exit(1)
+    with open(requests_file, 'r', encoding='utf-8') as f:
+        requests = [line.strip() for line in f if line.strip()]
+    print(f"Loaded {len(requests)} requests.")
+    return requests
 
 def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     # ------------------------------------------------------------------
@@ -341,28 +364,10 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     # 1. Database selection
     db_name = database_name
     if db_name is None:
-        client = DatabaseClient()  # connects without specific database
-        dbs = client.list_databases()
-        client.close_connection()
-        print("Available databases:")
-        for i, db in enumerate(dbs):
-            print(f"{i+1}. {db}")
-        choice = input("Select database by number or name: ").strip()
-        try:
-            idx = int(choice) - 1
-            db_name = dbs[idx]
-        except ValueError:
-            db_name = choice
-        print(f"Using database: {db_name}")
+        db_name = select_database()
 
     # 2. Load requests
-    requests_file = TESTS_DIR / 'input' / 'requests' / f"{db_name}_requests.txt"
-    if not requests_file.exists():
-        print(f"Error: Requests file not found: {requests_file}")
-        sys.exit(1)
-    with open(requests_file, 'r', encoding='utf-8') as f:
-        requests = [line.strip() for line in f if line.strip()]
-    print(f"Loaded {len(requests)} requests.")
+    requests = load_requests(db_name)
 
     # 3. Create output directories
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -374,8 +379,9 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     print(f"Output will be written to: {output_dir}")
 
     # 4. Acquire schema from MySQL and store in vector store
+    source = SchemaSource.MYSQL if mode == 'mysql' else SchemaSource.TEXT
     print("Acquiring schema from MySQL...")
-    schema_orc = SchemaOrchestrator(database_name=db_name, source=SchemaSource.MYSQL)
+    schema_orc = SchemaOrchestrator(database_name=db_name, source=source)
     schema = schema_orc.acquire_schema()  # This also saves JSON and adds to vector store
     schema_store = schema_orc.schema_store
     print("Schema acquisition completed.")
@@ -404,8 +410,10 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     for model_key in QUERY_GENERATION_MODELS.keys():
         t = threading.Thread(
             target=generator_thread,
-            args=(model_key, requests, result_queue, timeout,
-                  schema_store, thread_safe_query_store, logs_dir, db_name)
+            args=(format_model_key(model_key), 
+                  requests, result_queue, timeout,
+                  schema_store, thread_safe_query_store, 
+                  logs_dir, db_name)
         )
         t.start()
         threads.append(t)

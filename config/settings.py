@@ -20,26 +20,32 @@ QUERY_GENERATION_MODELS = {
     "gpt-4o": {
         "provider": "azure",
         "id": "gpt-4o",
+        "log_file": "gpt-4o.log",
     },
     "gpt-5-mini": {
         "provider": "azure",
         "id": "gpt-5-mini",
+        "log_file": "gpt-5-mini.log",
     },
     "codestral:22b": {
         "provider": "openwebui",
         "id": "ollama@isarco02.codestral:22b",
+        "log_file": "codestral.log",
     },
     "codellama:34b": {
         "provider": "openwebui",
         "id": "ollama@isarco02.codellama:34b",
+        "log_file": "codellama.log",
     },
     "sqlcoder:34b": {
         "provider": "openwebui",
         "id": "sqlcoder-34b-alpha",
+        "log_file": "sqlcoder.log",
     },
     "Qwen3-Coder-Next": {
         "provider": "openwebui",
         "id": "Qwen3-Coder-Next-UD-Q4_K_XL.gguf",
+        "log_file": "Qwen3-Coder-Next.log",
     },
 }
 

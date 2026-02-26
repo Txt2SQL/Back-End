@@ -8,7 +8,7 @@ from src.classes.logger_manager import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 
-class DatabaseClient:
+class MySQLClient:
     
     def __init__(self, database: str | None = None):
         self.config = MySQLLoader().config

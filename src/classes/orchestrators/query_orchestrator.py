@@ -14,7 +14,7 @@ from src.classes.domain_states import QuerySession
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import Document
-from src.classes.clients.database_client import DatabaseClient
+from src.classes.clients.mysql_client import MySQLClient
 from src.classes.logger_manager import LoggerManager
 
 from config import QUERY_GENERATION_MODELS, SCHEMA_DIR
@@ -43,7 +43,7 @@ class QueryOrchestrator(BaseOrchestrator):
         self.max_attempts = max_attempts
         self.schema_store = schema_store
         self.query_store = query_store
-        self.database_client: Optional[DatabaseClient] = None
+        self.database_client: Optional[MySQLClient] = None
         self.request = user_request
 
         self.current_query: QuerySession = QuerySession(user_request=user_request)
@@ -166,7 +166,7 @@ class QueryOrchestrator(BaseOrchestrator):
             raise Exception("QueryStore not found")
 
         if self.schema.source == SchemaSource.MYSQL:
-            self.database_client = DatabaseClient(self.database_name)
+            self.database_client = MySQLClient(self.database_name)
             self.failed_queries = self.query_store.retrieve_failed_queries(
                 user_request
             )
