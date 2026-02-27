@@ -22,8 +22,8 @@ class SchemaOrchestrator(BaseOrchestrator):
     def __init__(
         self, 
         database_name: str, 
+        llm_model: str,
         source: SchemaSource = SchemaSource.TEXT,  # "mysql" or "text"
-        llm_model: Optional[str] = None,
         instance_path: Path = DATA_DIR
     ):
         super().__init__(database_name, instance_path, llm_model)
@@ -40,7 +40,7 @@ class SchemaOrchestrator(BaseOrchestrator):
     def logger(self):
         return LoggerManager.get_logger(__name__)
         
-    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
+    def _initialize_llm(self, choice: str) -> BaseLLM:
         if choice is None:
             return None
         elif SCHEMA_MODELS[choice]["provider"] == "openwebui":

@@ -33,8 +33,8 @@ class QueryOrchestrator(BaseOrchestrator):
         database_name: str,
         schema_store: SchemaStore,
         user_request: str,
+        model_name: str,
         query_store: Optional[QueryStore] = None, # query_store should not be created if source = "text"
-        model_name: Optional[str] = None,
         max_attempts: int = 3,
         instance_path: Path = DATA_DIR,
     ):
@@ -62,11 +62,11 @@ class QueryOrchestrator(BaseOrchestrator):
     # LLM INITIALIZATION
     # --------------------------------------------------
 
-    def _initialize_llm(self, choice: str | None) -> BaseLLM | None:
+    def _initialize_llm(self, choice: str | None) -> BaseLLM:
         self.logger.info("Getting LLM model for choice: %s", choice)
 
         if choice is None:
-            return None
+            raise Exception("No model choice provided")
 
         model_config = QUERY_GENERATION_MODELS[choice]
         model_name = model_config["id"]
@@ -85,16 +85,14 @@ class QueryOrchestrator(BaseOrchestrator):
 
         if not schema_path.exists():
             self.logger.warning("Schema file not found: %s", schema_path)
-            self.schema = None
-            return
+            raise Exception("Schema file not found")
 
         with schema_path.open("r", encoding="utf-8") as schema_file:
             schema_data = json.load(schema_file)
 
         if not schema_data:
             self.logger.warning("Schema data is empty for database '%s'", self.database_name)
-            self.schema = None
-            return
+            raise Exception("Schema data is empty")
 
         schema = Schema.__new__(Schema)
         schema.database_name = schema_data.get("database_name", self.database_name)
@@ -112,44 +110,95 @@ class QueryOrchestrator(BaseOrchestrator):
 
     def generation(self, user_request: str) -> QuerySession:
 
-        self.logger.info(
-            "Generating SQL for request: %s",
-            LoggerManager.truncate_request(user_request),
-        )
-
         if self.schema is None:
             raise Exception("Schema not found for database")
 
         self._init_generation_context(user_request)
 
+        consecutive_runtime_errors = 0
+
         while self.current_query.llm_feedback.attempt <= self.max_attempts:
 
-            self.logger.info("Attempt #%s", self.current_query.llm_feedback.attempt)
+            # --------------------------------------------------
+            # 1️⃣ GENERATE SQL
+            # --------------------------------------------------
 
             self._generate_sql_attempt(user_request)
 
-            # TEXT MODE → Only syntax validation
+            # --------------------------------------------------
+            # TEXT MODE
+            # --------------------------------------------------
             if self.schema.source == SchemaSource.TEXT:
-                if self.current_query.valid_syntax:
-                    break
+
+                self.current_query.evaluate()
+
+                if self.current_query.status is QueryStatus.SUCCESS:
+                    return self.current_query
+
+                # Syntax error → feedback loop
+                feedback = self.current_query.format_error_feedback()
+                self.current_query.llm_feedback.explanation = feedback
                 self.current_query.llm_feedback.attempt += 1
                 continue
 
+            # --------------------------------------------------
             # MYSQL MODE
+            # --------------------------------------------------
+
+            # --- Syntax validation first ---
+            self.current_query.validate_syntax()
+
+            if self.current_query.valid_syntax is False:
+
+                self.current_query.evaluate()
+                feedback = self.current_query.format_error_feedback()
+                self.current_query.llm_feedback.explanation = feedback
+                self.current_query.llm_feedback.attempt += 1
+                continue
+
+            # --- Execute query ---
             self._execute_and_evaluate_query()
 
-            if (
-                self.current_query.llm_feedback.feedback_status
-                is FeedbackStatus.CORRECT
-            ):
-                break
+            # --------------------------------------------------
+            # Runtime error handling
+            # --------------------------------------------------
+            if self.current_query.status is QueryStatus.RUNTIME_ERROR:
 
-            self.current_query.llm_feedback.attempt += 1
+                consecutive_runtime_errors += 1
 
-        if self.schema.source == SchemaSource.MYSQL:
-            if self.query_store is None:
-                raise Exception("QueryStore not found")
-            self.query_store.store_query(self.current_query)
+                # On second consecutive runtime error → ask explanation
+                if consecutive_runtime_errors >= 2:
+                    prompt = self._build_feedback_prompt("explanation")
+                    response = self.llm.generate(prompt)
+                    self.current_query.apply_llm_feedback(response)
+
+                feedback = self.current_query.format_error_feedback()
+                self.current_query.llm_feedback.explanation = feedback
+                self.current_query.llm_feedback.attempt += 1
+                continue
+
+            else:
+                consecutive_runtime_errors = 0
+
+            # --------------------------------------------------
+            # If execution success → ask correctness evaluation
+            # --------------------------------------------------
+            if self.current_query.status is QueryStatus.SUCCESS:
+
+                prompt = self._build_feedback_prompt("evaluation")
+                response = self.llm.generate(prompt)
+                self.current_query.apply_llm_feedback(response)
+                self.current_query.evaluate()
+
+                if self.current_query.status is QueryStatus.SUCCESS:
+                    return self.current_query
+
+                # Incorrect query → feedback loop
+                feedback = self.current_query.format_error_feedback()
+                self.current_query.llm_feedback.explanation = feedback
+                self.current_query.llm_feedback.attempt += 1
+                continue
+            
         self._log_generation_result()
 
         return self.current_query
@@ -171,12 +220,11 @@ class QueryOrchestrator(BaseOrchestrator):
 
         if self.schema.source == SchemaSource.MYSQL:
             self.database_client = MySQLClient(self.database_name)
-            self.failed_queries = self.query_store.retrieve_failed_queries(
-                user_request
+            self.failed_queries = (
+                self.query_store.retrieve_failed_queries(user_request)
+                if self.query_store else None
             )
-            self.join_hints = self.database_client.get_foreign_keys(
-                table_names
-            )
+            self.join_hints = self.database_client.get_foreign_keys(table_names)
         else:
             self.failed_queries = None
             self.join_hints = None
@@ -190,13 +238,18 @@ class QueryOrchestrator(BaseOrchestrator):
         if self.schema_context is None:
             raise Exception("Schema context not found")
 
-        error_feedback = self.current_query.llm_feedback.explanation
+        previous_fail = None
+        join_hints = None
+
+        if self.schema.source == SchemaSource.MYSQL:
+            previous_fail = self.current_query or self.failed_queries
+            join_hints = self.join_hints
 
         prompt = self.prompt_builder.query_generation_prompt(
             user_request=user_request,
             schema_context=self.schema_context,
-            previous_fail=self.failed_queries if not error_feedback else None,
-            join_hints=self.join_hints,
+            previous_fail=previous_fail,
+            join_hints=join_hints,
         )
 
         response = self.llm.generate(prompt) if self.llm else ""
