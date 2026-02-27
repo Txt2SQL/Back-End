@@ -225,7 +225,7 @@ def printer_thread(
         try:
             idx, model, res = result_queue.get(timeout=1)
             received += 1
-            logger.info(f"Received result for index {idx}, model {model}")
+            logger.info(f"Received result for request: {idx}, model: {model}")
             if idx not in results_by_index:
                 results_by_index[idx] = {}
             results_by_index[idx][model] = res
