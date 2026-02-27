@@ -9,14 +9,15 @@ from src.classes.domain_states.query import QuerySession
 from config import VECTOR_STORE_DIR
 from src.classes.logger import LoggerManager
 
-logger = LoggerManager.get_logger(__name__)
-
-
 class QueryStore(VectorStore):
 
     def __init__(self, path: Path = VECTOR_STORE_DIR):
         self.half_life_days = 7
         super().__init__(path, "query_store")
+
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
 
     # =====================================================
     # STORE QUERY
@@ -64,7 +65,7 @@ class QueryStore(VectorStore):
         Returns:
             list[Document]: A list of k failed queries.
         """
-        logger.info(f"🔍 Retrieving failed queries for request: '{user_request}'")
+        self.logger.info(f"🔍 Retrieving failed queries for request: '{user_request}'")
 
         retrieval_pool = max(10, k * 6)
 
@@ -78,7 +79,7 @@ class QueryStore(VectorStore):
                 ]
             } # pyright: ignore[reportArgumentType]
         )
-        logger.info(f"ℹ️ Found {len(syntax_errors)} syntax error queries.")
+        self.logger.info(f"ℹ️ Found {len(syntax_errors)} syntax error queries.")
 
         structural_errors = self._store.similarity_search(
             user_request,
@@ -90,7 +91,7 @@ class QueryStore(VectorStore):
                 ]
             } # pyright: ignore[reportArgumentType]
         )
-        logger.info(f"ℹ️ Found {len(structural_errors)} structural error queries.")
+        self.logger.info(f"ℹ️ Found {len(structural_errors)} structural error queries.")
 
         schema_specific_errors = self._store.similarity_search(
             user_request,
@@ -102,10 +103,10 @@ class QueryStore(VectorStore):
                 ]
             } # pyright: ignore[reportArgumentType]
         )
-        logger.info(f"ℹ️ Found {len(schema_specific_errors)} schema-specific runtime errors.")
+        self.logger.info(f"ℹ️ Found {len(schema_specific_errors)} schema-specific runtime errors.")
 
         candidates = syntax_errors + structural_errors + schema_specific_errors
-        logger.info(f"ℹ️ Total failed query candidates before dedupe: {len(candidates)}")
+        self.logger.info(f"ℹ️ Total failed query candidates before dedupe: {len(candidates)}")
 
         # Deduplicate by SQL metadata fallback to raw page content.
         unique_docs = []
@@ -118,11 +119,11 @@ class QueryStore(VectorStore):
             seen.add(key)
             unique_docs.append(doc)
 
-        logger.info(f"ℹ️ Unique failed queries after dedupe: {len(unique_docs)}")
+        self.logger.info(f"ℹ️ Unique failed queries after dedupe: {len(unique_docs)}")
 
         # Prefer recently-seen failures.
         decayed = self._apply_time_decay(unique_docs)
-        logger.info(f"⏳ Applied time decay with half-life {self.half_life_days} days.")
+        self.logger.info(f"⏳ Applied time decay with half-life {self.half_life_days} days.")
 
         # Keep diversity of failure causes when possible.
         selected = []
@@ -149,7 +150,7 @@ class QueryStore(VectorStore):
                 if len(selected) == k:
                     break
 
-        logger.info(f"✅ Returning {len(selected)} failed queries (requested k={k}).")
+        self.logger.info(f"✅ Returning {len(selected)} failed queries (requested k={k}).")
 
         return selected
 
@@ -165,15 +166,15 @@ class QueryStore(VectorStore):
         data = self._store.get(include=["metadatas"])
 
         if not data or not data.get("metadatas"):
-            logger.info("ℹ️ No metadata found in store.")
+            self.logger.info("ℹ️ No metadata found in store.")
             return False
 
         for metadata in data["metadatas"]:
             if metadata.get("sql_query") == query.sql_code:
-                logger.info("✅ Query already exists in store.")
+                self.logger.info("✅ Query already exists in store.")
                 return True
 
-        logger.info("❌ Query does not exist in store.")
+        self.logger.info("❌ Query does not exist in store.")
         return False
 
     # =====================================================
@@ -192,7 +193,7 @@ class QueryStore(VectorStore):
 
         scored_docs = []
 
-        logger.info(f"Applying time decay to {len(docs)} documents with half-life of {self.half_life_days} days.")
+        self.logger.info(f"Applying time decay to {len(docs)} documents with half-life of {self.half_life_days} days.")
         for doc in docs:
             timestamp = doc.metadata.get("timestamp", now)
             age = now - timestamp

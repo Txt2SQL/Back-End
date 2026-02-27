@@ -6,12 +6,14 @@ from src.classes.domain_states.schema import Schema
 from config import VECTOR_STORE_DIR
 from src.classes.logger import LoggerManager
 
-logger = LoggerManager.get_logger(__name__)
-
 class SchemaStore(VectorStore):
 
     def __init__(self, path: Path = VECTOR_STORE_DIR):
         super().__init__(path, "schema_store")
+
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
 
     # =====================================================
     # STORE SCHEMA
@@ -40,7 +42,7 @@ class SchemaStore(VectorStore):
             ids=ids,
         )
 
-        logger.info(f"Stored {len(documents)} schema table documents in vector DB.")
+        self.logger.info(f"Stored {len(documents)} schema table documents in vector DB.")
 
     # =====================================================
     # RETRIEVE CONTEXT
@@ -52,7 +54,7 @@ class SchemaStore(VectorStore):
         Uses light query-intent heuristics to tune retrieval depth,
         removes duplicate chunks, and groups output by table.
         """
-        logger.info("Retrieving schema context for request: '%s'", LoggerManager.truncate_request(user_request))
+        self.logger.info("Retrieving schema context for request: '%s'", LoggerManager.truncate_request(user_request))
 
         # ------------------------------------------------------------------
         # SCHEMA RETRIEVAL (RAG)
@@ -81,17 +83,17 @@ class SchemaStore(VectorStore):
         k = 3
         if has_aggregation:
             k += 1
-            logger.debug("Request contains aggregation terms, increasing k to %s", k)
+            self.logger.debug("Request contains aggregation terms, increasing k to %s", k)
         if has_join_intent:
             k += 1
-            logger.debug("Request contains join intent, increasing k to %s", k)
+            self.logger.debug("Request contains join intent, increasing k to %s", k)
         
-        logger.info("Retrieval parameters - has_aggregation: %s, has_join_intent: %s, k: %s", 
+        self.logger.info("Retrieval parameters - has_aggregation: %s, has_join_intent: %s, k: %s", 
                     has_aggregation, has_join_intent, k)
 
         retriever = self._store.as_retriever(search_kwargs={"k": k})
         relevant_docs = retriever.invoke(user_request)
-        logger.debug("Retrieved %s relevant documents", len(relevant_docs))
+        self.logger.debug("Retrieved %s relevant documents", len(relevant_docs))
 
         seen_chunks = set()
         grouped_chunks = {}
@@ -101,12 +103,12 @@ class SchemaStore(VectorStore):
             content = (doc.page_content or "").strip()
 
             if not content:
-                logger.debug("Skipping empty document")
+                self.logger.debug("Skipping empty document")
                 continue
 
             dedup_key = (table_name, content)
             if dedup_key in seen_chunks:
-                logger.debug("Duplicate chunk found for table '%s'", table_name)
+                self.logger.debug("Duplicate chunk found for table '%s'", table_name)
                 continue
 
             seen_chunks.add(dedup_key)
@@ -119,7 +121,7 @@ class SchemaStore(VectorStore):
         table_names = list(grouped_chunks.keys())
         schema_context = "\n\n".join(sections)
 
-        logger.info(
+        self.logger.info(
             "Schema context retrieval complete: k=%s, docs=%s, unique_tables=%s, context_chars=%s",
             k,
             len(relevant_docs),
@@ -128,7 +130,7 @@ class SchemaStore(VectorStore):
         )
 
         if not schema_context:
-            logger.warning("No schema context retrieved for request: %s", logger)
+            self.logger.warning("No schema context retrieved for request: %s", request_lower)
 
         return schema_context, table_names
     
