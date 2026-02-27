@@ -30,30 +30,30 @@ class QueryOrchestrator(BaseOrchestrator):
 
     def __init__(
         self,
-        database_name: str,
+        schema: Schema,
         schema_store: SchemaStore,
-        user_request: str,
         model_name: str,
+        user_request: str,
         query_store: Optional[QueryStore] = None, # query_store should not be created if source = "text"
         max_attempts: int = 3,
         instance_path: Path = DATA_DIR,
     ):
-        super().__init__(database_name, instance_path, model_name)
+        super().__init__(schema.database_name, instance_path, model_name)
 
-        self.max_attempts = max_attempts
+        self.schema = schema
         self.schema_store = schema_store
         self.query_store = query_store
-        self.database_client: Optional[MySQLClient] = None
         self.request = user_request
+        self.max_attempts = max_attempts
 
         self.current_query: QuerySession = QuerySession(user_request=user_request)
         self.schema_context: Optional[str] = None
 
+        self.database_client: Optional[MySQLClient] = None
         self.join_hints: Optional[List[str]] = None
         self.failed_queries: Optional[List[Document]] = None
-
-        self._load_schema()
-    
+        self.evaluator: Optional[BaseLLM] = None
+            
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)
@@ -77,47 +77,20 @@ class QueryOrchestrator(BaseOrchestrator):
         return OpenWebUILLM(model_name)
 
     # --------------------------------------------------
-    # SCHEMA LOADING
-    # --------------------------------------------------
-
-    def _load_schema(self) -> None:
-        schema_path = self.instance_path / "schema" / f"{self.database_name}_schema.json"
-
-        if not schema_path.exists():
-            self.logger.warning("Schema file not found: %s", schema_path)
-            raise Exception("Schema file not found")
-
-        with schema_path.open("r", encoding="utf-8") as schema_file:
-            schema_data = json.load(schema_file)
-
-        if not schema_data:
-            self.logger.warning("Schema data is empty for database '%s'", self.database_name)
-            raise Exception("Schema data is empty")
-
-        schema = Schema.__new__(Schema)
-        schema.database_name = schema_data.get("database_name", self.database_name)
-        schema.source = schema_data.get("source", "text")
-        schema.file_path = schema_path
-        schema.tables = schema_data
-        schema.json_ready = True
-        schema.schema_id = schema_data.get("schema_id")
-
-        self.schema = schema
-
-    # --------------------------------------------------
     # MAIN GENERATION LOOP
     # --------------------------------------------------
 
     def generation(self, user_request: str) -> QuerySession:
-
-        if self.schema is None:
-            raise Exception("Schema not found for database")
+        
+        self.logger.info("📝 Getting inside the query generation...")
 
         self._init_generation_context(user_request)
 
         consecutive_runtime_errors = 0
 
         while self.current_query.llm_feedback.attempt <= self.max_attempts:
+            
+            self.logger.info("📝 Attempt: %s", self.current_query.llm_feedback.attempt)
 
             # --------------------------------------------------
             # 1️⃣ GENERATE SQL
@@ -149,12 +122,18 @@ class QueryOrchestrator(BaseOrchestrator):
             self.current_query.validate_syntax()
 
             if self.current_query.valid_syntax is False:
+                
+                self.logger.info("📝 Syntax validation failed")
 
                 self.current_query.evaluate()
                 feedback = self.current_query.format_error_feedback()
                 self.current_query.llm_feedback.explanation = feedback
                 self.current_query.llm_feedback.attempt += 1
                 continue
+            
+            self.logger.info("📝 Syntax validation passed")
+
+            self.logger.info("📝 Executing query...")
 
             # --- Execute query ---
             self._execute_and_evaluate_query()
@@ -163,11 +142,14 @@ class QueryOrchestrator(BaseOrchestrator):
             # Runtime error handling
             # --------------------------------------------------
             if self.current_query.status is QueryStatus.RUNTIME_ERROR:
+                
+                self.logger.info("📝 Runtime error occurred")
 
                 consecutive_runtime_errors += 1
 
                 # On second consecutive runtime error → ask explanation
                 if consecutive_runtime_errors >= 2:
+                    self.logger.info("📝 Asking for explanation...")
                     prompt = self._build_feedback_prompt("explanation")
                     response = self.llm.generate(prompt)
                     self.current_query.apply_llm_feedback(response)
@@ -184,6 +166,8 @@ class QueryOrchestrator(BaseOrchestrator):
             # If execution success → ask correctness evaluation
             # --------------------------------------------------
             if self.current_query.status is QueryStatus.SUCCESS:
+                
+                self.logger.info("📝 Query executed successfully")
 
                 prompt = self._build_feedback_prompt("evaluation")
                 response = self.llm.generate(prompt)
@@ -191,8 +175,10 @@ class QueryOrchestrator(BaseOrchestrator):
                 self.current_query.evaluate()
 
                 if self.current_query.status is QueryStatus.SUCCESS:
+                    self.logger.info("📝 Query evaluated successfully")
                     return self.current_query
 
+                self.logger.info("📝 Query evaluation failed")
                 # Incorrect query → feedback loop
                 feedback = self.current_query.format_error_feedback()
                 self.current_query.llm_feedback.explanation = feedback
@@ -208,13 +194,16 @@ class QueryOrchestrator(BaseOrchestrator):
     # --------------------------------------------------
 
     def _init_generation_context(self, user_request: str) -> None:
+        
+        self.logger.info("📝 Initializing generation context...")
 
         self.schema_context, table_names = self.schema_store.get_context(
             user_request
         )
+        
+        self.logger.info("📝 Schema context: %s", self.schema_context)
+        self.logger.info("📝 Table names: %s", table_names)
 
-        if self.schema is None:
-            raise Exception("Schema not found")
         if self.query_store is None:
             raise Exception("QueryStore not found")
 
@@ -225,6 +214,8 @@ class QueryOrchestrator(BaseOrchestrator):
                 if self.query_store else None
             )
             self.join_hints = self.database_client.get_foreign_keys(table_names)
+            self.evaluator = AzureLLM("gpt-4o")
+            
         else:
             self.failed_queries = None
             self.join_hints = None
@@ -237,6 +228,8 @@ class QueryOrchestrator(BaseOrchestrator):
 
         if self.schema_context is None:
             raise Exception("Schema context not found")
+        
+        self.logger.info("📝 Generating SQL...")
 
         previous_fail = None
         join_hints = None
@@ -275,15 +268,19 @@ class QueryOrchestrator(BaseOrchestrator):
     # --------------------------------------------------
 
     def _request_feedback_if_needed(self) -> None:
+        
+        self.logger.info("📝 Requesting feedback if needed...")
 
         prompt_type = self._should_request_feedback()
 
-        if prompt_type and self.llm:
+        if prompt_type and self.evaluator:
             prompt = self._build_feedback_prompt(prompt_type)
-            response = self.llm.generate(prompt)
+            response = self.evaluator.generate(prompt)
             self.current_query.apply_llm_feedback(response)
 
     def _should_request_feedback(self) -> Optional[str]:
+
+        self.logger.info("📝 Checking if feedback is needed...")
 
         query = self.current_query
 
@@ -296,6 +293,8 @@ class QueryOrchestrator(BaseOrchestrator):
             and isinstance(query.execution_result, list)
             and len(query.execution_result) > 0
         ):
+            self.logger.info("📝 Feedback evaluation needed")
+
             return "evaluation"
 
         # RUNTIME ERROR case (after first attempt)
@@ -305,6 +304,8 @@ class QueryOrchestrator(BaseOrchestrator):
             and isinstance(query.execution_result, str)
             and query.execution_result
         ):
+            self.logger.info("📝 Feedback explanation needed")
+
             return "explanation"
 
         return None
@@ -314,6 +315,8 @@ class QueryOrchestrator(BaseOrchestrator):
     # --------------------------------------------------
 
     def _build_feedback_prompt(self, prompt_type: str) -> str:
+        
+        self.logger.info("📝 Building feedback prompt...")
 
         if prompt_type == "evaluation":
             return self.prompt_builder.evaluation_prompt(

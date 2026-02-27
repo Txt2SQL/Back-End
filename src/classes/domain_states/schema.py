@@ -35,6 +35,21 @@ class Schema:
         if self.file_path.exists():
             self._load_existing()
     
+    @classmethod
+    def from_json_file(cls, path: Path) -> "Schema":
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        schema = cls.__new__(cls)
+        schema.database_name = data.get("database_name")
+        schema.source = data.get("source", "text")
+        schema.file_path = path
+        schema.tables = data
+        schema.json_ready = True
+        schema.schema_id = data.get("schema_id")
+
+        return schema
+    
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)

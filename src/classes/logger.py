@@ -7,6 +7,29 @@ from typing import Optional
 from config import MAX_OUTPUT_LENGTH
 
 
+class RequestContextFilter(logging.Filter):
+    """
+    Filter that adds request index to log records when available in thread-local storage.
+    """
+    def __init__(self):
+        super().__init__()
+        self._thread_local = threading.local()
+    
+    def set_request_index(self, index: str):
+        """Set the current request index for this thread."""
+        self._thread_local.request_index = index
+    
+    def clear_request_index(self):
+        """Clear the request index for this thread."""
+        if hasattr(self._thread_local, 'request_index'):
+            delattr(self._thread_local, 'request_index')
+    
+    def filter(self, record):
+        # Add request index to log record if available
+        record.request_index = getattr(self._thread_local, 'request_index', None)
+        return True
+
+
 class LoggerManager:
     """
     Thread-safe centralized logging manager.
@@ -31,6 +54,9 @@ class LoggerManager:
 
     # thread-local storage
     _thread_local = threading.local()
+    
+    # Request context filter for adding request index to logs
+    _request_filter = RequestContextFilter()
 
     # synchronization
     _lock = threading.RLock()
@@ -92,11 +118,14 @@ class LoggerManager:
 
             file_handler.setLevel(cls.MAIN_LOG_LEVEL)
 
+            # Custom formatter with thread name, file name, function name, line number, and request index
             formatter = logging.Formatter(
-                "%(asctime)s - [%(name)s] - %(levelname)s - %(message)s"
+                "%(asctime)s - [%(threadName)s:%(filename)s::%(funcName)s::%(lineno)d] - "
+                "%(request_index)s - %(levelname)s - %(message)s"
             )
 
             file_handler.setFormatter(formatter)
+            file_handler.addFilter(cls._request_filter)
             root_logger.addHandler(file_handler)
 
             # prevent propagation to default handlers
@@ -143,6 +172,25 @@ class LoggerManager:
         return getattr(cls._thread_local, "active_logger", None)
 
     # ==========================================================
+    # REQUEST INDEX CONTEXT MANAGEMENT
+    # ==========================================================
+    
+    @classmethod
+    def set_request_index(cls, index: str) -> None:
+        """
+        Set the current request index for this thread.
+        This will be added to all log messages from this thread.
+        """
+        cls._request_filter.set_request_index(index)
+    
+    @classmethod
+    def clear_request_index(cls) -> None:
+        """
+        Clear the current request index for this thread.
+        """
+        cls._request_filter.clear_request_index()
+
+    # ==========================================================
     # LOGGER ACCESS
     # ==========================================================
 
@@ -184,7 +232,11 @@ class LoggerManager:
         # ======================================================
 
         if log_file is None:
-            return logging.getLogger(name)
+            logger = logging.getLogger(name)
+            # Add request filter to project loggers too
+            if not any(isinstance(f, RequestContextFilter) for f in logger.filters):
+                logger.addFilter(cls._request_filter)
+            return logger
 
         # ======================================================
         # DEDICATED ISOLATED LOGGER
@@ -219,14 +271,14 @@ class LoggerManager:
 
             fh.setLevel(cls.THREAD_LOG_LEVEL)
 
+            # Same custom formatter for thread loggers
             formatter = logging.Formatter(
-                "%(asctime)s - "
-                "[%(name)s:%(funcName)s:%(lineno)d] - "
-                "%(levelname)s - %(message)s"
+                "%(asctime)s - [%(threadName)s:%(filename)s::%(funcName)s::%(lineno)d] - "
+                "%(request_index)s - %(levelname)s - %(message)s"
             )
 
             fh.setFormatter(formatter)
-
+            fh.addFilter(cls._request_filter)
             logger.addHandler(fh)
 
             cls._thread_loggers[logger_key] = logger

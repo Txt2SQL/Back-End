@@ -67,7 +67,7 @@ def generator_thread(
     schema_store: SchemaStore,
     query_store: ThreadSafeQueryStore,
     logs_dir: Path,
-    db_name: str,
+    schema: Schema,
 ) -> None:
     """
     Process all requests for a single model.
@@ -91,18 +91,20 @@ def generator_thread(
         logger.info(f"Log file: {log_file}")
 
         for idx, request in enumerate(requests, start=1):
+            # Set the request index for all logs in this iteration
+            LoggerManager.set_request_index(f"[Request: {idx}]")
 
             truncated_request = LoggerManager.truncate_request(request)
 
-            logger.info(f"[Request {idx}] Processing: {truncated_request}")
+            logger.info(f"Processing: {truncated_request}")
 
             start_time = time.time()
 
             try:
-                logger.debug(f"[Request {idx}] Creating QueryOrchestrator")
+                logger.debug(f"Creating QueryOrchestrator")
 
                 orch = QueryOrchestrator(
-                    database_name=db_name,
+                    schema=schema,
                     schema_store=schema_store,
                     user_request=request,
                     query_store=query_store,
@@ -111,13 +113,13 @@ def generator_thread(
                     instance_path=TMP_DIR
                 )
 
-                logger.debug(f"[Request {idx}] Starting generation")
+                logger.debug(f"Starting generation")
 
                 result_session = orch.generation(request)
 
                 elapsed = time.time() - start_time
 
-                logger.debug(f"[Request {idx}] Generation completed in {elapsed:.2f}s")
+                logger.debug(f"Generation completed in {elapsed:.2f}s")
 
                 feedback = result_session.llm_feedback
 
@@ -143,7 +145,7 @@ def generator_thread(
                 )
 
                 logger.info(
-                    f"[Request {idx}] Finished successfully "
+                    f"Finished successfully "
                     f"(attempts={res.attempts}, time={elapsed:.2f}s)"
                 )
 
@@ -152,7 +154,7 @@ def generator_thread(
                 elapsed = TIMEOUT_PER_REQUEST
 
                 logger.exception(
-                    f"[Request {idx}] Timeout after {elapsed}s"
+                    f"Timeout after {elapsed}s"
                 )
 
                 res = RequestResult(
@@ -173,7 +175,7 @@ def generator_thread(
                 elapsed = time.time() - start_time
 
                 logger.exception(
-                    f"[Request {idx}] Failed with exception after {elapsed:.2f}s"
+                    f"Failed with exception after {elapsed:.2f}s"
                 )
 
                 res = RequestResult(
@@ -281,10 +283,38 @@ def _write_request_file(
                 continue
             f.write(f"{i}. [{model_key}]\n\n")
             f.write(f"Query:\n{res.sql_code or 'N/A'}\n\n")
-            f.write(f"Status and outcome: {res.status}, {res.error or 'N/A'}\n")
-            f.write(f"LLM Feedback: {res.feedback_category or 'N/A'} {res.feedback_explanation or ''}\n")
+            # ----------------------------
+            # Status + Outcome formatting
+            # ----------------------------
+            status_label = res.status or "RUNTIME_ERROR"
+
+            if status_label == "SUCCESS":
+                outcome = (
+                    f"{res.error} rows fetched"
+                    if res.error and res.error.isdigit()
+                    else (res.error or "Query executed successfully")
+                )
+                f.write(f"status and outcome: SUCCESS: {outcome}\n\n")
+            else:
+                error_msg = res.error or "Unknown error"
+                f.write(f"status and outcome: RUNTIME_ERROR: {error_msg}\n\n")
+
+            # ----------------------------
+            # LLM Feedback formatting
+            # ----------------------------
+            if res.feedback_category:
+                explanation = res.feedback_explanation or ""
+                f.write(
+                    f"LLM Feedback: INCORRECT ({res.feedback_category} - {explanation})\n\n"
+                )
+            else:
+                f.write("LLM Feedback: CORRECT\n\n")
+
+            # ----------------------------
+            # Attempts + Time
+            # ----------------------------
             f.write(f"Attempts: {res.attempts}\n")
-            f.write(f"Request time: {res.time_taken:.2f}s\n\n")
+            f.write(f"Request time: {res.time_taken:.2f}\n\n")
 
 
 def _write_statistics(
@@ -395,8 +425,83 @@ def create_output_dir(db_name: str) -> tuple[Path, Path, Path]:
     print(f"Output will be written to: {output_dir}")
     return output_dir, queries_dir, logs_dir
 
-def build_schema_rag(db_name: str, source: SchemaSource) -> SchemaStore: # always acquire the schema from mysql but put inside the schema the source specified in the args 
+def drop_all_views(db_name: str) -> None:
+    """
+    Drop all views in the specified database to clean the schema before testing.
+    
+    Args:
+        db_name: Name of the database to clean
+    """
+    print(f"🧹 Cleaning up views in database: {db_name}")
+    main_logger.info(f"Starting view cleanup for database: {db_name}")
+    
+    client = None
+    try:
+        # Connect to the specific database
+        client = MySQLClient(db_name)
+        
+        # Query to get all view names
+        views_query = f"""
+            SELECT TABLE_NAME 
+            FROM information_schema.VIEWS 
+            WHERE TABLE_SCHEMA = '{db_name}'
+        """
+        
+        query_session = QuerySession(sql_query=views_query)
+        result = client.execute_query(query_session)
+        
+        if result.execution_status != "SUCCESS":
+            main_logger.error(f"Failed to query views: {result.execution_result}")
+            print(f"❌ Failed to query views: {result.execution_result}")
+            return
+        
+        views = result.execution_result
+        if not views:
+            print("✅ No views found to clean up")
+            main_logger.info("No views found in database")
+            return
+        
+        view_names = [row["TABLE_NAME"] for row in views]  # type: ignore
+        print(f"📋 Found {len(view_names)} view(s) to drop: {', '.join(view_names)}")
+        main_logger.info(f"Found {len(view_names)} views to drop: {', '.join(view_names)}")
+        
+        # Drop each view
+        dropped_count = 0
+        failed_count = 0
+        
+        for view_name in view_names:
+            try:
+                drop_query = f"DROP VIEW IF EXISTS `{view_name}`"
+                drop_session = QuerySession(sql_query=drop_query)
+                drop_result = client.execute_query(drop_session)
+                
+                if drop_result.execution_status == "SUCCESS":
+                    main_logger.info(f"✅ Successfully dropped view: {view_name}")
+                    print(f"  ✅ Dropped: {view_name}")
+                    dropped_count += 1
+                else:
+                    main_logger.error(f"❌ Failed to drop view {view_name}: {drop_result.execution_result}")
+                    print(f"  ❌ Failed to drop: {view_name}")
+                    failed_count += 1
+                    
+            except Exception as e:
+                main_logger.error(f"❌ Error dropping view {view_name}: {e}")
+                print(f"  ❌ Error dropping {view_name}: {e}")
+                failed_count += 1
+        
+        print(f"🧹 View cleanup complete: {dropped_count} dropped, {failed_count} failed")
+        main_logger.info(f"View cleanup complete: {dropped_count} dropped, {failed_count} failed")
+        
+    except Exception as e:
+        main_logger.error(f"❌ Error during view cleanup: {e}")
+        print(f"❌ Error during view cleanup: {e}")
+    finally:
+        if client:
+            client.close_connection()
+
+def build_schema_rag(db_name: str, source: SchemaSource) -> tuple[Schema, SchemaStore]: # always acquire the schema from mysql but put inside the schema the source specified in the args 
     print("Acquiring schema from MySQL...")
+    drop_all_views(db_name)
     main_logger.info(f"Acquiring schema from {db_name}")
     schema = Schema(database_name=db_name, schema_source=source, path=TMP_DIR / "schema")
     schema_dict = MySQLClient(db_name).extract_schema()
@@ -405,7 +510,7 @@ def build_schema_rag(db_name: str, source: SchemaSource) -> SchemaStore: # alway
     schema_store.add_schema(schema)
     print("Schema acquired and saved successfully.")
     main_logger.info("Schema acquired and saved successfully")
-    return schema_store
+    return schema, schema_store
     
 def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     # ------------------------------------------------------------------
@@ -431,7 +536,7 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
 
     # 4. Acquire schema from MySQL and store in vector store
     source = SchemaSource.MYSQL if mode == 'mysql' else SchemaSource.TEXT
-    schema_store = build_schema_rag(db_name, source)
+    schema, schema_store = build_schema_rag(db_name, source)
 
     # 5. Initialize shared query store with lock
     query_store_lock = threading.Lock()
@@ -462,7 +567,7 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
             args=(model_key, 
                   requests, result_queue,
                   schema_store, thread_safe_query_store, 
-                  logs_dir, db_name)
+                  logs_dir, schema)
         )
         t.start()
         threads.append(t)

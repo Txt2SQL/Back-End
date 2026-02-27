@@ -1,22 +1,22 @@
 import hashlib, json, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from src.classes.domain_states.schema import Schema
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import SchemaStore
-from config import QUERY_GENERATION_MODELS
+from config import QUERY_GENERATION_MODELS, DATA_DIR
 from src.classes.logger import LoggerManager
 
 logger = LoggerManager.get_logger(__name__)
 
 
-def select_model() -> str | None:
+def select_model() -> str:
     """
     Prompts user to select a model from available options.
     Returns None for without_llm mode.
     """
     print("\n🤖 Available models:")
-    print("   0. without_llm (no LLM)")
 
     models = list(QUERY_GENERATION_MODELS.keys())
     for idx, model_name in enumerate(models, 1):
@@ -24,12 +24,9 @@ def select_model() -> str | None:
 
     while True:
         try:
-            choice = int(input(f"\n👉 Select a model (0-{len(models)}): ").strip())
+            choice = int(input(f"\n👉 Select a model (1-{len(models)}): ").strip())
 
-            if choice == 0:
-                print("✅ Selected mode: without_llm\n")
-                return None
-            elif 1 <= choice <= len(models):
+            if 1 <= choice <= len(models):
                 selected = models[choice - 1]
                 print(f"✅ Selected model: {selected}\n")
                 return selected
@@ -147,8 +144,12 @@ def main():
 
             print("\n🔍 Generating query...\n")
 
+            path = DATA_DIR / "schema" / f"{database_name}_schema.json"
+            schema = Schema.from_json_file(path)
+            schema_store.add_schema(schema)
+
             orchestrator = QueryOrchestrator(
-                database_name=database_name,
+                schema=schema,
                 query_store=query_store,
                 schema_store=schema_store,
                 user_request=user_request,
