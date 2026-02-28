@@ -28,7 +28,7 @@ class QuerySession:
 
         self.rows_fetched: Optional[int] = None
         self.valid_syntax: Optional[bool] = None
-        self.execution_status: Optional[str] = None
+        self.execution_status: Optional[QueryStatus] = None
         self.execution_result: Union[str, List[Any], None] = None
 
         self.status: QueryStatus = QueryStatus.PENDING
@@ -151,8 +151,11 @@ class QuerySession:
             self._detect_knowledge_scope()
             return
 
-        if self.execution_status and self.execution_status != "SUCCESS":
-            self.status = QueryStatus.RUNTIME_ERROR
+        if self.execution_status and self.execution_status is not QueryStatus.SUCCESS:
+            if self.execution_status is QueryStatus.TIMEOUT_ERROR:
+                self.status = QueryStatus.TIMEOUT_ERROR
+            else:
+                self.status = QueryStatus.RUNTIME_ERROR
             self._classify_runtime_error()
             self._detect_knowledge_scope()
             return
@@ -219,11 +222,13 @@ Knowledge scope: {self.knowledge_scope.value if self.knowledge_scope else None}
     
     def format_error_feedback(self):
 
-        if self.status == "SYNTAX_ERROR":
+        if self.status is QueryStatus.SYNTAX_ERROR:
             title = "The previous SQL query caused a syntax error."
-        elif self.status == "RUNTIME_ERROR":
+        elif self.status is QueryStatus.TIMEOUT_ERROR:
+            title = "The previous SQL query timed out during execution."
+        elif self.status is QueryStatus.RUNTIME_ERROR:
             title = "The previous SQL query failed at runtime."
-        elif self.status == "SEMANTIC_ERROR":
+        elif self.status is QueryStatus.INCORRECT:
             title = "The previous SQL query was semantically incorrect."
         else:
             title = "The previous SQL query was incorrect."
