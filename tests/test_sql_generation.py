@@ -274,15 +274,15 @@ def _write_request_file(
     filepath = queries_dir / filename
 
     with open(filepath, 'w', encoding='utf-8') as f:
-        f.write(f"[Request]\n{request_text}\n\n")
+        f.write(f"❇️[Request]\n{request_text}\n\n")
         # Write results in the same order as models (from config)
         for i, model_key in enumerate(QUERY_GENERATION_MODELS.keys(), 1):
             res = results.get(model_key)
             if res is None:
-                f.write(f"{i}. [{model_key}]\n\nNo result\n\n")
+                f.write(f"{i}. 🤖[{model_key}]\n\nNo result\n\n")
                 continue
-            f.write(f"{i}. [{model_key}]\n\n")
-            f.write(f"Query:\n{res.sql_code or 'N/A'}\n\n")
+            f.write(f"{i}. 🤖[{model_key}]\n\n")
+            f.write(f"🧮Query:\n{res.sql_code or 'N/A'}\n\n")
             # ----------------------------
             # Status + Outcome formatting
             # ----------------------------
