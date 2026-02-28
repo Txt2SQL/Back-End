@@ -26,6 +26,9 @@ class MySQLClient:
                 "port": int(self.config["DB_PORT"]),
                 "user": self.config["DB_USER"],
                 "password": self.config["DB_PASSWORD"],
+                "connection_timeout": 10,   # seconds to establish connection
+                "read_timeout": 30,         # seconds waiting for server response
+                "write_timeout": 30,        # seconds sending query
             }
             if self.database is not None:
                 self.logger.debug(f"📂 Setting database to: {self.database}")
@@ -41,51 +44,58 @@ class MySQLClient:
         self.logger.info(f"📌 Received SQL query:\n{query.sql_code}")
 
         try:
-            self.logger.info("🔌 Connecting to MySQL database...")
             self.set_connection()
 
-            if self.connection.is_connected():
-                self.logger.info("✅ Connection established")
-            else:
-                self.logger.error("❌ Connection failed (self.connection.is_connected() returned False)")
+            if not self.connection.is_connected():
                 raise ConnectionError("Failed to establish a connection to the database")
 
-            # Execute the query
-
             cursor = self.connection.cursor(dictionary=True)
-            self.logger.info("📝 Executing SQL query...")
+
+            # 🔒 Set max execution time (30 seconds)
+            try:
+                cursor.execute("SET SESSION MAX_EXECUTION_TIME = 30000")
+                self.logger.debug("⏳ MAX_EXECUTION_TIME set to 30 seconds")
+            except Exception as timeout_err:
+                self.logger.warning(f"Could not set MAX_EXECUTION_TIME: {timeout_err}")
 
             if query.sql_code is None:
-                self.logger.warning("No SQL query provided to execute")
                 raise ValueError("SQL query is None, cannot execute")
-            cursor.execute(query.sql_code)
-            self.logger.info("📝 Query executed successfully")
 
-            # Try fetching results (SELECT queries)
+            self.logger.info("📝 Executing SQL query...")
+            cursor.execute(query.sql_code)
+
             try:
                 self.logger.info("📥 Attempting to fetch results...")
                 query.execution_result = cursor.fetchall()
-                self.logger.info(f"📥 Rows fetched: {len(query.execution_result)}") # pyright: ignore[reportArgumentType]
+                if query.execution_result is not None:
+                    self.logger.info(f"📥 Rows fetched: {len(query.execution_result)}")
             except Exception as fetch_err:
-                self.logger.info(f"ℹ️ No fetchable results (likely non-SELECT query): {fetch_err}")
                 query.execution_result = None
                 raise fetch_err
 
-            # Commit the transaction
-
             query.execution_status = "SUCCESS"
-            self.logger.info("💾 Committing transaction...")
-            self.connection.commit()
 
+            self.connection.commit()
             cursor.close()
             self.connection.close()
             self.logger.info("🔒 Connection closed")
+
+        except mysql.connector.errors.DatabaseError as e:
+            # ⬇️ Catch timeout specifically
+            if "maximum statement execution time exceeded" in str(e).lower():
+                self.logger.error("⏰ Query execution timed out")
+                query.execution_status = "TIMEOUT_ERROR"
+                query.execution_result = "Query execution exceeded time limit (30s)"
+            else:
+                self.logger.error(f"🔥 RUNTIME ERROR during SQL execution: {e}")
+                query.execution_status = "RUNTIME_ERROR"
+                query.execution_result = str(e)
 
         except Exception as e:
             self.logger.error(f"🔥 RUNTIME ERROR during SQL execution: {e}")
             query.execution_status = "RUNTIME_ERROR"
             query.execution_result = str(e)
-        
+
         return query
     
     def extract_schema(self) -> dict:

@@ -9,6 +9,7 @@ class QueryStatus(str, Enum):
     SUCCESS = "SUCCESS"
     SYNTAX_ERROR = "SYNTAX_ERROR"
     RUNTIME_ERROR = "RUNTIME_ERROR"
+    TIMEOUT_ERROR = "TIMEOUT_ERROR"
     INCORRECT = "INCORRECT"
     
 class ErrorType(str, Enum):
