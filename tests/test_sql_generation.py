@@ -324,7 +324,30 @@ def _write_statistics(
     requests: List[str],
 ) -> None:
     """Aggregate statistics and write to final_stats.txt."""
+    def print_table(title: str, headers: List[str], rows: List[List[str]]) -> List[str]:
+        """Build an ASCII table and return it as a list of lines."""
+        lines: List[str] = []
+        lines.append(f"\n{title}")
+        lines.append("-" * 60)
+
+        col_widths = [
+            max(len(str(cell)) for cell in [header] + [row[i] for row in rows])
+            for i, header in enumerate(headers)
+        ]
+
+        def format_row(row: List[str]) -> str:
+            return " | ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
+
+        lines.append(format_row(headers))
+        lines.append("-+-".join("-" * w for w in col_widths))
+
+        for row in rows:
+            lines.append(format_row(row))
+
+        return lines
+
     total_requests = num_requests
+    total_tests = 0
     successful_executions = 0
     correct_queries = 0
     runtime_errors = 0
@@ -333,11 +356,21 @@ def _write_statistics(
     total_attempts = 0
 
     # Per-model stats
-    model_stats = {model: {"correct": 0, "total_time": 0.0, "attempts": 0, "count": 0}
-                   for model in QUERY_GENERATION_MODELS.keys()}
+    model_stats = {
+        model: {
+            "correct": 0,
+            "runtime": 0,
+            "syntax": 0,
+            "total_time": 0.0,
+            "attempts": 0,
+            "count": 0,
+        }
+        for model in QUERY_GENERATION_MODELS.keys()
+    }
 
-    for idx, models_dict in results_by_index.items():
+    for _, models_dict in results_by_index.items():
         for model, res in models_dict.items():
+            total_tests += 1
             if res.success:
                 successful_executions += 1
                 total_attempts += res.attempts
@@ -350,34 +383,100 @@ def _write_statistics(
                     model_stats[model]["correct"] += 1
                 elif res.status == QueryStatus.RUNTIME_ERROR.value:
                     runtime_errors += 1
+                    model_stats[model]["runtime"] += 1
                 elif res.status == QueryStatus.SYNTAX_ERROR.value:
                     syntax_errors += 1
+                    model_stats[model]["syntax"] += 1
                 else:
                     other_errors += 1
             else:
                 # Exception occurred – count as other error
                 other_errors += 1
 
+    # Build rankings
+    attempts_avg = sorted(
+        model_stats.items(),
+        key=lambda x: x[1]["attempts"] / x[1]["count"] if x[1]["count"] > 0 else float("inf"),
+    )
+    time_avg = sorted(
+        model_stats.items(),
+        key=lambda x: x[1]["total_time"] / x[1]["count"] if x[1]["count"] > 0 else float("inf"),
+    )
+    status_rank = sorted(
+        model_stats.items(),
+        key=lambda x: (-x[1]["correct"], x[1]["runtime"], x[1]["syntax"]),
+    )
+
     # Build report
     lines = []
-    lines.append("=== FINAL STATISTICS ===\n")
-    lines.append(f"Total input requests: {total_requests}")
-    lines.append(f"Successful executions (no exception): {successful_executions}")
-    lines.append(f"Correct queries: {correct_queries}")
-    lines.append(f"Runtime errors: {runtime_errors}")
-    lines.append(f"Syntax errors: {syntax_errors}")
-    lines.append(f"Other errors: {other_errors}")
-    lines.append(f"Total attempts across all executions: {total_attempts}\n")
+    lines.append("/°" * 200 + "/\n")
+    lines.append("📊 TEST SUMMARY")
+    lines.append("\n" + "/°" * 200 + "/")
+    lines.extend([
+        "",
+        f"Total requests tested : {total_requests}",
+        f"Total model executions: {total_tests}",
+        f"✅ Successful queries : {correct_queries}",
+        f"⚠️  Syntax errors     : {syntax_errors}",
+        f"❌ Runtime errors    : {runtime_errors}",
+        f"🔧 Other errors      : {other_errors}",
+        f"🟢 Completed runs    : {successful_executions}",
+        f"🔁 Total attempts    : {total_attempts}",
+        "",
+    ])
 
-    lines.append("Model rankings (by time, attempts, success rate):")
-    for model, stats in model_stats.items():
-        avg_time = stats["total_time"] / stats["count"] if stats["count"] > 0 else 0
-        avg_attempts = stats["attempts"] / stats["count"] if stats["count"] > 0 else 0
-        success_rate = (stats["correct"] / stats["count"] * 100) if stats["count"] > 0 else 0
-        lines.append(f"  {model}:")
-        lines.append(f"    Avg time: {avg_time:.2f}s")
-        lines.append(f"    Avg attempts: {avg_attempts:.2f}")
-        lines.append(f"    Success rate: {success_rate:.1f}% ({stats['correct']}/{stats['count']})")
+    lines.extend(
+        print_table(
+            "🏁 Attempts ranking (avg)",
+            ["Rank", "Model", "Avg Attempts", "Total Attempts"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    f"{(stats['attempts'] / stats['count']) if stats['count'] > 0 else 0:.2f}",
+                    f"{stats['attempts']:.0f}",
+                ]
+                for i, (model, stats) in enumerate(attempts_avg)
+            ],
+        )
+    )
+
+    lines.extend(
+        print_table(
+            "🏁 Time ranking (avg)",
+            ["Rank", "Model", "Avg Time (s)", "Total Time (s)"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    f"{(stats['total_time'] / stats['count']) if stats['count'] > 0 else 0:.2f}",
+                    f"{stats['total_time']:.1f}",
+                ]
+                for i, (model, stats) in enumerate(time_avg)
+            ],
+        )
+    )
+
+    lines.extend(
+        print_table(
+            "🏁 Status ranking",
+            ["Rank", "Model", "OK", "RUNTIME", "SYNTAX"],
+            [
+                [
+                    str(i + 1),
+                    model,
+                    str(int(stats["correct"])),
+                    str(int(stats["runtime"])),
+                    str(int(stats["syntax"])),
+                ]
+                for i, (model, stats) in enumerate(status_rank)
+            ],
+        )
+    )
+
+    best_model = status_rank[0][0] if status_rank else "N/A"
+    lines.append(f"\n🏆 Best overall model: {best_model}")
+    lines.append("=" * 60)
 
     with open(stats_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(lines))
