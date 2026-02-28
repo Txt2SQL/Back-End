@@ -282,7 +282,7 @@ def _write_request_file(
                 f.write(f"{i}. 🤖[{model_key}]\n\nNo result\n\n")
                 continue
             f.write(f"{i}. 🤖[{model_key}]\n\n")
-            f.write(f"🧮Query:\n{res.sql_code or 'N/A'}\n\n")
+            f.write(f"🧮 Query:\n\n{res.sql_code or 'N/A'}\n\n")
             # ----------------------------
             # Status + Outcome formatting
             # ----------------------------
@@ -294,10 +294,10 @@ def _write_request_file(
                     if res.error and res.error.isdigit()
                     else (res.error or "Query executed successfully")
                 )
-                f.write(f"status and outcome: SUCCESS: {outcome}\n\n")
+                f.write(f"status and outcome: 🍾SUCCESS\n {outcome}\n\n")
             else:
                 error_msg = res.error or "Unknown error"
-                f.write(f"status and outcome: RUNTIME_ERROR: {error_msg}\n\n")
+                f.write(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n\n")
 
             # ----------------------------
             # LLM Feedback formatting
@@ -305,16 +305,16 @@ def _write_request_file(
             if res.feedback_category:
                 explanation = res.feedback_explanation or ""
                 f.write(
-                    f"LLM Feedback: INCORRECT ({res.feedback_category} - {explanation})\n\n"
+                    f"LLM Feedback: 👎INCORRECT ({res.feedback_category} - {explanation})\n\n"
                 )
             else:
-                f.write("LLM Feedback: CORRECT\n\n")
+                f.write("LLM Feedback: 👍CORRECT\n\n")
 
             # ----------------------------
             # Attempts + Time
             # ----------------------------
-            f.write(f"Attempts: {res.attempts}\n")
-            f.write(f"Request time: {res.time_taken:.2f}\n\n")
+            f.write(f"🏁Attempts: {res.attempts}\n")
+            f.write(f"⌚Request time: {res.time_taken:.2f}\n\n")
 
 
 def _write_statistics(
