@@ -1,10 +1,12 @@
+import argparse
 import glob, sys, os, random, uuid, re
 # Add parent directory to Python path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from dotenv import load_dotenv
 from faker import Faker
 from mysql.connector import Error
+from src.classes.clients.mysql_client import MySQLClient
+from src.classes.logger import LoggerManager
 
 
 # Configuration
@@ -13,8 +15,14 @@ SQL_DIR = os.path.join(BASE_DIR, 'input', 'existing_ddl')
 DEFAULT_ROWS_PER_TABLE = 100  # How many fake rows to generate per table
 
 fake = Faker()
-setup_single_project_logger()
-logger = setup_logger(__name__)
+LoggerManager.setup_project_logger()
+logger = LoggerManager.get_logger(__name__)
+
+
+def get_db_connection(database: str | None = None):
+    """Create a MySQL connection through the shared MySQLClient wrapper."""
+    mysql_client = MySQLClient(database)
+    return mysql_client, mysql_client.connection
 
 
 def quote_identifier(identifier):
@@ -388,92 +396,118 @@ def select_tables(tables, action_label):
     return [selected_table]
 
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Generate fake records for MySQL tables.")
+    parser.add_argument(
+        "--create",
+        action="store_true",
+        default=False,
+        help="Create a new database from a local schema before inserting records."
+    )
+    return parser.parse_args()
+
+
+def select_database_by_index_or_name(options, prompt):
+    selected_option = None
+    sorted_options = sorted(options)
+    while selected_option is None:
+        choice = input(prompt).strip()
+        if choice.isdigit():
+            index = int(choice) - 1
+            if 0 <= index < len(sorted_options):
+                selected_option = sorted_options[index]
+                break
+        if choice in options:
+            selected_option = choice
+
+        if selected_option is None:
+            print("Selezione non valida. Riprova.")
+    return selected_option
+
+
 def main():
+    args = parse_arguments()
+    create = args.create
+
+    db_client = None
     conn = None
     cursor = None
 
-    # 1. Connect to MySQL Server (No specific DB yet)
     try:
-        conn = get_db_connection()
-        if conn.is_connected():
-            print("Connected to MySQL Server.")
-            logger.info("Connected to MySQL Server.")
-            cursor = conn.cursor()
-    except Error as e:
-        print(f"Error connecting to MySQL: {e}")
-        logger.exception("Error connecting to MySQL.")
-        return
-
-    # 2. Get list of .sql files
-    sql_files = glob.glob(os.path.join(SQL_DIR, "*.sql"))
-
-    if not sql_files:
-        print("No .sql files found in directory.")
-        logger.warning("No .sql files found in directory: %s", SQL_DIR)
-        return
-
-    action = None
-    while action not in {"1", "2", "3"}:
-        print("\nCosa vuoi fare?")
-        print("1) crea nuovo database")
-        print("2) aggiungi nuovi record a database esistenti")
-        print("3) empty database (svuota database)")
-        action = input("Seleziona un'opzione (1/2/3): ").strip()
-
-    available_dbs = {}
-    for file_path in sql_files:
-        base_name = os.path.basename(file_path)
-        db_name = os.path.splitext(base_name)[0]
-        available_dbs[db_name] = file_path
-
-    print("\nDatabase disponibili (da input/existing_ddl):")
-    for idx, db_name in enumerate(sorted(available_dbs.keys()), start=1):
-        print(f"{idx}) {db_name}")
-
-    selected_db = None
-    sorted_db_names = sorted(available_dbs.keys())
-    while selected_db is None:
-        choice = input("Scegli il database (nome o numero): ").strip()
-        if choice.isdigit():
-            index = int(choice) - 1
-            if 0 <= index < len(sorted_db_names):
-                selected_db = sorted_db_names[index]
-                break
-        if choice in available_dbs:
-            selected_db = choice
-
-        if selected_db is None:
-            print("Selezione non valida. Riprova.")
-
-    db_name = selected_db
-    file_path = available_dbs[db_name]
-
-    print(f"\n--- Processing {db_name} ---")
-    logger.info("Processing database: %s", db_name)
-
-    if action == "1":
-        if database_exists(cursor, db_name):
-            print(f"[=] Database '{db_name}' already exists. Skipping create/DDL.")
-            logger.info("Database '%s' already exists; skipping create/DDL.", db_name)
+        db_client, conn = get_db_connection()
+        if not conn.is_connected():
+            print("Error connecting to MySQL.")
+            logger.error("Connection object returned but not connected.")
             return
 
-        create_database(cursor, db_name)
-        cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
-        execute_sql_file(cursor, file_path)
-        conn.commit()
-        logger.info("DDL executed and committed for %s.", db_name)
-    else:
-        if not database_exists(cursor, db_name):
-            print(f"[-] Database '{db_name}' does not exist.")
-            logger.info("Database '%s' does not exist.", db_name)
-            return
+        print("Connected to MySQL Server.")
+        logger.info("Connected to MySQL Server.")
+        cursor = conn.cursor()
 
-        cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+        db_name = None
+        if create:
+            sql_files = glob.glob(os.path.join(SQL_DIR, "*.sql"))
+            if not sql_files:
+                print("No .sql files found in directory.")
+                logger.warning("No .sql files found in directory: %s", SQL_DIR)
+                return
 
-    cursor.execute("SHOW TABLES") # pyright: ignore[reportOptionalMemberAccess]
-    tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
+            available_schemas = {}
+            for file_path in sql_files:
+                base_name = os.path.basename(file_path)
+                schema_name = os.path.splitext(base_name)[0]
+                available_schemas[schema_name] = file_path
 
-    if action == "2":
+            print("\nSchema disponibili (da input/existing_ddl):")
+            for idx, schema_name in enumerate(sorted(available_schemas.keys()), start=1):
+                print(f"{idx}) {schema_name}")
+
+            db_name = select_database_by_index_or_name(
+                available_schemas.keys(),
+                "Scegli lo schema/database da creare (nome o numero): "
+            )
+            file_path = available_schemas[db_name]
+
+            print(f"\n--- Creating and processing {db_name} ---")
+            logger.info("Creating and processing database: %s", db_name)
+
+            if database_exists(cursor, db_name):
+                print(f"[-] Database '{db_name}' already exists.")
+                logger.info("Database '%s' already exists, cannot create.", db_name)
+                return
+
+            create_database(cursor, db_name)
+            cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+            execute_sql_file(cursor, file_path)
+            conn.commit()
+            logger.info("DDL executed and committed for %s.", db_name)
+        else:
+            available_dbs = [
+                db for db in db_client.list_databases()
+                if db not in {"information_schema", "mysql", "performance_schema", "sys"}
+            ]
+
+            if not available_dbs:
+                print("No user databases found in the connected server.")
+                logger.warning("No user databases available on server.")
+                return
+
+            print("\nDatabase disponibili sul server:")
+            for idx, available_db in enumerate(sorted(available_dbs), start=1):
+                print(f"{idx}) {available_db}")
+
+            db_name = select_database_by_index_or_name(
+                available_dbs,
+                "Scegli il database esistente (nome o numero): "
+            )
+
+            print(f"\n--- Processing {db_name} ---")
+            logger.info("Processing existing database: %s", db_name)
+            cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+
+        cursor.execute("SHOW TABLES") # pyright: ignore[reportOptionalMemberAccess]
+        tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
+
         rows_per_table = None
         while rows_per_table is None:
             rows_input = input(
@@ -500,22 +534,17 @@ def main():
             populate_table(cursor, table, rows_per_table, fk_value_cache, pk_value_cache, pk_tuple_cache)
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
         conn.commit()
-    elif action == "3":
-        selected_tables = select_tables(tables, "svuotare (empty)")
-        if not selected_tables:
-            return
 
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
-        for table in selected_tables:
-            cursor.execute(f"TRUNCATE TABLE {quote_identifier(table)}") # pyright: ignore[reportOptionalMemberAccess]
-            logger.info("Truncated table %s.", table)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
-        conn.commit()
+    except Error as e:
+        print(f"Error connecting to MySQL: {e}")
+        logger.exception("Error in MySQL workflow.")
+        return
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if db_client is not None:
+            db_client.close_connection()
 
-    if cursor is not None:
-        cursor.close()
-    if conn is not None and conn.is_connected():
-        conn.close()
     print("\nDone.")
     logger.info("Done.")
 
