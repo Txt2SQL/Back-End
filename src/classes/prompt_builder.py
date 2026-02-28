@@ -107,10 +107,11 @@ Rules:
     {schema_context}
     
     """    
-        if join_hints:
-            penalty_section = self._build_relation_section(join_hints)
+        if join_hints: 
+            self.logger.info("received %d join hints", len(join_hints))
+            relations_section = self._build_relation_section(join_hints)
             template = template + f"""
-    {penalty_section}
+    {relations_section}
     """
 
         template = template + f"""
@@ -285,24 +286,6 @@ Rules:
         return "\n".join(lines)
     
     def _build_relation_section(self, relations: list[str]) -> str:
-        if not relations:
-            return ""
-
-        if relations:
-            filtered = []
-            for relation in relations:
-                try:
-                    left, right = relation.split("→")
-                    left_table = left.strip().split(".", 1)[0].strip()
-                    right_table = right.strip().split(".", 1)[0].strip()
-                except ValueError:
-                    continue
-
-                if left_table in relations and right_table in relations:
-                    filtered.append(relation)
-
-            relations = filtered
-
         if not relations:
             return ""
 

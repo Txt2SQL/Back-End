@@ -82,7 +82,7 @@ class SchemaStore(VectorStore):
         # Start with a conservative context size and increase only when complexity suggests it.
         k = 3
         if has_aggregation:
-            k += 1
+            k += 2
             self.logger.debug("Request contains aggregation terms, increasing k to %s", k)
         if has_join_intent:
             k += 1
@@ -101,6 +101,9 @@ class SchemaStore(VectorStore):
         for doc in relevant_docs:
             table_name = (doc.metadata or {}).get("table") or "unknown_table"
             content = (doc.page_content or "").strip()
+            self.logger.debug("Processing document for table '%s'", table_name)
+            self.logger.debug("Content: \n%s", content) 
+            
 
             if not content:
                 self.logger.debug("Skipping empty document")

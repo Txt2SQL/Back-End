@@ -255,7 +255,7 @@ class Schema:
         for idx, table in enumerate(self.tables["tables"]):
             table_name = table.get("name", f"table_{idx}")
 
-            content = f"Database: {self.database_name}\n"
+            content = f"Schema: {self.database_name}\n"
             content += f"Table: {table_name}\n"
 
             for column in table.get("columns", []):

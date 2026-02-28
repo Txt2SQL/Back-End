@@ -37,7 +37,7 @@ class MySQLClient:
             self.logger.error(f"Error connecting to the database: {err}")
             raise
     
-    def execute_query(self, query: QuerySession) -> QuerySession:
+    def execute_query(self, query: QuerySession):
         self.logger.info(f"📌 Received SQL query:\n{query.sql_code}")
 
         try:

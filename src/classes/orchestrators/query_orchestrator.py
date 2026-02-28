@@ -201,7 +201,7 @@ class QueryOrchestrator(BaseOrchestrator):
             user_request
         )
         
-        self.logger.info("📝 Schema context: %s", self.schema_context)
+        self.logger.info("📝 Schema context: \n%s", self.schema_context)
         self.logger.info("📝 Table names: %s", table_names)
 
         if self.query_store is None:
@@ -209,11 +209,14 @@ class QueryOrchestrator(BaseOrchestrator):
 
         if self.schema.source == SchemaSource.MYSQL:
             self.database_client = MySQLClient(self.database_name)
+            self.logger.info("📝 Database client initialized")
             self.failed_queries = (
                 self.query_store.retrieve_failed_queries(user_request)
                 if self.query_store else None
             )
+            self.logger.info("📝 Returned %d failed queries", len(self.failed_queries) if self.failed_queries is not None else 0)
             self.join_hints = self.database_client.get_foreign_keys(table_names)
+            self.logger.info("📝 Returned %d join hints", len(self.join_hints))
             self.evaluator = AzureLLM("gpt-4o")
             
         else:
@@ -256,6 +259,9 @@ class QueryOrchestrator(BaseOrchestrator):
         if self.database_client is None:
             raise Exception("Database client not found")
 
+        self.current_query.llm_feedback.feedback_status = FeedbackStatus.UNKNOWN
+        self.current_query.llm_feedback.error_category = None
+        
         self.current_query = self.database_client.execute_query(
             self.current_query
         )

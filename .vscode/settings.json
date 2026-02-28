@@ -24,4 +24,5 @@
         "sqlcoder"
     ],
     "windowColors.baseColor": "#022002",
+    "python-envs.defaultEnvManager": "ms-python.python:system",
 }
