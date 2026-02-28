@@ -2,6 +2,7 @@ from getpass import getpass
 
 import mysql.connector
 from src.classes.domain_states.query import QuerySession
+from src.classes.domain_states.enums import QueryStatus
 from collections import defaultdict
 from src.classes.loaders.mysql_loader import MySQLLoader
 from src.classes.logger import LoggerManager
@@ -73,7 +74,7 @@ class MySQLClient:
                 query.execution_result = None
                 raise fetch_err
 
-            query.execution_status = "SUCCESS"
+            query.execution_status = QueryStatus.SUCCESS
 
             self.connection.commit()
             cursor.close()
@@ -84,16 +85,16 @@ class MySQLClient:
             # ⬇️ Catch timeout specifically
             if "maximum statement execution time exceeded" in str(e).lower():
                 self.logger.error("⏰ Query execution timed out")
-                query.execution_status = "TIMEOUT_ERROR"
+                query.execution_status = QueryStatus.TIMEOUT_ERROR
                 query.execution_result = "Query execution exceeded time limit (30s)"
             else:
                 self.logger.error(f"🔥 RUNTIME ERROR during SQL execution: {e}")
-                query.execution_status = "RUNTIME_ERROR"
+                query.execution_status = QueryStatus.RUNTIME_ERROR
                 query.execution_result = str(e)
 
         except Exception as e:
             self.logger.error(f"🔥 RUNTIME ERROR during SQL execution: {e}")
-            query.execution_status = "RUNTIME_ERROR"
+            query.execution_status = QueryStatus.RUNTIME_ERROR
             query.execution_result = str(e)
 
         return query
@@ -120,7 +121,7 @@ class MySQLClient:
         
         query = self.execute_query(QuerySession(sql_query=schema_query))
 
-        if query.execution_status != "SUCCESS":
+        if query.execution_status != QueryStatus.SUCCESS:
             self.logger.error(f"Failed to extract schema: {query.execution_result}")
             raise RuntimeError(f"Schema extraction failed: {query.execution_result}")
         if not query.execution_result:
@@ -200,7 +201,7 @@ class MySQLClient:
         self.logger.debug("Executing foreign key query for database: %s", self.database)
         query = self.execute_query(QuerySession(sql_query=fk_query))
         
-        if query.execution_status != "SUCCESS":
+        if query.execution_status != QueryStatus.SUCCESS:
             self.logger.warning("⚠️  Failed to query foreign key metadata: %s", query.execution_result)
             return []
 
