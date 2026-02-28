@@ -409,9 +409,9 @@ def _write_statistics(
 
     # Build report
     lines = []
-    lines.append("/°" * 200 + "/\n")
+    lines.append("/°" * 50 + "/\n")
     lines.append("📊 TEST SUMMARY")
-    lines.append("\n" + "/°" * 200 + "/")
+    lines.append("\n" + "/°" * 50 + "/")
     lines.extend([
         "",
         f"Total requests tested : {total_requests}",

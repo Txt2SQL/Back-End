@@ -11,5 +11,9 @@ TESTS_DIR = PROJECT_ROOT / "tests"
 SAMPLE_QUERY_PATH = DATA_DIR / "sample_query.sql"
 VECTOR_STORE_DIR = DATA_DIR / "vector_stores"
 SCHEMA_DIR = DATA_DIR / "schema"
+INPUT_DIR = TESTS_DIR / "input"
+OUTPUT_DIR = TESTS_DIR / "output"
+
+TMP_DIR = TESTS_DIR / "tmp"
 
 ENV_DIR = PROJECT_ROOT / "config"

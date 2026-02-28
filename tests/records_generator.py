@@ -4,14 +4,14 @@ import glob, sys, os, random, uuid, re
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from faker import Faker
+from config import INPUT_DIR
 from mysql.connector import Error
 from src.classes.clients.mysql_client import MySQLClient
 from src.classes.logger import LoggerManager
 
 
 # Configuration
-BASE_DIR = os.path.dirname(__file__)
-SQL_DIR = os.path.join(BASE_DIR, 'input', 'existing_ddl')
+DDL_DIR = INPUT_DIR / 'existing_ddl'
 DEFAULT_ROWS_PER_TABLE = 100  # How many fake rows to generate per table
 
 fake = Faker()
@@ -446,10 +446,10 @@ def main():
 
         db_name = None
         if create:
-            sql_files = glob.glob(os.path.join(SQL_DIR, "*.sql"))
+            sql_files = glob.glob(os.path.join(DDL_DIR, "*.sql"))
             if not sql_files:
                 print("No .sql files found in directory.")
-                logger.warning("No .sql files found in directory: %s", SQL_DIR)
+                logger.warning("No .sql files found in directory: %s", DDL_DIR)
                 return
 
             available_schemas = {}
