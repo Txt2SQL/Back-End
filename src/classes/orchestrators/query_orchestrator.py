@@ -141,7 +141,7 @@ class QueryOrchestrator(BaseOrchestrator):
             # --------------------------------------------------
             # Runtime error handling
             # --------------------------------------------------
-            if self.current_query.status is QueryStatus.RUNTIME_ERROR:
+            if self.current_query.status is not QueryStatus.SUCCESS:
                 
                 self.logger.info("📝 Runtime error occurred")
 
