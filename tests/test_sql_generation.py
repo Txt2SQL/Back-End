@@ -92,14 +92,7 @@ def records_preview(rows: list | None | str, max_rows: int = 10, max_col_width: 
 class RequestResult:
     request_index: int
     model_name: str
-    sql_code: Optional[str]
-    status: Optional[str]
-    error: Optional[str]
-    rows_fetched: Optional[int]
-    preview_text: Optional[str]
-    feedback_category: Optional[str]
-    feedback_explanation: Optional[str]
-    attempts: int
+    query_session: Optional[QuerySession]
     time_taken: float  # seconds
     success: bool  # whether completed without exception
 
@@ -181,32 +174,17 @@ def generator_thread(
 
                 logger.debug(f"Generation completed in {elapsed:.2f}s")
 
-                feedback = result_session.llm_feedback
-
-                execution_result = result_session.execution_result
-                rows_fetched = len(execution_result) if isinstance(execution_result, list) else None
-
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
-                    sql_code=result_session.sql_code,
-                    status=result_session.status.value if result_session.status else None,
-                    error=execution_result if isinstance(execution_result, str) else None,
-                    rows_fetched=rows_fetched,
-                    preview_text=records_preview(execution_result),
-                    feedback_category=(
-                        feedback.error_category.value
-                        if feedback.error_category else None
-                    ),
-                    feedback_explanation=feedback.explanation,
-                    attempts=feedback.attempt,
+                    query_session=result_session,
                     time_taken=elapsed,
                     success=True,
                 )
 
                 logger.info(
                     f"Finished successfully "
-                    f"(attempts={res.attempts}, time={elapsed:.2f}s)"
+                    f"(attempts={result_session.llm_feedback.attempt}, time={elapsed:.2f}s)"
                 )
 
             except TimeoutError as e:
@@ -217,21 +195,17 @@ def generator_thread(
                     f"Timeout after {elapsed}s"
                 )
 
+                timeout_session = QuerySession(user_request=request)
+                timeout_session.execution_result = str(e)
+                timeout_session.status = QueryStatus.TIMEOUT_ERROR
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
-                    sql_code=None,
-                    status="TIMEOUT",
-                    error=str(e),
-                    rows_fetched=None,
-                    preview_text=None,
-                    feedback_category=None,
-                    feedback_explanation=None,
-                    attempts=0,
+                    query_session=timeout_session,
                     time_taken=elapsed,
                     success=False,
                 )
-
             except Exception as e:
 
                 elapsed = time.time() - start_time
@@ -240,21 +214,17 @@ def generator_thread(
                     f"Failed with exception after {elapsed:.2f}s"
                 )
 
+                failed_session = QuerySession(user_request=request)
+                failed_session.execution_result = str(e)
+                failed_session.status = QueryStatus.RUNTIME_ERROR
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
-                    sql_code=None,
-                    status="ERROR",
-                    error=str(e),
-                    rows_fetched=None,
-                    preview_text=None,
-                    feedback_category=None,
-                    feedback_explanation=None,
-                    attempts=0,
+                    query_session=failed_session,
                     time_taken=elapsed,
                     success=False,
                 )
-
             # Send result to printer thread
             result_queue.put((idx, model_key, res))
 
@@ -383,33 +353,41 @@ def _write_request_file(
             if res is None:
                 f.write(f"{i}. 🤖[{model_key}]\n\nNo result\n\n")
                 continue
+
+            query_session = res.query_session
+
             f.write(f"{i}. 🤖[{model_key}]\n\n")
-            f.write(f"🧮 Query:\n\n{res.sql_code or 'N/A'}\n\n")
+            f.write(f"🧮 Query:\n\n{query_session.sql_code if query_session else 'N/A'}\n\n")
             # ----------------------------
             # Status + Outcome formatting
             # ----------------------------
-            status_label = res.status or "RUNTIME_ERROR"
+            status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
+
+            execution_result = query_session.execution_result if query_session else None
 
             if status_label == "SUCCESS":
+                rows_fetched = query_session.rows_fetched if query_session else None
+                if rows_fetched is None and isinstance(execution_result, list):
+                    rows_fetched = len(execution_result)
+
                 outcome = (
-                    f"{res.rows_fetched} rows fetched"
-                    if res.rows_fetched is not None
+                    f"{rows_fetched} rows fetched"
+                    if rows_fetched is not None
                     else "Query executed successfully"
                 )
                 f.write(f"status and outcome: 🍾SUCCESS\n {outcome}\n\n")
-                if res.preview_text:
-                    f.write(f"{res.preview_text}\n\n")
+                f.write(f"{records_preview(execution_result)}\n\n")
             else:
-                error_msg = res.error or "Unknown error"
+                error_msg = execution_result if isinstance(execution_result, str) else "Unknown error"
                 f.write(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n\n")
-
             # ----------------------------
             # LLM Feedback formatting
             # ----------------------------
-            if res.feedback_category:
-                explanation = res.feedback_explanation or ""
+            feedback = query_session.llm_feedback if query_session else None
+            if feedback and feedback.error_category:
+                explanation = feedback.explanation or ""
                 f.write(
-                    f"LLM Feedback: 👎INCORRECT ({res.feedback_category} - {explanation})\n\n"
+                    f"LLM Feedback: 👎INCORRECT ({feedback.error_category.value} - {explanation})\n\n"
                 )
             else:
                 f.write("LLM Feedback: 👍CORRECT\n\n")
@@ -417,7 +395,8 @@ def _write_request_file(
             # ----------------------------
             # Attempts + Time
             # ----------------------------
-            f.write(f"🏁Attempts: {res.attempts}\n")
+            attempts = feedback.attempt if feedback else 0
+            f.write(f"🏁Attempts: {attempts}\n")
             f.write(f"⌚Request time: {res.time_taken:.2f}\n\n")
 
 
@@ -478,19 +457,23 @@ def _write_statistics(
             total_tests += 1
             model_stats[model]["executions"] += 1
             if res.success:
+                query_session = res.query_session
                 successful_executions += 1
-                total_attempts += res.attempts
-                model_stats[model]["attempts"] += res.attempts
+                attempts = query_session.llm_feedback.attempt if query_session else 0
+                total_attempts += attempts
+                model_stats[model]["attempts"] += attempts
                 model_stats[model]["total_time"] += res.time_taken
                 model_stats[model]["count"] += 1
 
-                if res.status == QueryStatus.SUCCESS.value:
+                status = query_session.status.value if query_session and query_session.status else None
+
+                if status == QueryStatus.SUCCESS.value:
                     correct_queries += 1
                     model_stats[model]["correct"] += 1
-                elif res.status == QueryStatus.RUNTIME_ERROR.value:
+                elif status == QueryStatus.RUNTIME_ERROR.value:
                     runtime_errors += 1
                     model_stats[model]["runtime"] += 1
-                elif res.status == QueryStatus.SYNTAX_ERROR.value:
+                elif status == QueryStatus.SYNTAX_ERROR.value:
                     syntax_errors += 1
                     model_stats[model]["syntax"] += 1
                 else:
