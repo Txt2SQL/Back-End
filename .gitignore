@@ -7,4 +7,5 @@ data/schema/
 *.env
 tests/tmp
 tests/output/runs/supermarket_results/
+tests/output/runs/hacker_news_results/
 codex.patch

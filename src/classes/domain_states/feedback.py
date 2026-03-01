@@ -24,12 +24,14 @@ class LLMFeedback:
     def parse_llm_feedback(self, text: str) -> None:
 
         if text.upper().startswith("CORRECT"):
+            self.logger.info("Feedback starts with 'CORRECT'")
             self.feedback_status = FeedbackStatus.CORRECT
             self.explanation = None
             self.error_category = None
             return
 
         if text.upper().startswith("INCORRECT"):
+            self.logger.info("Feedback starts with 'INCORRECT'")
             self.feedback_status = FeedbackStatus.INCORRECT
 
             parts = text.split(":", 1)
@@ -42,7 +44,10 @@ class LLMFeedback:
     # --------------------------------------------------
 
     def _classify_error_category(self) -> None:
+        self.logger.info("Classifying error category...")
+
         if not self.explanation:
+            self.logger.info("Explanation is empty")
             self.error_category = ErrorType.UNKNOWN_ERROR
             return
 
@@ -51,9 +56,12 @@ class LLMFeedback:
         for category, keywords in ERROR_CATEGORIES.items():
             for kw in keywords:
                 if kw.lower() in lower:
+                    self.logger.info("Found error category: %s", category)
                     try:
+                        self.logger.info("Assigning error category: %s", category)
                         self.error_category = ErrorType(category)
                     except ValueError:
+                        self.logger.error("Invalid error category: %s", category)
                         self.error_category = ErrorType.UNKNOWN_ERROR
                     return
 

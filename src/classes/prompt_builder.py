@@ -254,7 +254,7 @@ Rules:
         return template
     
     def _build_penalty_section(self, failed_queries: list[Document]) -> str:
-        if not failed_queries:
+        if not failed_queries or len(failed_queries) == 0:
             self.logger.info("ℹ️ No failed queries to build penalties.")
             return ""
 

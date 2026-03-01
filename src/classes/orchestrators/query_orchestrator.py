@@ -282,6 +282,7 @@ class QueryOrchestrator(BaseOrchestrator):
         if prompt_type and self.evaluator:
             prompt = self._build_feedback_prompt(prompt_type)
             response = self.evaluator.generate(prompt)
+            self.logger.info("📝 Feedback response: %s", response)
             self.current_query.apply_llm_feedback(response)
 
     def _should_request_feedback(self) -> Optional[str]:
