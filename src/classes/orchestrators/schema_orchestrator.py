@@ -53,7 +53,9 @@ class SchemaOrchestrator(BaseOrchestrator):
         Main method to acquire schema from source.
         Returns the schema object after processing.
         """
-        if self.schema and self.schema.json_ready:
+        is_schema_update = bool(user_text) and self.schema and self.schema.json_ready
+
+        if self.schema and self.schema.json_ready and not is_schema_update:
             self.logger.info(f"Schema already exists and is valid for {self.database_name}")
             return self.schema
             
@@ -70,6 +72,8 @@ class SchemaOrchestrator(BaseOrchestrator):
         self.schema.parse_response(response)
         # Store in vector database
         if self.schema.json_ready:
+            if is_schema_update:
+                self.schema_store.empty_database_schema(self.database_name)
             self.schema_store.add_schema(self.schema)
             self.logger.info(f"Schema for {self.database_name} acquired and stored successfully")
         else:

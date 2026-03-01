@@ -44,6 +44,18 @@ class SchemaStore(VectorStore):
 
         self.logger.info(f"Stored {len(documents)} schema table documents in vector DB.")
 
+    def empty_database_schema(self, database_name: str):
+        """Delete all schema documents for a specific database."""
+        existing_docs = self._store.get(where={"database_name": database_name}, include=[])
+        ids = existing_docs.get("ids", [])
+
+        if not ids:
+            self.logger.info("No existing schema documents found for database '%s'.", database_name)
+            return
+
+        self._store.delete(ids=ids)
+        self.logger.info("Deleted %s existing schema documents for database '%s'.", len(ids), database_name)
+
     # =====================================================
     # RETRIEVE CONTEXT
     # =====================================================
