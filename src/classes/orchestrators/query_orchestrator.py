@@ -233,12 +233,12 @@ class QueryOrchestrator(BaseOrchestrator):
         self.logger.info("📝 Generating SQL...")
         
         previous_fail = None
-        if self.current_query.llm_feedback is not None:
-            self.logger.info("📝 Using previous failures from query store")
-            previous_fail = self.failed_queries 
-        elif self.failed_queries is not None:
-            self.logger.info("📝 Using previous failure from previous attempt")
+        if self.current_query.status not in [QueryStatus.SUCCESS, QueryStatus.PENDING]:
+            self.logger.info("📝 Using previous failures from previous attempt")
             previous_fail = self.current_query
+        elif self.failed_queries is not None:
+            self.logger.info("📝 Using previous failure from query store")
+            previous_fail = self.failed_queries
 
         prompt = self.prompt_builder.query_generation_prompt(
             user_request=user_request,
