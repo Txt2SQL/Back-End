@@ -668,7 +668,7 @@ def build_schema_rag(db_name: str, source: SchemaSource) -> tuple[Schema, Schema
     main_logger.info("Schema acquired and saved successfully")
     return schema, schema_store
     
-def run_stress_test(mode: str, database_name: str, timeout: int, output_name: str | None = None) -> None:
+def run_stress_test(mode: str, database_name: str, output_name: str | None = None) -> None:
     # ------------------------------------------------------------------
     # PHASE ONE: Initialization
     # ------------------------------------------------------------------
@@ -750,15 +750,13 @@ def main():
     parser = argparse.ArgumentParser(description="Test QueryOrchestrator with multiple models.")
     parser.add_argument('--mode', choices=['mysql', 'text'], default='mysql',
                         help="Schema source mode (mysql or text). Default: mysql")
-    parser.add_argument('--database_name', type=str, default=None,
+    parser.add_argument('--database-name', type=str, default=None,
                         help="Name of the database. If not provided, list available databases.")
-    parser.add_argument('--timeout', type=int, default=TIMEOUT_PER_REQUEST,
-                        help="Timeout per request in seconds.")
     parser.add_argument('--output-name', type=str, default=None,
                         help="Custom name for the output run directory. Defaults to a timestamped name.")
     args = parser.parse_args()
 
-    run_stress_test(args.mode, args.database_name, args.timeout, args.output_name)
+    run_stress_test(args.mode, args.database_name, args.output_name)
 
 if __name__ == "__main__":
     main()
