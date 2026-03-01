@@ -93,9 +93,6 @@ class RequestResult:
     request_index: int
     model_name: str
     query_session: Optional[QuerySession]
-    error: Optional[str]
-    rows_fetched: Optional[int]
-    preview_text: Optional[str]
     time_taken: float  # seconds
     success: bool  # whether completed without exception
 
@@ -177,16 +174,10 @@ def generator_thread(
 
                 logger.debug(f"Generation completed in {elapsed:.2f}s")
 
-                execution_result = result_session.execution_result
-                rows_fetched = len(execution_result) if isinstance(execution_result, list) else None
-
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
                     query_session=result_session,
-                    error=execution_result if isinstance(execution_result, str) else None,
-                    rows_fetched=rows_fetched,
-                    preview_text=records_preview(execution_result),
                     time_taken=elapsed,
                     success=True,
                 )
@@ -204,17 +195,17 @@ def generator_thread(
                     f"Timeout after {elapsed}s"
                 )
 
+                timeout_session = QuerySession(user_request=request)
+                timeout_session.execution_result = str(e)
+                timeout_session.status = QueryStatus.TIMEOUT_ERROR
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
-                    query_session=None,
-                    error=str(e),
-                    rows_fetched=None,
-                    preview_text=None,
+                    query_session=timeout_session,
                     time_taken=elapsed,
                     success=False,
                 )
-
             except Exception as e:
 
                 elapsed = time.time() - start_time
@@ -223,17 +214,17 @@ def generator_thread(
                     f"Failed with exception after {elapsed:.2f}s"
                 )
 
+                failed_session = QuerySession(user_request=request)
+                failed_session.execution_result = str(e)
+                failed_session.status = QueryStatus.RUNTIME_ERROR
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
-                    query_session=None,
-                    error=str(e),
-                    rows_fetched=None,
-                    preview_text=None,
+                    query_session=failed_session,
                     time_taken=elapsed,
                     success=False,
                 )
-
             # Send result to printer thread
             result_queue.put((idx, model_key, res))
 
@@ -372,19 +363,23 @@ def _write_request_file(
             # ----------------------------
             status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
 
+            execution_result = query_session.execution_result if query_session else None
+
             if status_label == "SUCCESS":
+                rows_fetched = query_session.rows_fetched if query_session else None
+                if rows_fetched is None and isinstance(execution_result, list):
+                    rows_fetched = len(execution_result)
+
                 outcome = (
-                    f"{res.rows_fetched} rows fetched"
-                    if res.rows_fetched is not None
+                    f"{rows_fetched} rows fetched"
+                    if rows_fetched is not None
                     else "Query executed successfully"
                 )
                 f.write(f"status and outcome: 🍾SUCCESS\n {outcome}\n\n")
-                if res.preview_text:
-                    f.write(f"{res.preview_text}\n\n")
+                f.write(f"{records_preview(execution_result)}\n\n")
             else:
-                error_msg = res.error or "Unknown error"
+                error_msg = execution_result if isinstance(execution_result, str) else "Unknown error"
                 f.write(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n\n")
-
             # ----------------------------
             # LLM Feedback formatting
             # ----------------------------
