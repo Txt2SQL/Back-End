@@ -578,6 +578,15 @@ def create_output_dir(db_name: str) -> tuple[Path, Path, Path]:
     print(f"Output will be written to: {output_dir}")
     return output_dir, queries_dir, logs_dir
 
+def empty_tmp_dir() -> None:
+    """Clear and recreate the tests tmp directory used by stress tests."""
+    if TMP_DIR.exists():
+        shutil.rmtree(TMP_DIR)
+        main_logger.info(f"Removed existing tmp directory: {TMP_DIR}")
+
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    main_logger.info(f"Created fresh tmp directory: {TMP_DIR}")
+
 def drop_all_views(db_name: str) -> None:
     """
     Drop all views in the specified database to clean the schema before testing.
@@ -679,6 +688,10 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     # 3. Create output directories
     output_dir, queries_dir, logs_dir = create_output_dir(db_name)
     main_logger.info("Output directories created")
+
+    # 3.5 Clear tmp directory to avoid cross-run artifacts
+    empty_tmp_dir()
+    main_logger.info("Temporary stress test directory reset")
 
     # 4. Acquire schema from MySQL and store in vector store
     source = SchemaSource.MYSQL if mode == 'mysql' else SchemaSource.TEXT
