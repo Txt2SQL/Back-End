@@ -585,7 +585,6 @@ def drop_all_views(db_name: str) -> None:
     Args:
         db_name: Name of the database to clean
     """
-    print(f"🧹 Cleaning up views in database: {db_name}")
     main_logger.info(f"Starting view cleanup for database: {db_name}")
     
     client = None
@@ -605,7 +604,6 @@ def drop_all_views(db_name: str) -> None:
         
         if result.execution_status != "SUCCESS":
             main_logger.error(f"Failed to query views: {result.execution_result}")
-            print(f"❌ Failed to query views: {result.execution_result}")
             return
         
         views = result.execution_result
@@ -615,7 +613,6 @@ def drop_all_views(db_name: str) -> None:
             return
         
         view_names = [row["TABLE_NAME"] for row in views]  # type: ignore
-        print(f"📋 Found {len(view_names)} view(s) to drop: {', '.join(view_names)}")
         main_logger.info(f"Found {len(view_names)} views to drop: {', '.join(view_names)}")
         
         # Drop each view
@@ -630,11 +627,9 @@ def drop_all_views(db_name: str) -> None:
                 
                 if drop_result.execution_status == "SUCCESS":
                     main_logger.info(f"✅ Successfully dropped view: {view_name}")
-                    print(f"  ✅ Dropped: {view_name}")
                     dropped_count += 1
                 else:
                     main_logger.error(f"❌ Failed to drop view {view_name}: {drop_result.execution_result}")
-                    print(f"  ❌ Failed to drop: {view_name}")
                     failed_count += 1
                     
             except Exception as e:
@@ -642,12 +637,10 @@ def drop_all_views(db_name: str) -> None:
                 print(f"  ❌ Error dropping {view_name}: {e}")
                 failed_count += 1
         
-        print(f"🧹 View cleanup complete: {dropped_count} dropped, {failed_count} failed")
         main_logger.info(f"View cleanup complete: {dropped_count} dropped, {failed_count} failed")
         
     except Exception as e:
         main_logger.error(f"❌ Error during view cleanup: {e}")
-        print(f"❌ Error during view cleanup: {e}")
     finally:
         if client:
             client.close_connection()

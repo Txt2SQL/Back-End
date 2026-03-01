@@ -8,6 +8,7 @@ from src.classes.RAG_service.schema_store import SchemaStore
 from config import QUERY_GENERATION_MODELS, DATA_DIR
 from src.classes.logger import LoggerManager
 
+LoggerManager.setup_project_logger()
 logger = LoggerManager.get_logger(__name__)
 
 

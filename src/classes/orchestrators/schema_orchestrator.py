@@ -22,7 +22,7 @@ class SchemaOrchestrator(BaseOrchestrator):
     def __init__(
         self, 
         database_name: str, 
-        llm_model: str,
+        llm_model: Optional[str] = None, 
         source: SchemaSource = SchemaSource.TEXT,  # "mysql" or "text"
         instance_path: Path = DATA_DIR
     ):

@@ -3,9 +3,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from config import VECTOR_STORE_DIR, SCHEMA_MODELS
 from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
+from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import SchemaSource
 from src.classes.logger import LoggerManager
 
+LoggerManager.setup_project_logger()
 logger = LoggerManager.get_logger(__name__)
 
 DB_DIR = os.path.join(VECTOR_STORE_DIR, "schema")
@@ -59,8 +61,8 @@ def main():
     # ------------------------------------------------------------------
 
     if method == "3":
-        orchestrator = SchemaOrchestrator(database_name=database_name)
-        orchestrator.schema_store.print_collection()
+        schema_store = SchemaStore()
+        schema_store.print_collection()
         return
 
     # ------------------------------------------------------------------

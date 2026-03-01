@@ -10,11 +10,12 @@ from src.classes.prompt_builder import PromptBuilder
 class BaseOrchestrator(ABC):
     """Abstract base class for all orchestrators"""
     
-    def __init__(self, database_name: str, instance_path: Path, model_name: str):
+    def __init__(self, database_name: str, instance_path: Path, model_name: Optional[str]):
         self.database_name = database_name
         self.instance_path = instance_path
         self.model_name = model_name
-        self.llm: BaseLLM = self._initialize_llm(model_name)
+        if model_name is not None:
+            self.llm: BaseLLM = self._initialize_llm(model_name)
         self.prompt_builder = PromptBuilder()
     
     @abstractmethod
