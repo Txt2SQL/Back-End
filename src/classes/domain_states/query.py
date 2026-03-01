@@ -20,6 +20,7 @@ class QuerySession:
         user_request: Optional[str] = None,
         sql_query: Optional[str] = None,
     ):
+        self.attempt: int = 1
 
         if user_request is None and sql_query is None:
             raise ValueError("At least one input must be provided")
@@ -36,12 +37,15 @@ class QuerySession:
         self.error_type: Optional[ErrorType] = None
         self.knowledge_scope: Optional[KnowledgeScope] = None
 
-        self.llm_feedback: LLMFeedback = LLMFeedback()
+        self.llm_feedback: Optional[LLMFeedback] = None
         self.timestamp: float = time.time()
     
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)
+    
+    def initialize_llm_feedback(self):
+        self.llm_feedback = LLMFeedback()
 
     # --------------------------------------------------
     # SQL CLEANING
@@ -108,7 +112,7 @@ class QuerySession:
                 self.error_type = ErrorType.GENERIC_RUNTIME_ERROR
             return
 
-        if self.llm_feedback.error_category:
+        if self.llm_feedback is not None and self.llm_feedback.error_category:
             self.error_type = self.llm_feedback.error_category
 
     # --------------------------------------------------
@@ -161,11 +165,11 @@ class QuerySession:
             self._detect_knowledge_scope()
             return
 
-        if self.llm_feedback.feedback_status is FeedbackStatus.CORRECT:
+        if self.llm_feedback is not None and self.llm_feedback.feedback_status is FeedbackStatus.CORRECT:
             self.status = QueryStatus.SUCCESS
             self.error_type = None
 
-        elif self.llm_feedback.feedback_status is FeedbackStatus.INCORRECT:
+        elif self.llm_feedback is not None and self.llm_feedback.feedback_status is FeedbackStatus.INCORRECT:
             self.status = QueryStatus.INCORRECT
             self.error_type = (
                 self.llm_feedback.error_category
@@ -183,7 +187,15 @@ class QuerySession:
     # --------------------------------------------------
 
     def apply_llm_feedback(self, raw_feedback: str) -> None:
-        self.llm_feedback.parse_llm_feedback(raw_feedback)
+        if self.llm_feedback is not None:
+            self.llm_feedback.parse_llm_feedback(raw_feedback)
+    
+    def ask_for_feedback(self, prompt: str) -> str:
+        if self.llm_feedback is not None:
+            return self.llm_feedback.evaluator.generate(prompt)
+        else:
+            raise ValueError("No LLM feedback available")
+            
 
     # --------------------------------------------------
     # OUTPUT
@@ -211,7 +223,7 @@ Knowledge scope: {self.knowledge_scope.value if self.knowledge_scope else None}
             "error_type": self.error_type.value if self.error_type else None,
             "knowledge_scope": self.knowledge_scope.value if self.knowledge_scope else None,
             "outcome": self.execution_status,
-            "attempt_count": self.llm_feedback.attempt,
+            "attempt_count": self.attempt,
             "feedback_status": self.llm_feedback.feedback_status if self.llm_feedback else None,
             "timestamp": self.timestamp,
         }
@@ -236,8 +248,8 @@ Knowledge scope: {self.knowledge_scope.value if self.knowledge_scope else None}
 
         details = ""
 
-        if self.llm_feedback:
-            details = self.llm_feedback.format_error_details()
+        if self.llm_feedback and self.status is not QueryStatus.SYNTAX_ERROR:
+            details = self.llm_feedback.format_error_details(self.attempt)
 
         if not self.sql_code:
             return ""

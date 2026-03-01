@@ -35,7 +35,7 @@ class QueryOrchestrator(BaseOrchestrator):
         model_name: str,
         user_request: str,
         query_store: Optional[QueryStore] = None, # query_store should not be created if source = "text"
-        max_attempts: int = 3,
+        max_attempts: int = 4,
         instance_path: Path = DATA_DIR,
     ):
         super().__init__(schema.database_name, instance_path, model_name)
@@ -88,9 +88,9 @@ class QueryOrchestrator(BaseOrchestrator):
 
         consecutive_runtime_errors = 0
 
-        while self.current_query.llm_feedback.attempt <= self.max_attempts:
+        while self.current_query.attempt <= self.max_attempts:
             
-            self.logger.info("📝 Attempt: %s", self.current_query.llm_feedback.attempt)
+            self.logger.info("📝 Attempt: %s", self.current_query.attempt)
 
             # --------------------------------------------------
             # 1️⃣ GENERATE SQL
@@ -108,10 +108,7 @@ class QueryOrchestrator(BaseOrchestrator):
                 if self.current_query.status is QueryStatus.SUCCESS:
                     return self.current_query
 
-                # Syntax error → feedback loop
-                feedback = self.current_query.format_error_feedback()
-                self.current_query.llm_feedback.explanation = feedback
-                self.current_query.llm_feedback.attempt += 1
+                self.current_query.attempt += 1
                 continue
 
             # --------------------------------------------------
@@ -126,9 +123,7 @@ class QueryOrchestrator(BaseOrchestrator):
                 self.logger.info("📝 Syntax validation failed")
 
                 self.current_query.evaluate()
-                feedback = self.current_query.format_error_feedback()
-                self.current_query.llm_feedback.explanation = feedback
-                self.current_query.llm_feedback.attempt += 1
+                self.current_query.attempt += 1
                 continue
             
             self.logger.info("📝 Syntax validation passed")
@@ -139,38 +134,44 @@ class QueryOrchestrator(BaseOrchestrator):
             self._execute_and_evaluate_query()
 
             # --------------------------------------------------
-            # Runtime error handling
+            # Handle non-success outcomes
             # --------------------------------------------------
             if self.current_query.status is not QueryStatus.SUCCESS:
                 
-                self.logger.info("📝 Runtime error occurred")
+                self.logger.info("📝 Query execution failed with status: %s", self.current_query.status.value)
 
                 consecutive_runtime_errors += 1
 
                 # On second consecutive runtime error → ask explanation
                 if consecutive_runtime_errors >= 2:
+                    self.current_query.initialize_llm_feedback()
                     self.logger.info("📝 Asking for explanation...")
                     prompt = self._build_feedback_prompt("explanation")
-                    response = self.llm.generate(prompt)
-                    self.current_query.apply_llm_feedback(response)
+                    response = self.current_query.ask_for_feedback(prompt)
+                    self.logger.info("📝 Explanation: \n%s", response)
+                    if self.current_query.llm_feedback is None:
+                        self.logger.info("📝 Create LLMFeedback object!")
+                        raise Exception("LLMFeedback object not found")
+                    self.current_query.llm_feedback.explanation = response
+                    self.current_query.llm_feedback.error_category = self.current_query.error_type
 
-                feedback = self.current_query.format_error_feedback()
-                self.current_query.llm_feedback.explanation = feedback
-                self.current_query.llm_feedback.attempt += 1
+                self.current_query.attempt += 1
                 continue
 
             else:
                 consecutive_runtime_errors = 0
 
             # --------------------------------------------------
-            # If execution success → ask correctness evaluation
+            # SUCCESS case → ask correctness evaluation
             # --------------------------------------------------
             if self.current_query.status is QueryStatus.SUCCESS:
                 
                 self.logger.info("📝 Query executed successfully")
 
+                self.current_query.initialize_llm_feedback()
                 prompt = self._build_feedback_prompt("evaluation")
-                response = self.llm.generate(prompt)
+                response = self.current_query.ask_for_feedback(prompt)
+                self.logger.info("📝 Evaluation response: \n%s", response)
                 self.current_query.apply_llm_feedback(response)
                 self.current_query.evaluate()
 
@@ -178,11 +179,9 @@ class QueryOrchestrator(BaseOrchestrator):
                     self.logger.info("📝 Query evaluated successfully")
                     return self.current_query
 
-                self.logger.info("📝 Query evaluation failed")
+                self.logger.info("📝 Query evaluation failed - query was incorrect")
                 # Incorrect query → feedback loop
-                feedback = self.current_query.format_error_feedback()
-                self.current_query.llm_feedback.explanation = feedback
-                self.current_query.llm_feedback.attempt += 1
+                self.current_query.attempt += 1
                 continue
             
         self._log_generation_result()
@@ -217,7 +216,6 @@ class QueryOrchestrator(BaseOrchestrator):
             self.logger.info("📝 Returned %d failed queries", len(self.failed_queries) if self.failed_queries is not None else 0)
             self.join_hints = self.database_client.get_foreign_keys(table_names)
             self.logger.info("📝 Returned %d join hints", len(self.join_hints))
-            self.evaluator = AzureLLM("gpt-4o")
             
         else:
             self.failed_queries = None
@@ -233,22 +231,24 @@ class QueryOrchestrator(BaseOrchestrator):
             raise Exception("Schema context not found")
         
         self.logger.info("📝 Generating SQL...")
-
+        
         previous_fail = None
-        join_hints = None
-
-        if self.schema.source == SchemaSource.MYSQL:
-            previous_fail = self.current_query or self.failed_queries
-            join_hints = self.join_hints
+        if self.current_query.llm_feedback is not None:
+            self.logger.info("📝 Using previous failures from query store")
+            previous_fail = self.failed_queries 
+        elif self.failed_queries is not None:
+            self.logger.info("📝 Using previous failure from previous attempt")
+            previous_fail = self.current_query
 
         prompt = self.prompt_builder.query_generation_prompt(
             user_request=user_request,
             schema_context=self.schema_context,
             previous_fail=previous_fail,
-            join_hints=join_hints,
+            join_hints=self.join_hints,
         )
 
-        response = self.llm.generate(prompt) if self.llm else ""
+        self.logger.info("Sending generation prompt to LLM...")
+        response = self.llm.generate(prompt)
         self.current_query.clean_sql_from_llm(response)
 
     # --------------------------------------------------
@@ -258,64 +258,12 @@ class QueryOrchestrator(BaseOrchestrator):
     def _execute_and_evaluate_query(self) -> None:
         if self.database_client is None:
             raise Exception("Database client not found")
-
-        self.current_query.llm_feedback.feedback_status = FeedbackStatus.UNKNOWN
-        self.current_query.llm_feedback.error_category = None
         
         self.current_query = self.database_client.execute_query(
             self.current_query
         )
 
         self.current_query.evaluate()
-        self._request_feedback_if_needed()
-
-    # --------------------------------------------------
-    # FEEDBACK MANAGEMENT
-    # --------------------------------------------------
-
-    def _request_feedback_if_needed(self) -> None:
-        
-        self.logger.info("📝 Requesting feedback if needed...")
-
-        prompt_type = self._should_request_feedback()
-
-        if prompt_type and self.evaluator:
-            prompt = self._build_feedback_prompt(prompt_type)
-            response = self.evaluator.generate(prompt)
-            self.logger.info("📝 Feedback response: %s", response)
-            self.current_query.apply_llm_feedback(response)
-
-    def _should_request_feedback(self) -> Optional[str]:
-
-        self.logger.info("📝 Checking if feedback is needed...")
-
-        query = self.current_query
-
-        if not query.sql_code or not self.schema_context:
-            return None
-
-        # SUCCESS case with results
-        if (
-            query.status is QueryStatus.SUCCESS
-            and isinstance(query.execution_result, list)
-            and len(query.execution_result) > 0
-        ):
-            self.logger.info("📝 Feedback evaluation needed")
-
-            return "evaluation"
-
-        # RUNTIME ERROR case (after first attempt)
-        if (
-            query.status is QueryStatus.RUNTIME_ERROR
-            and query.llm_feedback.attempt > 1
-            and isinstance(query.execution_result, str)
-            and query.execution_result
-        ):
-            self.logger.info("📝 Feedback explanation needed")
-
-            return "explanation"
-
-        return None
 
     # --------------------------------------------------
     # PROMPT BUILDERS
@@ -323,7 +271,7 @@ class QueryOrchestrator(BaseOrchestrator):
 
     def _build_feedback_prompt(self, prompt_type: str) -> str:
         
-        self.logger.info("📝 Building feedback prompt...")
+        self.logger.info("📝 Building %s prompt...", prompt_type)
 
         if prompt_type == "evaluation":
             return self.prompt_builder.evaluation_prompt(

@@ -1,5 +1,6 @@
 from typing import Optional
 from config import ERROR_CATEGORIES
+from src.classes.clients import AzureLLM
 from .enums import FeedbackStatus, ErrorType
 from src.classes.logger import LoggerManager
 
@@ -7,8 +8,8 @@ from src.classes.logger import LoggerManager
 class LLMFeedback:
 
     def __init__(self):
-        self.attempt: int = 1
         self.feedback_status: FeedbackStatus = FeedbackStatus.UNKNOWN
+        self.evaluator: AzureLLM = AzureLLM("gpt-4o")
         self.error_category: Optional[ErrorType] = None
         self.explanation: Optional[str] = None
         self.retry_instruction: Optional[str] = None
@@ -98,9 +99,9 @@ class LLMFeedback:
     # OUTPUT
     # --------------------------------------------------
 
-    def format_error_details(self) -> str:
+    def format_error_details(self, attempt: int) -> str:
 
-        if self.attempt > 2:
+        if attempt >= 2:
             self._build_targeted_retry_instruction()
 
         return f"""DETAILS: {self.error_category.value if self.error_category else None}

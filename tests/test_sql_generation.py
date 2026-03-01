@@ -84,7 +84,7 @@ class RequestResult:
         # ----------------------------
         # Attempts + Time
         # ----------------------------
-        attempts = feedback.attempt if feedback else 0
+        attempts = query_session.attempt if query_session else 0
         lines.append(f"🏁Attempts: {attempts}")
         lines.append(f"⌚Request time: {self.time_taken:.2f}\n")
 
@@ -177,7 +177,7 @@ def generator_thread(
 
                 logger.info(
                     f"Finished successfully "
-                    f"(attempts={result_session.llm_feedback.attempt}, time={elapsed:.2f}s)"
+                    f"(attempts={result_session.attempt}, time={elapsed:.2f}s)"
                 )
 
             except TimeoutError as e:
@@ -358,25 +358,37 @@ def _write_statistics(
     requests: List[str],
 ) -> None:
     """Aggregate statistics and write to final_stats.txt."""
-    def print_table(title: str, headers: List[str], rows: List[List[str]]) -> List[str]:
+    def print_table(title: str, headers: List[str], rows: List[List[str]], footer: Optional[List[str]] = None) -> List[str]:
         """Build an ASCII table and return it as a list of lines."""
         lines: List[str] = []
         lines.append(f"\n{title}")
         lines.append("-" * 60)
 
+        # Calculate columns based on headers, data rows, AND the footer row
+        all_data = [headers] + rows
+        if footer:
+            all_data.append(footer)
+
         col_widths = [
-            max(len(str(cell)) for cell in [header] + [row[i] for row in rows])
-            for i, header in enumerate(headers)
+            max(len(str(cell)) for cell in [row[i] for row in all_data])
+            for i in range(len(headers))
         ]
 
         def format_row(row: List[str]) -> str:
             return " | ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
 
         lines.append(format_row(headers))
-        lines.append("-+-".join("-" * w for w in col_widths))
+        
+        separator = "-+-".join("-" * w for w in col_widths)
+        lines.append(separator)
 
         for row in rows:
             lines.append(format_row(row))
+        
+        # Add footer if provided
+        if footer:
+            lines.append(separator)
+            lines.append(format_row(footer))
 
         return lines
 
@@ -388,6 +400,9 @@ def _write_statistics(
     syntax_errors = 0
     other_errors = 0
     total_attempts = 0
+    
+    # Global sums for footer
+    global_total_time = 0.0
 
     # Per-model stats
     model_stats = {
@@ -410,10 +425,12 @@ def _write_statistics(
             if res.success:
                 query_session = res.query_session
                 successful_executions += 1
-                attempts = query_session.llm_feedback.attempt if query_session else 0
+                attempts = query_session.attempt if query_session else 0
                 total_attempts += attempts
+                
                 model_stats[model]["attempts"] += attempts
                 model_stats[model]["total_time"] += res.time_taken
+                global_total_time += res.time_taken
                 model_stats[model]["count"] += 1
 
                 status = query_session.status.value if query_session and query_session.status else None
@@ -457,6 +474,10 @@ def _write_statistics(
 
     incorrect_queries = total_tests - correct_queries
     total_correct_percent = (correct_queries / total_tests * 100) if total_tests > 0 else 0
+    
+    # Calculate global averages for footers
+    global_avg_attempts = (total_attempts / total_tests) if total_tests > 0 else 0
+    global_avg_time = (global_total_time / total_tests) if total_tests > 0 else 0
 
     # Build report
     lines = []
@@ -478,6 +499,7 @@ def _write_statistics(
         "",
     ])
 
+    # Table 1: Attempts Ranking
     lines.extend(
         print_table(
             "🏁 Attempts ranking (avg)",
@@ -491,9 +513,11 @@ def _write_statistics(
                 ]
                 for i, (model, stats) in enumerate(attempts_avg)
             ],
+            footer=["", "TOTAL", f"{global_avg_attempts:.2f}", f"{total_attempts:.0f}"]
         )
     )
 
+    # Table 2: Time Ranking
     lines.extend(
         print_table(
             "🏁 Time ranking (avg)",
@@ -507,9 +531,11 @@ def _write_statistics(
                 ]
                 for i, (model, stats) in enumerate(time_avg)
             ],
+            footer=["", "TOTAL", f"{global_avg_time:.2f}", f"{global_total_time:.1f}"]
         )
     )
 
+    # Table 3: Status Ranking
     lines.extend(
         print_table(
             "🏁 Status ranking",
@@ -525,6 +551,14 @@ def _write_statistics(
                 ]
                 for i, (model, stats) in enumerate(status_rank)
             ],
+            footer=[
+                "", 
+                "TOTAL", 
+                str(correct_queries), 
+                str(runtime_errors), 
+                str(syntax_errors), 
+                f"{total_correct_percent:.2f}%"
+            ]
         )
     )
 

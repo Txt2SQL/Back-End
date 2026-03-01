@@ -131,11 +131,14 @@ Rules:
     
         if previous_fail:
             if isinstance(previous_fail, list):
+                self.logger.info("received %d previous failures", len(previous_fail))
                 fail_content = self._build_penalty_section(previous_fail)
             elif isinstance(previous_fail, QuerySession):
+                self.logger.info("received previous failure")
                 fail_content = previous_fail.format_error_feedback()
 
-            template = template + f"""
+            if fail_content:
+                template = template + f"""
     === PREVIOUS QUERY ERROR TO FIX ===
     {fail_content}
 
