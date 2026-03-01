@@ -18,7 +18,7 @@ from src.classes.clients.mysql_client import MySQLClient
 from src.classes.logger import LoggerManager
 
 from config import QUERY_GENERATION_MODELS, DATA_DIR
-from src.classes.domain_states import QueryStatus, FeedbackStatus, SchemaSource
+from src.classes.domain_states import QueryStatus, FeedbackStatus, SchemaSource, ErrorType
 
 
 
@@ -153,7 +153,7 @@ class QueryOrchestrator(BaseOrchestrator):
                         self.logger.info("📝 Create LLMFeedback object!")
                         raise Exception("LLMFeedback object not found")
                     self.current_query.llm_feedback.explanation = response
-                    self.current_query.llm_feedback.error_category = self.current_query.error_type
+                    self.current_query.llm_feedback.error_category = ErrorType.RUNTIME_ERROR
 
                 self.current_query.attempt += 1
                 continue
