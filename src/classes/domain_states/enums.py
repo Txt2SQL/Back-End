@@ -13,6 +13,7 @@ class QueryStatus(str, Enum):
     INCORRECT = "INCORRECT"
     
 class ErrorType(str, Enum):
+    RUNTIME_ERROR = "RUNTIME_ERROR"
     SYNTAX_ERROR = "SYNTAX_ERROR"
     TIMEOUT_ERROR = "TIMEOUT_ERROR"
     UNKNOWN_COLUMN = "UNKNOWN_COLUMN"
