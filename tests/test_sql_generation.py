@@ -57,11 +57,11 @@ class RequestResult:
                 rows_fetched = len(execution_result)
 
             outcome = (
-                f"{rows_fetched} rows fetched"
+                f"({rows_fetched} rows fetched)"
                 if rows_fetched is not None
-                else "Query executed successfully"
+                else "(Query executed successfully)"
             )
-            lines.append(f"status and outcome: 🍾SUCCESS\n {outcome}\n")
+            lines.append(f"status and outcome: 🍾SUCCESS {outcome}\n")
             if isinstance(execution_result, Records):
                 lines.append(f"{execution_result.get_preview()}\n")
             else:

@@ -6,25 +6,47 @@ class Records:
         self.count = len(self.rows)
 
     def get_preview(self, limit: int = 10, max_col_width: int = 40) -> str:
-        sample = self.rows[:limit]
-        normalized = [
-            list(row) if isinstance(row, tuple) else ([row] if not isinstance(row, list) else row)
-            for row in sample
-        ]
-        num_cols = max(len(row) for row in normalized) if normalized else 0
+        if not self.rows:
+            return "No records found."
 
-        headers = [f"col_{idx + 1}" for idx in range(num_cols)]
+        sample = self.rows[:limit]
+        
+        # logic to handle different row types (Dict vs Tuple/List)
+        headers = []
+        normalized = []
+
+        # Check if the first row is a Dictionary (common with MySQL dictionary=True)
+        if isinstance(sample[0], dict):
+            # Use keys as headers
+            headers = list(sample[0].keys())
+            # Ensure values correspond to headers order
+            normalized = [[row.get(h) for h in headers] for row in sample]
+            num_cols = len(headers)
+        else:
+            # Fallback for Tuples/Lists
+            normalized = [
+                list(row) if isinstance(row, tuple) else ([row] if not isinstance(row, list) else row)
+                for row in sample
+            ]
+            num_cols = max(len(row) for row in normalized) if normalized else 0
+            headers = [f"col_{idx + 1}" for idx in range(num_cols)]
 
         def fmt(value: Any) -> str:
             value_str = str(value)
+            # Remove newlines to keep table structure intact
+            value_str = value_str.replace('\n', ' ')
             return value_str if len(value_str) <= max_col_width else value_str[: max_col_width - 3] + "..."
 
+        # Calculate column widths
         col_widths = [len(header) for header in headers]
         for row in normalized:
             for idx in range(num_cols):
-                cell = fmt(row[idx] if idx < len(row) else "")
+                # Handle cases where row might be shorter than headers (rare in SQL)
+                val = row[idx] if idx < len(row) else ""
+                cell = fmt(val)
                 col_widths[idx] = max(col_widths[idx], len(cell))
 
+        # Build Table parts
         border = "┼".join("─" * (width + 2) for width in col_widths)
         top = "┌" + border.replace("┼", "┬") + "┐"
         mid = "├" + border + "┤"
@@ -33,12 +55,13 @@ class Records:
         def render_row(values: List[Any]) -> str:
             cells: List[str] = []
             for idx in range(num_cols):
-                value = fmt(values[idx] if idx < len(values) else "")
+                val = values[idx] if idx < len(values) else ""
+                value = fmt(val)
                 cells.append(f" {value:<{col_widths[idx]}} ")
             return "│" + "│".join(cells) + "│"
 
         lines = [
-            f"\n✨ Query preview ({self.count} row(s) fetched, showing up to {limit}):",
+            f"✨ Query preview:",
             top,
             render_row(headers),
             mid,
@@ -46,9 +69,6 @@ class Records:
         for row in normalized:
             lines.append(render_row(row))
         lines.append(bottom)
-
-        if self.count > limit:
-            lines.append(f"… and {self.count - limit} more row(s).")
 
         return "\n".join(lines)
 
