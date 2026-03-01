@@ -361,6 +361,7 @@ def _write_statistics(
             "correct": 0,
             "runtime": 0,
             "syntax": 0,
+            "executions": 0,
             "total_time": 0.0,
             "attempts": 0,
             "count": 0,
@@ -371,6 +372,7 @@ def _write_statistics(
     for _, models_dict in results_by_index.items():
         for model, res in models_dict.items():
             total_tests += 1
+            model_stats[model]["executions"] += 1
             if res.success:
                 successful_executions += 1
                 total_attempts += res.attempts
@@ -404,8 +406,19 @@ def _write_statistics(
     )
     status_rank = sorted(
         model_stats.items(),
-        key=lambda x: (-x[1]["correct"], x[1]["runtime"], x[1]["syntax"]),
+        key=lambda x: (
+            -(
+                x[1]["correct"] / x[1]["executions"]
+                if x[1]["executions"] > 0 else 0
+            ),
+            -x[1]["correct"],
+            x[1]["runtime"],
+            x[1]["syntax"],
+        ),
     )
+
+    incorrect_queries = total_tests - correct_queries
+    total_correct_percent = (correct_queries / total_tests * 100) if total_tests > 0 else 0
 
     # Build report
     lines = []
@@ -417,11 +430,13 @@ def _write_statistics(
         f"Total requests tested : {total_requests}",
         f"Total model executions: {total_tests}",
         f"✅ Correct queries : {correct_queries}",
+        f"❌ Incorrect queries  : {incorrect_queries}",
         f"⚠️  Syntax errors     : {syntax_errors}",
         f"❌ Runtime errors    : {runtime_errors}",
         f"🔧 Other errors      : {other_errors}",
         f"🟢 Completed runs    : {successful_executions}",
         f"🔁 Total attempts    : {total_attempts}",
+        f"🎯 Total correct %    : {total_correct_percent:.2f}%",
         "",
     ])
 
@@ -460,7 +475,7 @@ def _write_statistics(
     lines.extend(
         print_table(
             "🏁 Status ranking",
-            ["Rank", "Model", "CORRECT", "RUNTIME", "SYNTAX"],
+            ["Rank", "Model", "CORRECT", "RUNTIME", "SYNTAX", "CORRECT %"],
             [
                 [
                     str(i + 1),
@@ -468,6 +483,7 @@ def _write_statistics(
                     str(int(stats["correct"])),
                     str(int(stats["runtime"])),
                     str(int(stats["syntax"])),
+                    f"{(stats['correct'] / stats['executions'] * 100) if stats['executions'] > 0 else 0:.2f}%",
                 ]
                 for i, (model, stats) in enumerate(status_rank)
             ],
