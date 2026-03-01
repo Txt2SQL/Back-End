@@ -1,4 +1,6 @@
 from datetime import datetime
+import json
+from collections.abc import Mapping, Sequence
 from langchain_core.documents import Document
 from classes.domain_states.query import QuerySession
 from .logger_manager import LoggerManager
@@ -41,7 +43,7 @@ class PromptBuilder:
         logger.debug("Using first %s rows for evaluation", len(preview_rows))
 
         # Convert rows to a readable string
-        rows_text = "\n".join(str(row) for row in preview_rows)
+        rows_text = self._format_result_preview(preview_rows)
 
         template = f"""
 You are an expert SQL reviewer.
@@ -77,6 +79,33 @@ Rules:
 """
         self._log_prompt("evaluation_prompt", template)
         return template
+
+    def _format_result_preview(self, rows: list) -> str:
+        """Render SQL result rows in a compact, readable format for the evaluation prompt."""
+        if not rows:
+            return "<no rows returned>"
+
+        first_row = rows[0]
+
+        if isinstance(first_row, Mapping):
+            rendered_rows = []
+            for row in rows:
+                if isinstance(row, Mapping):
+                    rendered_rows.append(json.dumps(row, default=str, ensure_ascii=False))
+                else:
+                    rendered_rows.append(str(row))
+            return "\n".join(rendered_rows)
+
+        if isinstance(first_row, Sequence) and not isinstance(first_row, (str, bytes, bytearray)):
+            rendered_rows = []
+            for row in rows:
+                if isinstance(row, Sequence) and not isinstance(row, (str, bytes, bytearray)):
+                    rendered_rows.append(", ".join(str(value) for value in row))
+                else:
+                    rendered_rows.append(str(row))
+            return "\n".join(rendered_rows)
+
+        return "\n".join(str(row) for row in rows)
 
     def query_generation_prompt(self, 
         user_request: str,
