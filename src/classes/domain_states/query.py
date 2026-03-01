@@ -217,11 +217,11 @@ Knowledge scope: {self.knowledge_scope}
     
     def format_error_feedback(self):
 
-        if self.status == "SYNTAX_ERROR":
+        if self.status is QueryStatus.SYNTAX_ERROR:
             title = "The previous SQL query caused a syntax error."
-        elif self.status == "RUNTIME_ERROR":
+        elif self.status is QueryStatus.RUNTIME_ERROR:
             title = "The previous SQL query failed at runtime."
-        elif self.status == "SEMANTIC_ERROR":
+        elif self.status is QueryStatus.INCORRECT:
             title = "The previous SQL query was semantically incorrect."
         else:
             title = "The previous SQL query was incorrect."
