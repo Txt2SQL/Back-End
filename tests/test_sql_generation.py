@@ -31,7 +31,7 @@ LoggerManager.setup_project_logger()
 main_logger = LoggerManager.get_logger("main")
 
 
-def pretty_print_query_preview(rows: list | None | str, max_rows: int = 5, max_col_width: int = 40) -> str:
+def records_preview(rows: list | None | str, max_rows: int = 10, max_col_width: int = 40) -> str:
     """Build a compact, fancy preview of fetched rows and return it as text."""
     if rows is None:
         return "\n📭 Query executed successfully, but no rows were returned."
@@ -193,7 +193,7 @@ def generator_thread(
                     status=result_session.status.value if result_session.status else None,
                     error=execution_result if isinstance(execution_result, str) else None,
                     rows_fetched=rows_fetched,
-                    preview_text=pretty_print_query_preview(execution_result),
+                    preview_text=records_preview(execution_result),
                     feedback_category=(
                         feedback.error_category.value
                         if feedback.error_category else None
