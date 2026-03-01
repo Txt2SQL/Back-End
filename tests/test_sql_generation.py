@@ -14,13 +14,12 @@ from dataclasses import dataclass
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
-from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
 from src.classes.clients.mysql_client import MySQLClient
 from src.classes.RAG_service.schema_store import Schema
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
-from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
+from src.classes.domain_states import SchemaSource, QueryStatus, Records
 from src.classes.logger import LoggerManager
 from config import QUERY_GENERATION_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
 
@@ -31,63 +30,6 @@ LoggerManager.setup_project_logger()
 main_logger = LoggerManager.get_logger("main")
 
 
-def records_preview(rows: list | None | str, max_rows: int = 10, max_col_width: int = 40) -> str:
-    """Build a compact, fancy preview of fetched rows and return it as text."""
-    if rows is None:
-        return "\n📭 Query executed successfully, but no rows were returned."
-
-    if isinstance(rows, str):
-        return "\n📭 Query executed, but output is not row data."
-
-    if not rows:
-        return "\n📭 Query executed successfully, but no rows were returned."
-
-    sample = rows[:max_rows]
-    normalized = [
-        list(row) if isinstance(row, tuple) else ([row] if not isinstance(row, list) else row)
-        for row in sample
-    ]
-    num_cols = max(len(row) for row in normalized) if normalized else 0
-
-    headers = [f"col_{idx + 1}" for idx in range(num_cols)]
-
-    def fmt(value: Any) -> str:
-        value_str = str(value)
-        return value_str if len(value_str) <= max_col_width else value_str[: max_col_width - 3] + "..."
-
-    col_widths = [len(header) for header in headers]
-    for row in normalized:
-        for idx in range(num_cols):
-            cell = fmt(row[idx] if idx < len(row) else "")
-            col_widths[idx] = max(col_widths[idx], len(cell))
-
-    border = "┼".join("─" * (width + 2) for width in col_widths)
-    top = "┌" + border.replace("┼", "┬") + "┐"
-    mid = "├" + border + "┤"
-    bottom = "└" + border.replace("┼", "┴") + "┘"
-
-    def render_row(values: List[Any]) -> str:
-        cells: List[str] = []
-        for idx in range(num_cols):
-            value = fmt(values[idx] if idx < len(values) else "")
-            cells.append(f" {value:<{col_widths[idx]}} ")
-        return "│" + "│".join(cells) + "│"
-
-    lines = [
-        f"\n✨ Query preview ({len(rows)} row(s) fetched, showing up to {max_rows}):",
-        top,
-        render_row(headers),
-        mid,
-    ]
-    for row in normalized:
-        lines.append(render_row(row))
-    lines.append(bottom)
-
-    if len(rows) > max_rows:
-        lines.append(f"… and {len(rows) - max_rows} more row(s).")
-
-    return "\n".join(lines)
-
 @dataclass
 class RequestResult:
     request_index: int
@@ -95,7 +37,58 @@ class RequestResult:
     query_session: Optional[QuerySession]
     time_taken: float  # seconds
     success: bool  # whether completed without exception
+    
+    def format_output_content(self, index: int) -> str:
+        query_session = self.query_session
+        lines = []
 
+        lines.append(f"{index}. 🤖[{self.model_name}]\n")
+        lines.append(f"🧮 Query:\n\n{query_session.sql_code if query_session else 'N/A'}\n")
+        # ----------------------------
+        # Status + Outcome formatting
+        # ----------------------------
+        status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
+
+        execution_result = query_session.execution_result if query_session else None
+
+        if status_label == "SUCCESS":
+            rows_fetched = query_session.rows_fetched if query_session else None
+            if rows_fetched is None and isinstance(execution_result, Records):
+                rows_fetched = len(execution_result)
+
+            outcome = (
+                f"{rows_fetched} rows fetched"
+                if rows_fetched is not None
+                else "Query executed successfully"
+            )
+            lines.append(f"status and outcome: 🍾SUCCESS\n {outcome}\n")
+            if isinstance(execution_result, Records):
+                lines.append(f"{execution_result.get_preview()}\n")
+            else:
+                lines.append(f"{execution_result}\n")
+        else:
+            error_msg = execution_result if isinstance(execution_result, str) else "Unknown error"
+            lines.append(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n")
+        # ----------------------------
+        # LLM Feedback formatting
+        # ----------------------------
+        feedback = query_session.llm_feedback if query_session else None
+        if feedback and feedback.error_category:
+            explanation = feedback.explanation or ""
+            lines.append(
+                f"LLM Feedback: 👎INCORRECT ({feedback.error_category.value} - {explanation})\n"
+            )
+        else:
+            lines.append("LLM Feedback: 👍CORRECT\n")
+
+        # ----------------------------
+        # Attempts + Time
+        # ----------------------------
+        attempts = feedback.attempt if feedback else 0
+        lines.append(f"🏁Attempts: {attempts}")
+        lines.append(f"⌚Request time: {self.time_taken:.2f}\n")
+
+        return "\n".join(lines)
 
 # ----------------------------------------------------------------------
 # Thread-safe wrapper for QueryStore
@@ -353,51 +346,9 @@ def _write_request_file(
             if res is None:
                 f.write(f"{i}. 🤖[{model_key}]\n\nNo result\n\n")
                 continue
-
-            query_session = res.query_session
-
-            f.write(f"{i}. 🤖[{model_key}]\n\n")
-            f.write(f"🧮 Query:\n\n{query_session.sql_code if query_session else 'N/A'}\n\n")
-            # ----------------------------
-            # Status + Outcome formatting
-            # ----------------------------
-            status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
-
-            execution_result = query_session.execution_result if query_session else None
-
-            if status_label == "SUCCESS":
-                rows_fetched = query_session.rows_fetched if query_session else None
-                if rows_fetched is None and isinstance(execution_result, list):
-                    rows_fetched = len(execution_result)
-
-                outcome = (
-                    f"{rows_fetched} rows fetched"
-                    if rows_fetched is not None
-                    else "Query executed successfully"
-                )
-                f.write(f"status and outcome: 🍾SUCCESS\n {outcome}\n\n")
-                f.write(f"{records_preview(execution_result)}\n\n")
-            else:
-                error_msg = execution_result if isinstance(execution_result, str) else "Unknown error"
-                f.write(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n\n")
-            # ----------------------------
-            # LLM Feedback formatting
-            # ----------------------------
-            feedback = query_session.llm_feedback if query_session else None
-            if feedback and feedback.error_category:
-                explanation = feedback.explanation or ""
-                f.write(
-                    f"LLM Feedback: 👎INCORRECT ({feedback.error_category.value} - {explanation})\n\n"
-                )
-            else:
-                f.write("LLM Feedback: 👍CORRECT\n\n")
-
-            # ----------------------------
-            # Attempts + Time
-            # ----------------------------
-            attempts = feedback.attempt if feedback else 0
-            f.write(f"🏁Attempts: {attempts}\n")
-            f.write(f"⌚Request time: {res.time_taken:.2f}\n\n")
+                    
+            f.write(res.format_output_content(i))
+            f.write("\n\n")
 
 
 def _write_statistics(

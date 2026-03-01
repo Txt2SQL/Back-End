@@ -9,6 +9,7 @@ from .enums import (
     FeedbackStatus,
 )
 from src.classes.domain_states.feedback import LLMFeedback
+from src.classes.domain_states.records import Records
 from src.classes.logger import LoggerManager
 
 
@@ -29,7 +30,7 @@ class QuerySession:
         self.rows_fetched: Optional[int] = None
         self.valid_syntax: Optional[bool] = None
         self.execution_status: Optional[QueryStatus] = None
-        self.execution_result: Union[str, List[Any], None] = None
+        self.execution_result: Union[str, Records, None] = None
 
         self.status: QueryStatus = QueryStatus.PENDING
         self.error_type: Optional[ErrorType] = None

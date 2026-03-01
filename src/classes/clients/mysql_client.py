@@ -1,9 +1,10 @@
 from getpass import getpass
 
 import mysql.connector
+from collections import defaultdict
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states.enums import QueryStatus
-from collections import defaultdict
+from src.classes.domain_states.records import Records
 from src.classes.loaders.mysql_loader import MySQLLoader
 from src.classes.logger import LoggerManager
 
@@ -67,8 +68,10 @@ class MySQLClient:
 
             try:
                 self.logger.info("📥 Attempting to fetch results...")
-                query.execution_result = cursor.fetchall()
-                if query.execution_result is not None:
+                raw_rows = cursor.fetchall()
+                if raw_rows is not None:
+                    # WRAP THE ROWS HERE
+                    query.execution_result = Records(list(raw_rows)) 
                     self.logger.info(f"📥 Rows fetched: {len(query.execution_result)}")
             except Exception as fetch_err:
                 query.execution_result = None

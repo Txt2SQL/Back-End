@@ -2,6 +2,7 @@ from .schema import Schema
 from .query import QuerySession
 from .feedback import LLMFeedback
 from .enums import QueryStatus, ErrorType, FeedbackStatus, SchemaSource
+from .records import Records
 
 __all__ = [
     "Schema",
@@ -11,4 +12,5 @@ __all__ = [
     "ErrorType",
     "FeedbackStatus",
     "SchemaSource",
+    "Records",
 ]
