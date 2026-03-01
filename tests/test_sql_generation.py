@@ -568,9 +568,10 @@ def load_requests(db_name: str) -> List[str]:
     print(f"Loaded {len(requests)} requests.")
     return requests
 
-def create_output_dir(db_name: str) -> tuple[Path, Path, Path]:
+def create_output_dir(db_name: str, output_name: str | None = None) -> tuple[Path, Path, Path]:
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_dir = TESTS_DIR / 'output' / 'runs' / f"{db_name}_results" / f"results_{timestamp}"
+    run_name = output_name if output_name else f"results_{timestamp}"
+    output_dir = TESTS_DIR / 'output' / 'runs' / f"{db_name}_results" / run_name
     queries_dir = output_dir / 'queries'
     logs_dir = output_dir / 'logs'
     queries_dir.mkdir(parents=True, exist_ok=True)
@@ -667,7 +668,7 @@ def build_schema_rag(db_name: str, source: SchemaSource) -> tuple[Schema, Schema
     main_logger.info("Schema acquired and saved successfully")
     return schema, schema_store
     
-def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
+def run_stress_test(mode: str, database_name: str, timeout: int, output_name: str | None = None) -> None:
     # ------------------------------------------------------------------
     # PHASE ONE: Initialization
     # ------------------------------------------------------------------
@@ -686,7 +687,7 @@ def run_stress_test(mode: str, database_name: str, timeout: int) -> None:
     main_logger.info(f"Loaded {len(requests)} requests")
 
     # 3. Create output directories
-    output_dir, queries_dir, logs_dir = create_output_dir(db_name)
+    output_dir, queries_dir, logs_dir = create_output_dir(db_name, output_name)
     main_logger.info("Output directories created")
 
     # 3.5 Clear tmp directory to avoid cross-run artifacts
@@ -753,9 +754,11 @@ def main():
                         help="Name of the database. If not provided, list available databases.")
     parser.add_argument('--timeout', type=int, default=TIMEOUT_PER_REQUEST,
                         help="Timeout per request in seconds.")
+    parser.add_argument('--output-name', type=str, default=None,
+                        help="Custom name for the output run directory. Defaults to a timestamped name.")
     args = parser.parse_args()
 
-    run_stress_test(args.mode, args.database_name, args.timeout)
+    run_stress_test(args.mode, args.database_name, args.timeout, args.output_name)
 
 if __name__ == "__main__":
     main()
