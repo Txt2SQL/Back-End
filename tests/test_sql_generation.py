@@ -30,6 +30,64 @@ TMP_DIR = TESTS_DIR / "tmp"
 LoggerManager.setup_project_logger()
 main_logger = LoggerManager.get_logger("main")
 
+
+def pretty_print_query_preview(rows: list | None | str, max_rows: int = 5, max_col_width: int = 40) -> str:
+    """Build a compact, fancy preview of fetched rows and return it as text."""
+    if rows is None:
+        return "\n📭 Query executed successfully, but no rows were returned."
+
+    if isinstance(rows, str):
+        return "\n📭 Query executed, but output is not row data."
+
+    if not rows:
+        return "\n📭 Query executed successfully, but no rows were returned."
+
+    sample = rows[:max_rows]
+    normalized = [
+        list(row) if isinstance(row, tuple) else ([row] if not isinstance(row, list) else row)
+        for row in sample
+    ]
+    num_cols = max(len(row) for row in normalized) if normalized else 0
+
+    headers = [f"col_{idx + 1}" for idx in range(num_cols)]
+
+    def fmt(value: Any) -> str:
+        value_str = str(value)
+        return value_str if len(value_str) <= max_col_width else value_str[: max_col_width - 3] + "..."
+
+    col_widths = [len(header) for header in headers]
+    for row in normalized:
+        for idx in range(num_cols):
+            cell = fmt(row[idx] if idx < len(row) else "")
+            col_widths[idx] = max(col_widths[idx], len(cell))
+
+    border = "┼".join("─" * (width + 2) for width in col_widths)
+    top = "┌" + border.replace("┼", "┬") + "┐"
+    mid = "├" + border + "┤"
+    bottom = "└" + border.replace("┼", "┴") + "┘"
+
+    def render_row(values: List[Any]) -> str:
+        cells: List[str] = []
+        for idx in range(num_cols):
+            value = fmt(values[idx] if idx < len(values) else "")
+            cells.append(f" {value:<{col_widths[idx]}} ")
+        return "│" + "│".join(cells) + "│"
+
+    lines = [
+        f"\n✨ Query preview ({len(rows)} row(s) fetched, showing up to {max_rows}):",
+        top,
+        render_row(headers),
+        mid,
+    ]
+    for row in normalized:
+        lines.append(render_row(row))
+    lines.append(bottom)
+
+    if len(rows) > max_rows:
+        lines.append(f"… and {len(rows) - max_rows} more row(s).")
+
+    return "\n".join(lines)
+
 @dataclass
 class RequestResult:
     request_index: int
@@ -37,6 +95,8 @@ class RequestResult:
     sql_code: Optional[str]
     status: Optional[str]
     error: Optional[str]
+    rows_fetched: Optional[int]
+    preview_text: Optional[str]
     feedback_category: Optional[str]
     feedback_explanation: Optional[str]
     attempts: int
@@ -123,17 +183,17 @@ def generator_thread(
 
                 feedback = result_session.llm_feedback
 
+                execution_result = result_session.execution_result
+                rows_fetched = len(execution_result) if isinstance(execution_result, list) else None
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
                     sql_code=result_session.sql_code,
                     status=result_session.status.value if result_session.status else None,
-                    error=(
-                        result_session.execution_result
-                        if isinstance(result_session.execution_result, str)
-                        else str(result_session.execution_result)
-                        if result_session.execution_result else None
-                    ),
+                    error=execution_result if isinstance(execution_result, str) else None,
+                    rows_fetched=rows_fetched,
+                    preview_text=pretty_print_query_preview(execution_result),
                     feedback_category=(
                         feedback.error_category.value
                         if feedback.error_category else None
@@ -163,6 +223,8 @@ def generator_thread(
                     sql_code=None,
                     status="TIMEOUT",
                     error=str(e),
+                    rows_fetched=None,
+                    preview_text=None,
                     feedback_category=None,
                     feedback_explanation=None,
                     attempts=0,
@@ -184,6 +246,8 @@ def generator_thread(
                     sql_code=None,
                     status="ERROR",
                     error=str(e),
+                    rows_fetched=None,
+                    preview_text=None,
                     feedback_category=None,
                     feedback_explanation=None,
                     attempts=0,
@@ -328,11 +392,13 @@ def _write_request_file(
 
             if status_label == "SUCCESS":
                 outcome = (
-                    f"{res.error} rows fetched"
-                    if res.error and res.error.isdigit()
-                    else (res.error or "Query executed successfully")
+                    f"{res.rows_fetched} rows fetched"
+                    if res.rows_fetched is not None
+                    else "Query executed successfully"
                 )
                 f.write(f"status and outcome: 🍾SUCCESS\n {outcome}\n\n")
+                if res.preview_text:
+                    f.write(f"{res.preview_text}\n\n")
             else:
                 error_msg = res.error or "Unknown error"
                 f.write(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n\n")
