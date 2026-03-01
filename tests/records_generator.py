@@ -19,10 +19,10 @@ LoggerManager.setup_project_logger()
 logger = LoggerManager.get_logger(__name__)
 
 
-def get_db_connection(database: str | None = None):
+def get_mysql_client(database: str | None = None):
     """Create a MySQL connection through the shared MySQLClient wrapper."""
     mysql_client = MySQLClient(database)
-    return mysql_client, mysql_client.connection
+    return mysql_client
 
 
 def quote_identifier(identifier):
@@ -434,15 +434,15 @@ def main():
     cursor = None
 
     try:
-        db_client, conn = get_db_connection()
-        if not conn.is_connected():
+        db_client = get_mysql_client()
+        if not db_client.connection.is_connected():
             print("Error connecting to MySQL.")
             logger.error("Connection object returned but not connected.")
             return
 
         print("Connected to MySQL Server.")
         logger.info("Connected to MySQL Server.")
-        cursor = conn.cursor()
+        cursor = db_client.connection.cursor()
 
         db_name = None
         if create:
@@ -479,7 +479,7 @@ def main():
             create_database(cursor, db_name)
             cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
             execute_sql_file(cursor, file_path)
-            conn.commit()
+            db_client.connection.commit()
             logger.info("DDL executed and committed for %s.", db_name)
         else:
             available_dbs = [
@@ -533,7 +533,7 @@ def main():
         for table in ordered_tables:
             populate_table(cursor, table, rows_per_table, fk_value_cache, pk_value_cache, pk_tuple_cache)
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
-        conn.commit()
+        db_client.connection.commit()
 
     except Error as e:
         print(f"Error connecting to MySQL: {e}")

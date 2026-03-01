@@ -416,7 +416,7 @@ def _write_statistics(
         "",
         f"Total requests tested : {total_requests}",
         f"Total model executions: {total_tests}",
-        f"✅ Successful queries : {correct_queries}",
+        f"✅ Correct queries : {correct_queries}",
         f"⚠️  Syntax errors     : {syntax_errors}",
         f"❌ Runtime errors    : {runtime_errors}",
         f"🔧 Other errors      : {other_errors}",
@@ -460,7 +460,7 @@ def _write_statistics(
     lines.extend(
         print_table(
             "🏁 Status ranking",
-            ["Rank", "Model", "OK", "RUNTIME", "SYNTAX"],
+            ["Rank", "Model", "CORRECT", "RUNTIME", "SYNTAX"],
             [
                 [
                     str(i + 1),
