@@ -4,7 +4,7 @@ Runs multiple requests against all configured LLM models concurrently,
 writes per-request result files, and produces a summary statistics file.
 """
 
-import argparse, sys, os, time, threading, queue
+import argparse, sys, os, time, threading, queue, shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
@@ -198,6 +198,37 @@ def generator_thread(
     finally:
         LoggerManager.clear_thread_logger()
 
+def _progress_bar(done: int, total: int, width: int = 26) -> str:
+    """Build a unicode progress bar like █████░░░░ for terminal output."""
+    if total <= 0:
+        total = 1
+    ratio = max(0.0, min(1.0, done / total))
+    filled = int(round(ratio * width))
+    return f"{'█' * filled}{'░' * (width - filled)}"
+
+
+def _print_model_progress(model_progress: Dict[str, int], num_requests: int, received: int, total_expected: int) -> None:
+    """Render an in-place multi-line status panel with per-model request progress."""
+    if not sys.stdout.isatty():
+        return
+
+    term_width = shutil.get_terminal_size((110, 30)).columns
+    header = f"✨ Live model progress | total results: {received}/{total_expected}"
+    lines = [header, "─" * min(term_width, max(30, len(header)))]
+
+    for i, model in enumerate(QUERY_GENERATION_MODELS.keys(), 1):
+        done = model_progress.get(model, 0)
+        pct = (done / num_requests * 100) if num_requests > 0 else 0
+        bar = _progress_bar(done, num_requests)
+        lines.append(f"{i:>2}. 🤖 {model:<20} [{bar}] {done:>3}/{num_requests:<3} ({pct:6.2f}%)")
+
+    panel = "\n".join(lines)
+    sys.stdout.write("\033[H\033[J")
+    sys.stdout.write(panel + "\n")
+    sys.stdout.flush()
+
+
+
 # ----------------------------------------------------------------------
 # Printer thread function
 # ----------------------------------------------------------------------
@@ -218,16 +249,21 @@ def printer_thread(
     next_index = 1
     total_expected = num_models * num_requests
     received = 0
+    model_progress = {model: 0 for model in QUERY_GENERATION_MODELS.keys()}
 
     # Use LoggerManager for printer thread
     logger = LoggerManager.get_logger("printer", log_file=logs_dir / "printer.log")
     logger.info(f"Printer started. Expecting {total_expected} results.")
+    _print_model_progress(model_progress, num_requests, received, total_expected)
 
     while received < total_expected:
         try:
             idx, model, res = result_queue.get(timeout=1)
             received += 1
             logger.info(f"Received result for request: {idx}, model: {model}")
+            if model in model_progress:
+                model_progress[model] += 1
+            _print_model_progress(model_progress, num_requests, received, total_expected)
             if idx not in results_by_index:
                 results_by_index[idx] = {}
             results_by_index[idx][model] = res
@@ -259,6 +295,8 @@ def printer_thread(
     # Write final statistics
     _write_statistics(results_by_index, num_requests, queries_dir.parent / "final_stats.txt", requests)
     logger.info("Printer finished.")
+    if sys.stdout.isatty():
+        print("✅ All model requests have been processed.\n")
 
 
 def _write_request_file(
@@ -361,6 +399,7 @@ def _write_statistics(
             "correct": 0,
             "runtime": 0,
             "syntax": 0,
+            "executions": 0,
             "total_time": 0.0,
             "attempts": 0,
             "count": 0,
@@ -371,6 +410,7 @@ def _write_statistics(
     for _, models_dict in results_by_index.items():
         for model, res in models_dict.items():
             total_tests += 1
+            model_stats[model]["executions"] += 1
             if res.success:
                 successful_executions += 1
                 total_attempts += res.attempts
@@ -404,8 +444,19 @@ def _write_statistics(
     )
     status_rank = sorted(
         model_stats.items(),
-        key=lambda x: (-x[1]["correct"], x[1]["runtime"], x[1]["syntax"]),
+        key=lambda x: (
+            -(
+                x[1]["correct"] / x[1]["executions"]
+                if x[1]["executions"] > 0 else 0
+            ),
+            -x[1]["correct"],
+            x[1]["runtime"],
+            x[1]["syntax"],
+        ),
     )
+
+    incorrect_queries = total_tests - correct_queries
+    total_correct_percent = (correct_queries / total_tests * 100) if total_tests > 0 else 0
 
     # Build report
     lines = []
@@ -417,11 +468,13 @@ def _write_statistics(
         f"Total requests tested : {total_requests}",
         f"Total model executions: {total_tests}",
         f"✅ Correct queries : {correct_queries}",
+        f"❌ Incorrect queries  : {incorrect_queries}",
         f"⚠️  Syntax errors     : {syntax_errors}",
         f"❌ Runtime errors    : {runtime_errors}",
         f"🔧 Other errors      : {other_errors}",
         f"🟢 Completed runs    : {successful_executions}",
         f"🔁 Total attempts    : {total_attempts}",
+        f"🎯 Total correct %    : {total_correct_percent:.2f}%",
         "",
     ])
 
@@ -460,7 +513,7 @@ def _write_statistics(
     lines.extend(
         print_table(
             "🏁 Status ranking",
-            ["Rank", "Model", "CORRECT", "RUNTIME", "SYNTAX"],
+            ["Rank", "Model", "CORRECT", "RUNTIME", "SYNTAX", "CORRECT %"],
             [
                 [
                     str(i + 1),
@@ -468,6 +521,7 @@ def _write_statistics(
                     str(int(stats["correct"])),
                     str(int(stats["runtime"])),
                     str(int(stats["syntax"])),
+                    f"{(stats['correct'] / stats['executions'] * 100) if stats['executions'] > 0 else 0:.2f}%",
                 ]
                 for i, (model, stats) in enumerate(status_rank)
             ],
