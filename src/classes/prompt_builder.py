@@ -98,10 +98,13 @@ You are an expert SQL database assistant.
 You will be provided with:
 1. The partial description of the database schema (only the relevant tables)
 2. The user's request in natural language.
-3. Examples of previous successful SQL queries
+3. Examples of previous SQL failures to correct
 
 Your task is to return a **single SQL query** that satisfies the request,
 using the provided tables and columns.
+
+=== REQUEST ===
+{user_request}
 
 === SCHEMA ===
 {schema_context}
@@ -116,8 +119,6 @@ using the provided tables and columns.
 
         template = template + f"""
 
-=== REQUEST ===
-{user_request}
 
 IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - Do NOT use columns outside the schema
@@ -139,6 +140,7 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 
             if fail_content:
                 template = template + f"""
+                
     === PREVIOUS QUERY ERROR TO FIX ===
     {fail_content}
 

@@ -64,6 +64,7 @@ class QuerySession:
         # These are often literal strings representing control characters
         artifacts = ["<0x0A>", "<0x0D>", "<s>", "</s>", "[SQL]", "[/SQL]"]
         for artifact in artifacts:
+            self.logger.debug(f"Removing artifact: {artifact}")
             sql_query = sql_query.replace(artifact, " ")
 
         # 2. Extract from Markdown code blocks if present (regex is safer than simple replace)
@@ -71,6 +72,7 @@ class QuerySession:
         code_block_pattern = r"```(?:sql)?\s*(.*?)```"
         match = re.search(code_block_pattern, sql_query, re.DOTALL | re.IGNORECASE)
         if match:
+            self.logger.debug("Found code block in LLM response")
             sql_query = match.group(1)
 
         # 3. Locate the start of the actual SQL query
@@ -84,6 +86,7 @@ class QuerySession:
         for kw in keywords:
             idx = upper_query.find(kw)
             if idx != -1 and idx < start_index:
+                self.logger.debug(f"Found keyword: {kw}")
                 start_index = idx
                 found_keyword = True
         
@@ -93,6 +96,7 @@ class QuerySession:
         # 4. Truncate after the last semicolon
         # This removes post-query explanations like "This query calculates..."
         if ";" in sql_query:
+            self.logger.debug("Truncating after last semicolon")
             sql_query = sql_query[: sql_query.rfind(";") + 1]
 
         # 5. Final whitespace cleanup
@@ -101,10 +105,12 @@ class QuerySession:
         # 6. Safety fallback: if the query became empty (e.g., weird parsing), 
         # try to recover the original stripped version
         if not sql_query and raw_llm_response.strip():
+            self.logger.debug("Query became empty, trying to recover original")
             sql_query = raw_llm_response.replace("<0x0A>", " ").strip()
 
         # 7. Ensure it ends with a semicolon
         if sql_query and not sql_query.endswith(";"):
+            self.logger.debug("Adding missing semicolon")
             sql_query += ";"
 
         self.sql_code = sql_query
@@ -134,16 +140,22 @@ class QuerySession:
 
         if isinstance(self.execution_result, str):
             msg = self.execution_result.lower()
-
+            self.logger.debug(f"Classifying runtime error: {msg}")
+            
             if "unknown column" in msg:
+                self.logger.debug("Unknown column error")
                 self.error_type = ErrorType.UNKNOWN_COLUMN
             elif "unknown table" in msg:
+                self.logger.debug("Unknown table error")
                 self.error_type = ErrorType.UNKNOWN_TABLE
             elif "ambiguous" in msg:
+                self.logger.debug("Ambiguous column error")
                 self.error_type = ErrorType.AMBIGUOUS_COLUMN
             elif "join" in msg:
+                self.logger.debug("Bad join error")
                 self.error_type = ErrorType.BAD_JOIN
             else:
+                self.logger.debug("Generic runtime error")
                 self.error_type = ErrorType.GENERIC_RUNTIME_ERROR
             return
 
@@ -155,14 +167,19 @@ class QuerySession:
     # --------------------------------------------------
 
     def _detect_knowledge_scope(self) -> None:
+        self.logger.debug("Detecting knowledge scope")
+
         if self.valid_syntax is False:
+            self.logger.debug("Syntax error detected")
             self.knowledge_scope = KnowledgeScope.SYNTAX
             return
 
         if self._detect_structural_issue():
+            self.logger.debug("Structural issue detected")
             self.knowledge_scope = KnowledgeScope.STRUCTURAL
             return
 
+        self.logger.debug("Schema-specific issue detected")
         self.knowledge_scope = KnowledgeScope.SCHEMA_SPECIFIC
 
     def _detect_structural_issue(self) -> bool:
@@ -186,13 +203,16 @@ class QuerySession:
         self.validate_syntax()
 
         if self.valid_syntax is False:
+            self.logger.debug("Syntax error detected")
             self.status = QueryStatus.SYNTAX_ERROR
             self.error_type = ErrorType.SYNTAX_ERROR
             self._detect_knowledge_scope()
             return
 
         if self.execution_status and self.execution_status is not QueryStatus.SUCCESS:
+            self.logger.debug("Runtime error detected")
             if self.execution_status is QueryStatus.TIMEOUT_ERROR:
+                self.logger.debug("Timeout error detected")
                 self.status = QueryStatus.TIMEOUT_ERROR
             else:
                 self.status = QueryStatus.RUNTIME_ERROR
@@ -201,10 +221,12 @@ class QuerySession:
             return
 
         if self.llm_feedback is not None and self.llm_feedback.feedback_status is FeedbackStatus.CORRECT:
+            self.logger.debug("Correct feedback detected")
             self.status = QueryStatus.SUCCESS
             self.error_type = None
 
         elif self.llm_feedback is not None and self.llm_feedback.feedback_status is FeedbackStatus.INCORRECT:
+            self.logger.debug("Incorrect feedback detected")
             self.status = QueryStatus.INCORRECT
             self.error_type = (
                 self.llm_feedback.error_category

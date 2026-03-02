@@ -126,7 +126,7 @@ class QueryOrchestrator(BaseOrchestrator):
                     consecutive_runtime_errors += 1
 
                     # On second consecutive runtime error → ask explanation
-                    if False and consecutive_runtime_errors >= 2:
+                    if consecutive_runtime_errors >= 2:
                         self.current_query.initialize_llm_feedback()
                         self.logger.info("📝 Asking for explanation...")
                         prompt = self._build_feedback_prompt("explanation")

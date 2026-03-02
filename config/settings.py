@@ -48,7 +48,7 @@ QUERY_GENERATION_MODELS = {
         "id": "sqlcoder-34b-alpha",
         "api_type": "completion",      # 🔥 key addition
         "api_endpoint": "/completions",
-        "log_file": "sqlcoder.log",
+        "log_file": "sqlcoder",
     },
     "Qwen3-Coder-Next": {
         "provider": "openwebui",
