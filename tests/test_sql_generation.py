@@ -156,7 +156,8 @@ def generator_thread(
                     query_store=query_store,
                     model_name=model_key,
                     max_attempts=3,
-                    instance_path=TMP_DIR
+                    instance_path=TMP_DIR,
+                    testing=True
                 )
 
                 logger.debug(f"Starting generation")

@@ -19,21 +19,21 @@ class PromptBuilder:
 
     def explanation_prompt(self, sql: str, context: str, execution_output: str):
         template = f"""
-    You are an expert SQL debugger.
-    Explain why the following SQL query produced this runtime error.
-    Be concise and do NOT rewrite the query.
+You are an expert SQL debugger.
+Explain why the following SQL query produced this runtime error.
+Be concise and do NOT rewrite the query.
 
-    --- CONTEXT ---
-    {context}
+--- CONTEXT ---
+{context}
 
-    --- SQL QUERY ---
-    {sql}
+--- SQL QUERY ---
+{sql}
 
-    --- RUNTIME ERROR ---
-    {execution_output}
+--- RUNTIME ERROR ---
+{execution_output}
 
-    Provide a clear explanation of the cause.
-    """
+Provide a clear explanation of the cause.
+"""
         self._log_prompt("explanation_prompt", template)
         return template
 
@@ -94,17 +94,17 @@ Rules:
         self.logger.debug("Schema context length: %s characters", len(schema_context))
 
         template = f""" 
-    You are an expert SQL database assistant.
-    You will be provided with:
-    1. The partial description of the database schema (only the relevant tables)
-    2. The user's request in natural language.
-    3. Examples of previous successful SQL queries
+You are an expert SQL database assistant.
+You will be provided with:
+1. The partial description of the database schema (only the relevant tables)
+2. The user's request in natural language.
+3. Examples of previous successful SQL queries
 
-    Your task is to return a **single SQL query** that satisfies the request,
-    using the provided tables and columns.
+Your task is to return a **single SQL query** that satisfies the request,
+using the provided tables and columns.
 
-    === SCHEMA ===
-    {schema_context}
+=== SCHEMA ===
+{schema_context}
     
     """    
         if join_hints: 
@@ -116,18 +116,18 @@ Rules:
 
         template = template + f"""
 
-    === REQUEST ===
-    {user_request}
+=== REQUEST ===
+{user_request}
 
-    IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
-    - Do NOT use columns outside the schema
-    - Do NOT invent field or table names that don't exist.
-    - Always qualify columns when joining
-    - Do NOT use SELECT *
-    - Do NOT add WHERE clauses or conditions unless explicitly requested.
-    - Do NOT join tables unless necessary for the request.
-    - If using aggregates, include GROUP BY  
-    """
+IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
+- Do NOT use columns outside the schema
+- Do NOT invent field or table names that don't exist.
+- Always qualify columns when joining
+- Do NOT use SELECT *
+- Do NOT add WHERE clauses or conditions unless explicitly requested.
+- Do NOT join tables unless necessary for the request.
+- If using aggregates, include GROUP BY  
+"""
     
         if previous_fail:
             if isinstance(previous_fail, list):
@@ -148,16 +148,16 @@ Rules:
 
         template = template + f"""
 
-    Before writing the SQL query, internally determine:
-    - Which tables are required
-    - How they are joined
-    - Whether aggregation or grouping is required
-    - Which columns are selected
+Before writing the SQL query, internally determine:
+- Which tables are required
+- How they are joined
+- Whether aggregation or grouping is required
+- Which columns are selected
 
-    Do NOT output this reasoning.
-    Only output the final SQL query.
-        
-    SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
+Do NOT output this reasoning.
+Only output the final SQL query.
+    
+SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
     """
         self._log_prompt("query_generation_prompt", template)
         return template
@@ -167,38 +167,38 @@ Rules:
         Create prompt for schema generation.
         """
         template = """
-    You are an expert database schema analyzer. Your task is to convert SQL DDL statements into a structured JSON schema.
+You are an expert database schema analyzer. Your task is to convert SQL DDL statements into a structured JSON schema.
 
-    IMPORTANT:
-    - You MUST return ONLY valid JSON.
-    - The JSON must be syntactically correct (no missing commas, braces, or quotes).
-    - Every object and array must be properly closed.
-    - Do NOT include comments, code blocks, or explanations.
+IMPORTANT:
+- You MUST return ONLY valid JSON.
+- The JSON must be syntactically correct (no missing commas, braces, or quotes).
+- Every object and array must be properly closed.
+- Do NOT include comments, code blocks, or explanations.
 
-    Required JSON format:
+Required JSON format:
+{{
+"tables": [
     {{
-    "tables": [
-        {{
-        "name": "table_name",
-        "columns": [
-            {{"name": "column_name", "type": "SQL_TYPE", "constraints": ["PRIMARY KEY", "NOT NULL", ...]}}
-        ]
-        }}
-    ],
-    "semantic_notes": []
+    "name": "table_name",
+    "columns": [
+        {{"name": "column_name", "type": "SQL_TYPE", "constraints": ["PRIMARY KEY", "NOT NULL", ...]}}
+    ]
     }}
+],
+"semantic_notes": []
+}}
 
-    Rules:
-    - Extract table names from CREATE TABLE statements
-    - Extract column names, types, and constraints
-    - Map SQL types directly (VARCHAR2 → VARCHAR2, NUMBER → NUMBER, etc.)
-    - Include constraints like PRIMARY KEY, NOT NULL, UNIQUE, DEFAULT, REFERENCES
-    - For foreign keys, use "REFERENCES" constraint
+Rules:
+- Extract table names from CREATE TABLE statements
+- Extract column names, types, and constraints
+- Map SQL types directly (VARCHAR2 → VARCHAR2, NUMBER → NUMBER, etc.)
+- Include constraints like PRIMARY KEY, NOT NULL, UNIQUE, DEFAULT, REFERENCES
+- For foreign keys, use "REFERENCES" constraint
 
-    SQL DDL to process:
-    \"\"\"{raw_schema_text}\"\"\"
+SQL DDL to process:
+\"\"\"{raw_schema_text}\"\"\"
 
-    Return ONLY the JSON object:
+Return ONLY the JSON object:
     """
         self._log_prompt("schema_generation_prompt", template)
         return template
@@ -208,33 +208,33 @@ Rules:
         Create prompt for schema update.
         """
         template = f"""
-    You are an expert database schema analyst.
+You are an expert database schema analyst.
 
-    You have been provided with:
-    1. The CURRENT canonical schema (JSON format)
-    2. NEW text describing additional tables or modifications to existing tables
+You have been provided with:
+1. The CURRENT canonical schema (JSON format)
+2. NEW text describing additional tables or modifications to existing tables
 
-    Your task:
-    - Analyze the new text to identify any NEW tables or MODIFIED columns in existing tables
-    - Preserve all existing tables and columns from the current schema
-    - Add only the NEW tables or merge modifications into existing tables
-    - Return a SINGLE, complete JSON schema that includes both the current schema and the updates
+Your task:
+- Analyze the new text to identify any NEW tables or MODIFIED columns in existing tables
+- Preserve all existing tables and columns from the current schema
+- Add only the NEW tables or merge modifications into existing tables
+- Return a SINGLE, complete JSON schema that includes both the current schema and the updates
 
-    IMPORTANT RULES:
-    - Do NOT remove any existing tables or columns
-    - If a table already exists, ADD new columns or UPDATE existing ones (don't duplicate)
-    - Maintain the same JSON structure: {{"database": "<database_name>", "tables": [...], "semantic_notes": [...]}}
-    - Return ONLY the updated JSON schema, no other text or explanations
-    - Each table must have: "name", "columns" (array)
-    - Each column must have: "name", "type", "constraints" (array)
+IMPORTANT RULES:
+- Do NOT remove any existing tables or columns
+- If a table already exists, ADD new columns or UPDATE existing ones (don't duplicate)
+- Maintain the same JSON structure: {{"database": "<database_name>", "tables": [...], "semantic_notes": [...]}}
+- Return ONLY the updated JSON schema, no other text or explanations
+- Each table must have: "name", "columns" (array)
+- Each column must have: "name", "type", "constraints" (array)
 
-    === CURRENT SCHEMA ===
-    {current_schema}
+=== CURRENT SCHEMA ===
+{current_schema}
 
-    === NEW TEXT ===
-    {raw_schema_text}
+=== NEW TEXT ===
+{raw_schema_text}
 
-    Return the UPDATED schema JSON:
+Return the UPDATED schema JSON:
     """
         self._log_prompt("schema_update_prompt", template)
         return template
@@ -244,14 +244,14 @@ Rules:
         Create prompt for error classification.
         """
         template = f"""
-    System: You are an assistant that classifies schema updates.
-    User: Text provided by the user:
-    {text}
+System: You are an assistant that classifies schema updates.
+User: Text provided by the user:
+{text}
 
-    Question: is this text
-    (A) a structural modification (addition or change of tables/columns/types)?
-    (B) a description or semantic note?
-    Answer only with "A" or "B".
+Question: is this text
+(A) a structural modification (addition or change of tables/columns/types)?
+(B) a description or semantic note?
+Answer only with "A" or "B".
     """
         self._log_prompt("update_classification_prompt", template)
         return template
