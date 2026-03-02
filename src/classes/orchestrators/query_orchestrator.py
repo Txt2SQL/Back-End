@@ -135,17 +135,14 @@ class QueryOrchestrator(BaseOrchestrator):
                         if self.current_query.llm_feedback is None:
                             self.logger.info("📝 Create LLMFeedback object!")
                             raise Exception("LLMFeedback object not found")
-                        self.current_query.llm_feedback.explanation = response
-                        self.current_query.llm_feedback.error_category = ErrorType.RUNTIME_ERROR
-
-
-                else:
-                    consecutive_runtime_errors = 0
+                        self.current_query.set_explanation_feedback(response)
 
                 # --------------------------------------------------
                 # SUCCESS case → ask correctness evaluation
                 # --------------------------------------------------
                 if self.current_query.status is QueryStatus.SUCCESS:
+                    
+                    consecutive_runtime_errors = 0
                     
                     self.logger.info("📝 Query executed successfully")
 

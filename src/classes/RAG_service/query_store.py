@@ -86,7 +86,7 @@ class QueryStore(VectorStore):
             k=retrieval_pool,
             filter={
                 "$and": [
-                    {"status": {"$ne": "OK"}},
+                    {"status": {"$ne": "SUCCESS"}},
                     {"knowledge_scope": "STRUCTURAL"}
                 ]
             } # pyright: ignore[reportArgumentType]
@@ -217,35 +217,64 @@ class QueryStore(VectorStore):
         base = f"{query.user_request}|{query.sql_code}|{query.timestamp}"
         return str(abs(hash(base)))
     
-    def print_collection(self):
+    def print_collection(self) -> str:
         """
-        Prints the 15 most recent documents stored in the query feedback vector store.
+        Returns a string of the 15 most recent documents stored in the query feedback vector store.
         Useful for debugging and inspection.
         """
-        print("\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n")
+        output = ["\n📦 QUERY FEEDBACK VECTOR STORE CONTENT (15 Most Recent)\n"]
 
         # Recupera TUTTI i documenti
         data = self._store.get()
 
         if not data or not data.get("documents"):
-            print("\n⚠️ Query vector store is empty.")
-            return
+            return "\n⚠️ Query vector store is empty."
 
         # Crea lista di tuple (doc, metadata) e ordina per timestamp decrescente
-        docs_with_metadata = list(zip(data["documents"], data["metadatas"]))
+        docs_with_metadata = list(zip(data["documents"], data["metadatas"])) # type: ignore
         docs_with_metadata.sort(
             key=lambda x: x[1].get("timestamp", 0),
             reverse=True
         )
         
         # Prendi solo i 15 più recenti
-        docs_with_metadata = docs_with_metadata[:15]
+        recent_docs = docs_with_metadata[:15]
 
-        for idx, (doc, metadata) in enumerate(docs_with_metadata, start=1):
-            print(f"--- Entry #{idx} ------------------------------")
-            print(doc)
-            print("\nMetadata:")
+        for idx, (doc, metadata) in enumerate(recent_docs, start=1):
+            output.append(f"--- Entry #{idx} ------------------------------")
+            output.append(str(doc))
+            output.append("\nMetadata:")
             for k, v in metadata.items():
                 if k != "sql_query":
-                    print(f"  {k}: {v}")
-            print("---------------------------------------------\n")
+                    output.append(f"  {k}: {v}")
+            output.append("---------------------------------------------\n")
+
+        return "\n".join(output)
+    
+    def get_recent_queries(self, database_name, limit=10):
+        if limit <= 0:
+            return []
+
+        metadata_keys = ("database_name", "database", "db_name")
+        data = None
+
+        # Try common metadata keys without scanning the whole collection first.
+        for key in metadata_keys:
+            candidate = self._store.get(
+                where={key: database_name},
+                include=["documents", "metadatas"],
+            )
+            if candidate and candidate.get("documents"):
+                data = candidate
+                break
+
+        if not data or not data.get("documents"):
+            return []
+
+        docs_with_metadata = list(zip(data["documents"], data["metadatas"]))
+        docs_with_metadata.sort(key=lambda x: x[1].get("timestamp", 0), reverse=True)
+
+        return [
+            Document(page_content=doc, metadata=metadata)
+            for doc, metadata in docs_with_metadata[:limit]
+        ]

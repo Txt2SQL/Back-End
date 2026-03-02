@@ -12,6 +12,17 @@ from src.classes.domain_states.feedback import LLMFeedback
 from src.classes.domain_states.records import Records
 from src.classes.logger import LoggerManager
 
+_SELECT_STAR_RE = re.compile(r"\bSELECT\s+(?:DISTINCT\s+)?(?:\*|\w+\.\*)\b", re.IGNORECASE)
+_JOIN_RE = re.compile(
+    r"\b(?:(INNER|LEFT(?:\s+OUTER)?|RIGHT(?:\s+OUTER)?|FULL(?:\s+OUTER)?|CROSS|NATURAL)\s+)?JOIN\b",
+    re.IGNORECASE,
+)
+_JOIN_CONDITION_RE = re.compile(r"\b(?:ON|USING)\b", re.IGNORECASE)
+_AGG_FUNC_RE = re.compile(r"\b(?:SUM|AVG|MIN|MAX|COUNT)\s*\(", re.IGNORECASE)
+_GROUP_BY_RE = re.compile(r"\bGROUP\s+BY\b", re.IGNORECASE)
+_WINDOW_OVER_RE = re.compile(r"\bOVER\s*\(", re.IGNORECASE)
+_HAVING_RE = re.compile(r"\bHAVING\b", re.IGNORECASE)
+
 
 class QuerySession:
 
@@ -186,12 +197,26 @@ class QuerySession:
         if not self.sql_code:
             return False
 
-        sql_upper = self.sql_code.upper()
+        sql = self.sql_code
+
+        has_join_requiring_condition = False
+        for match in _JOIN_RE.finditer(sql):
+            modifier = match.group(1)
+            if not modifier:
+                has_join_requiring_condition = True
+                break
+            normalized = modifier.upper()
+            if normalized not in {"CROSS", "NATURAL"}:
+                has_join_requiring_condition = True
+                break
+
+        has_group_by = _GROUP_BY_RE.search(sql) is not None
 
         return (
-            "SELECT *" in sql_upper
-            or ("JOIN" in sql_upper and " ON " not in sql_upper)
-            or ("SUM(" in sql_upper and "GROUP BY" not in sql_upper)
+            _SELECT_STAR_RE.search(sql) is not None
+            or (has_join_requiring_condition and _JOIN_CONDITION_RE.search(sql) is None)
+            or (_AGG_FUNC_RE.search(sql) is not None and not has_group_by and _WINDOW_OVER_RE.search(sql) is None)
+            or (_HAVING_RE.search(sql) is not None and not has_group_by)
         )
 
     # --------------------------------------------------
@@ -253,6 +278,11 @@ class QuerySession:
         else:
             raise ValueError("No LLM feedback available")
             
+    def set_explanation_feedback(self, explanation: str) -> None:
+        if self.llm_feedback is None:
+            self.llm_feedback = LLMFeedback()
+        self.llm_feedback.explanation = explanation
+        self.llm_feedback.feedback_status = FeedbackStatus.INCORRECT
 
     # --------------------------------------------------
     # OUTPUT

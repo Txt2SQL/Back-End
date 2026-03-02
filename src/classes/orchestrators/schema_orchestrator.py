@@ -44,7 +44,7 @@ class SchemaOrchestrator(BaseOrchestrator):
         if choice is None:
             return None
         elif SCHEMA_MODELS[choice]["provider"] == "openwebui":
-            return OpenWebUILLM(model=SCHEMA_MODELS[choice]["id"])
+            return OpenWebUILLM(model_config=SCHEMA_MODELS[choice])
         else:
             return AzureLLM(model=SCHEMA_MODELS[choice]["id"])
     

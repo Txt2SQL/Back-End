@@ -28,5 +28,5 @@ class VectorStore(ABC):
         self._store.delete_collection()
     
     @abstractmethod
-    def print_collection(self):
+    def print_collection(self) -> str:
         pass

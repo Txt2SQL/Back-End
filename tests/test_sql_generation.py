@@ -397,6 +397,7 @@ def _write_statistics(
     total_tests = 0
     successful_executions = 0
     correct_queries = 0
+    incorrect_queries = 0
     runtime_errors = 0
     syntax_errors = 0
     other_errors = 0
@@ -409,6 +410,7 @@ def _write_statistics(
     model_stats = {
         model: {
             "correct": 0,
+            "incorrect": 0,
             "runtime": 0,
             "syntax": 0,
             "executions": 0,
@@ -439,6 +441,9 @@ def _write_statistics(
                 if status == QueryStatus.SUCCESS.value:
                     correct_queries += 1
                     model_stats[model]["correct"] += 1
+                elif status == QueryStatus.INCORRECT.value:
+                    incorrect_queries += 1
+                    model_stats[model]["incorrect"] += 1
                 elif status == QueryStatus.RUNTIME_ERROR.value:
                     runtime_errors += 1
                     model_stats[model]["runtime"] += 1
@@ -473,7 +478,6 @@ def _write_statistics(
         ),
     )
 
-    incorrect_queries = total_tests - correct_queries
     total_correct_percent = (correct_queries / total_tests * 100) if total_tests > 0 else 0
     
     # Calculate global averages for footers

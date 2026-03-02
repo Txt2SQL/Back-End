@@ -149,16 +149,21 @@ class SchemaStore(VectorStore):
 
         return schema_context, table_names
     
-    def print_collection(self):
-        print("\n🔎 Current content of the vector store:")
+    def print_collection(self) -> str:
+        output = ["\n🔎 Current content of the vector store:"]
         all_docs = self._store.get(include=["metadatas", "documents"])
 
+        if not all_docs or not all_docs.get("documents"):
+            return "\n⚠️ Schema vector store is empty."
+
         for i, (doc_text, meta) in enumerate(zip(all_docs["documents"], all_docs["metadatas"])):  # type: ignore
-            print(f"\n🧱 Document #{i+1}")
-            print("📘 Table:%s", meta.get("table", "N/A"))
-            print("📄 Content:")
-            print(doc_text)
-            print("-" * 50)
+            output.append(f"\n🧱 Document #{i+1}")
+            output.append(f"📘 Table: {meta.get('table', 'N/A')}")
+            output.append("📄 Content:")
+            output.append(str(doc_text))
+            output.append("-" * 50)
             
             if not doc_text:
-                print(f"⚠️ Document #{i+1} is empty.")
+                output.append(f"⚠️ Document #{i+1} is empty.")
+
+        return "\n".join(output)

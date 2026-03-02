@@ -83,3 +83,23 @@ class Records:
     
     def __getitem__(self, index):
         return self.rows[index]
+    
+    def to_dict(self) -> List[dict[str, Any]]:
+        if not self.rows:
+            return []
+
+        first = self.rows[0]
+        if isinstance(first, dict):
+            return self.rows
+
+        if isinstance(first, tuple):
+            num_cols = len(first)
+            headers = [f"col_{idx + 1}" for idx in range(num_cols)]
+            return [dict(zip(headers, row)) for row in self.rows]
+
+        if isinstance(first, list):
+            num_cols = len(first)
+            headers = [f"col_{idx + 1}" for idx in range(num_cols)]
+            return [dict(zip(headers, row)) for row in self.rows]
+
+        return [{"col_1": row} for row in self.rows]

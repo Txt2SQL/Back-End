@@ -1,5 +1,5 @@
 """Project-wide settings constants."""
-import logging
+import logging, os
 
 SCHEMA_MODELS = {
     "gpt-5-mini": {
@@ -8,11 +8,19 @@ SCHEMA_MODELS = {
     },
     "Qwen2.5-Coder": {
         "provider": "openwebui",
-        "id": "ollama@isarco02.MHKetbi/Qwen2.5-Coder-32B-Instruct:q4_K_S"
+        "id": "ollama@isarco02.MHKetbi/Qwen2.5-Coder-32B-Instruct:q4_K_S",
+        "api_type": "chat",      # 🔥 key addition
+        "api_key": "CHAT_API_KEY",
+        "api_base": "CHAT_ADDRESS",
+        "api_endpoint": "/api/chat/completions",
     },
     "DeepSeek-V2.5": {
         "provider": "openwebui",
         "id": "DeepSeek-V2.5-Q6_K-00001-of-00005.gguf",
+        "api_type": "chat",      # 🔥 key addition
+        "api_key": "CHAT_API_KEY",
+        "api_base": "CHAT_ADDRESS",
+        "api_endpoint": "/api/chat/completions",
     }
 }
 
@@ -73,7 +81,7 @@ ERROR_CATEGORIES = {
         "does not exist",
         "invalid column",
     ],
-    "JOIN_ERROR": [
+    "BAD_JOIN": [
         "missing join",
         "wrong join",
         "incorrect join",
@@ -115,3 +123,11 @@ LOGGER_LEVEL = logging.INFO
 LOGINFO_SEPARATOR = "//" *80
 MAX_OUTPUT_LENGTH = 1000  # Truncate long requests in output
 TIMEOUT_PER_REQUEST = 600   # 10 minutes timeout per model per request
+
+# API Configuration
+API_HOST = os.getenv("API_HOST", "0.0.0.0")
+API_PORT = int(os.getenv("API_PORT", "8000"))
+API_DEBUG = os.getenv("API_DEBUG", "False").lower() == "true"
+
+# CORS Configuration
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")

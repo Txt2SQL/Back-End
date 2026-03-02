@@ -14,7 +14,11 @@ from .settings import (
     LOGGER_LEVEL,
     LOGINFO_SEPARATOR,
     MAX_OUTPUT_LENGTH,
-    TIMEOUT_PER_REQUEST
+    TIMEOUT_PER_REQUEST,
+    API_HOST,
+    API_PORT,
+    API_DEBUG,
+    CORS_ORIGINS,
 )
 
 from .paths import (
@@ -41,6 +45,10 @@ __all__ = [
     "LOGINFO_SEPARATOR",
     "MAX_OUTPUT_LENGTH",
     "TIMEOUT_PER_REQUEST",
+    "API_HOST",
+    "API_PORT",
+    "API_DEBUG",
+    "CORS_ORIGINS",
     
     # Paths exports
     "PROJECT_ROOT",
