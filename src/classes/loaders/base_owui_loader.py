@@ -1,25 +1,23 @@
 import socket
 import requests
+from abc import abstractmethod
 from urllib.parse import urlparse
 from pathlib import Path
+from typing import Type
 from .exceptions import ConnectionTestError
 from src.classes.loaders.base_loader import BaseLoader
 
 
 
 
-class OWUILoader(BaseLoader):
+class BaseOWUILoader(BaseLoader):
 
-    def __init__(self):
-        values = {
-            "SERVER_ADDRESS": str,
-            "API_KEY": str,
-        }
-
+    def __init__(self, values: dict[str, Type]):
         super().__init__(".openwebui.env", values)
-
+        
     def _test_connection(self):
-        server_url = self.config["SERVER_ADDRESS"]
+        self.config = self.set_default_names()
+        server_url = self.config["api_base"]
 
         # -------------------------------------------------
         # 1️⃣ DNS CHECK
@@ -62,3 +60,7 @@ class OWUILoader(BaseLoader):
             raise ConnectionTestError(
                 f"HTTP connection error: {e}"
             )
+    
+    @abstractmethod
+    def set_default_names(self) -> dict[str, str]:
+        pass

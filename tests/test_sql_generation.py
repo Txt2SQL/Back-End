@@ -133,7 +133,7 @@ def generator_thread(
     LoggerManager.set_thread_logger(logger)
 
     try:
-        logger.info(f"Started generator thread for model: {model_key}")
+        logger.info(f"Started generator thread for model: {model_key}, mode: {schema.source.value}")
         logger.info(f"Log file: {log_file}")
 
         for idx, request in enumerate(requests, start=1):

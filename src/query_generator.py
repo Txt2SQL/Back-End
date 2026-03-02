@@ -1,7 +1,7 @@
 import hashlib, json, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.classes.domain_states.schema import Schema
+from src.classes.domain_states import Schema, Records
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import SchemaStore
@@ -10,65 +10,6 @@ from src.classes.logger import LoggerManager
 
 LoggerManager.setup_project_logger()
 logger = LoggerManager.get_logger(__name__)
-
-
-def pretty_print_query_preview(rows: list | None | str, max_rows: int = 5, max_col_width: int = 40) -> None:
-    """
-    Print a compact, fancy preview of fetched rows.
-    """
-    if rows is None:
-        print("\n📭 Query executed successfully, but no rows were returned.")
-        return
-
-    if isinstance(rows, str):
-        print("\n📭 Query executed, but output is not row data.")
-        return
-
-    if not rows:
-        print("\n📭 Query executed successfully, but no rows were returned.")
-        return
-
-    sample = rows[:max_rows]
-    normalized = [
-        list(row) if isinstance(row, tuple) else ([row] if not isinstance(row, list) else row)
-        for row in sample
-    ]
-    num_cols = max(len(row) for row in normalized) if normalized else 0
-
-    headers = [f"col_{idx + 1}" for idx in range(num_cols)]
-
-    def fmt(value):
-        value_str = str(value)
-        return value_str if len(value_str) <= max_col_width else value_str[: max_col_width - 3] + "..."
-
-    col_widths = [len(header) for header in headers]
-    for row in normalized:
-        for idx in range(num_cols):
-            cell = fmt(row[idx] if idx < len(row) else "")
-            col_widths[idx] = max(col_widths[idx], len(cell))
-
-    border = "┼".join("─" * (width + 2) for width in col_widths)
-    top = "┌" + border.replace("┼", "┬") + "┐"
-    mid = "├" + border + "┤"
-    bottom = "└" + border.replace("┼", "┴") + "┘"
-
-    def render_row(values):
-        cells = []
-        for idx in range(num_cols):
-            value = fmt(values[idx] if idx < len(values) else "")
-            cells.append(f" {value:<{col_widths[idx]}} ")
-        return "│" + "│".join(cells) + "│"
-
-    print(f"\n✨ Query preview ({len(rows)} row(s) fetched, showing up to {max_rows}):")
-    print(top)
-    print(render_row(headers))
-    print(mid)
-    for row in normalized:
-        print(render_row(row))
-    print(bottom)
-
-    if len(rows) > max_rows:
-        print(f"… and {len(rows) - max_rows} more row(s).")
 
 
 def select_model() -> str:
@@ -222,8 +163,10 @@ def main():
             print(query_session.sql_code)
             print("\n---------------------------------------------")
 
-            if query_session.execution_status == "SUCCESS":
-                pretty_print_query_preview(query_session.execution_result)
+            if query_session.execution_status == "SUCCESS" and isinstance(
+                query_session.execution_result, Records
+            ):
+                print(f"\n✅ Execution successful: {query_session.execution_result.get_preview()}")
             else:
                 print(f"\n❌ Execution failed: {query_session.execution_result}")
 

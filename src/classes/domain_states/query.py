@@ -1,4 +1,4 @@
-import sqlglot
+import sqlglot, re
 import time
 from typing import Any, List, Optional, Union
 
@@ -60,16 +60,51 @@ class QuerySession:
 
         sql_query = raw_llm_response
 
-        if "```" in sql_query:
-            sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+        # 1. Remove specific artifacts found in raw model output (like <0x0A>)
+        # These are often literal strings representing control characters
+        artifacts = ["<0x0A>", "<0x0D>", "<s>", "</s>", "[SQL]", "[/SQL]"]
+        for artifact in artifacts:
+            sql_query = sql_query.replace(artifact, " ")
 
+        # 2. Extract from Markdown code blocks if present (regex is safer than simple replace)
+        # Looks for ```sql ... ``` or just ``` ... ```
+        code_block_pattern = r"```(?:sql)?\s*(.*?)```"
+        match = re.search(code_block_pattern, sql_query, re.DOTALL | re.IGNORECASE)
+        if match:
+            sql_query = match.group(1)
+
+        # 3. Locate the start of the actual SQL query
+        # Models often chat before the query: "Here is the code: SELECT..."
+        # We look for the first occurrence of common SQL starting keywords.
+        keywords = ["SELECT", "WITH", "INSERT", "UPDATE", "DELETE", "SHOW", "DESCRIBE"]
+        start_index = len(sql_query)
+        found_keyword = False
+
+        upper_query = sql_query.upper()
+        for kw in keywords:
+            idx = upper_query.find(kw)
+            if idx != -1 and idx < start_index:
+                start_index = idx
+                found_keyword = True
+        
+        if found_keyword:
+            sql_query = sql_query[start_index:]
+
+        # 4. Truncate after the last semicolon
+        # This removes post-query explanations like "This query calculates..."
         if ";" in sql_query:
-            sql_query = sql_query[: sql_query.rfind(";") + 1].strip()
+            sql_query = sql_query[: sql_query.rfind(";") + 1]
 
-        if not sql_query:
-            raise ValueError("LLM returned empty SQL")
+        # 5. Final whitespace cleanup
+        sql_query = sql_query.strip()
 
-        if not sql_query.endswith(";"):
+        # 6. Safety fallback: if the query became empty (e.g., weird parsing), 
+        # try to recover the original stripped version
+        if not sql_query and raw_llm_response.strip():
+            sql_query = raw_llm_response.replace("<0x0A>", " ").strip()
+
+        # 7. Ensure it ends with a semicolon
+        if sql_query and not sql_query.endswith(";"):
             sql_query += ";"
 
         self.sql_code = sql_query

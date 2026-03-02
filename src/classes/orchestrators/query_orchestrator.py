@@ -76,7 +76,7 @@ class QueryOrchestrator(BaseOrchestrator):
         if model_config["provider"] == "azure":
             return AzureLLM(model_name)
 
-        return OpenWebUILLM(model_name)
+        return OpenWebUILLM(model_config)
 
     # --------------------------------------------------
     # MAIN GENERATION LOOP
@@ -84,7 +84,7 @@ class QueryOrchestrator(BaseOrchestrator):
 
     def generation(self, user_request: str) -> QuerySession:
         
-        self.logger.info("📝 Getting inside the query generation...")
+        self.logger.info("📝 Getting inside the query generation (mode: %s)...", self.schema.source.value)
 
         self._init_generation_context(user_request)
 
@@ -103,14 +103,15 @@ class QueryOrchestrator(BaseOrchestrator):
             if self.current_query.valid_syntax is False:
                 
                 self.logger.info("📝 Syntax validation failed")
+            else:
+                self.logger.info("📝 Syntax validation passed")
 
-                self.current_query.evaluate()
-                continue
+                if self.schema.source == SchemaSource.TEXT:
+                    self.logger.info("📝 Skipping execution for text source")
+                    break
             
-            self.logger.info("📝 Syntax validation passed")
-
             if self.schema.source == SchemaSource.MYSQL:
-                self.logger.info("📝 Executing query...")
+                self.logger.info("📝 Detected MySQL source, starting execution...")
 
                 # --- Execute query ---
                 self._execute_and_evaluate_query()
@@ -125,7 +126,7 @@ class QueryOrchestrator(BaseOrchestrator):
                     consecutive_runtime_errors += 1
 
                     # On second consecutive runtime error → ask explanation
-                    if consecutive_runtime_errors >= 2:
+                    if False and consecutive_runtime_errors >= 2:
                         self.current_query.initialize_llm_feedback()
                         self.logger.info("📝 Asking for explanation...")
                         prompt = self._build_feedback_prompt("explanation")
@@ -137,7 +138,6 @@ class QueryOrchestrator(BaseOrchestrator):
                         self.current_query.llm_feedback.explanation = response
                         self.current_query.llm_feedback.error_category = ErrorType.RUNTIME_ERROR
 
-                    continue
 
                 else:
                     consecutive_runtime_errors = 0
@@ -158,15 +158,15 @@ class QueryOrchestrator(BaseOrchestrator):
 
                     if self.current_query.status is QueryStatus.SUCCESS:
                         self.logger.info("📝 Query evaluated successfully")
-                        return self.current_query
+                        break
 
                     self.logger.info("📝 Query evaluation failed - query was incorrect")
                     # Incorrect query → feedback loop
-                    continue
 
-                self.current_query.attempt += 1
+            self.current_query.attempt += 1
         
         if self.testing and self.schema.source == SchemaSource.TEXT:
+            self.logger.info("Detected testing mode, asking evaluation even if source is text...")
             self.database_client = MySQLClient(self.database_name)
             self.current_query = self.database_client.execute_query(self.current_query)
             self.current_query.evaluate()
@@ -243,6 +243,9 @@ class QueryOrchestrator(BaseOrchestrator):
 
         self.logger.info("Sending generation prompt to LLM...")
         response = self.llm.generate(prompt)
+        
+        self.logger.info("📝 Generation response: \n%s", response)
+        
         self.current_query.clean_sql_from_llm(response)
 
     # --------------------------------------------------

@@ -30,21 +30,31 @@ QUERY_GENERATION_MODELS = {
     "codestral:22b": {
         "provider": "openwebui",
         "id": "ollama@isarco02.codestral:22b",
+        "api_type": "chat",      # 🔥 key addition
+        "api_key": "CHAT_API_KEY",
+        "api_base": "CHAT_ADDRESS",
+        "api_endpoint": "/api/chat/completions",
         "log_file": "codestral",
     },
     "codellama:34b": {
         "provider": "openwebui",
         "id": "ollama@isarco02.codellama:34b",
+        "api_type": "chat",      # 🔥 key addition
+        "api_endpoint": "/api/chat/completions",
         "log_file": "codellama",
     },
-    # "sqlcoder:34b": {
-    #     "provider": "openwebui",
-    #     "id": "sqlcoder-34b-alpha",
-    #     "log_file": "sqlcoder.log",
-    # },
+    "sqlcoder:34b": {
+        "provider": "openwebui",
+        "id": "sqlcoder-34b-alpha",
+        "api_type": "completion",      # 🔥 key addition
+        "api_endpoint": "/completions",
+        "log_file": "sqlcoder.log",
+    },
     "Qwen3-Coder-Next": {
         "provider": "openwebui",
         "id": "qwen3-coder-next",
+        "api_type": "chat",      # 🔥 key addition
+        "api_endpoint": "/api/chat/completions",
         "log_file": "Qwen3-Coder-Next",
     },
 }
