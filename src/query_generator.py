@@ -1,11 +1,13 @@
 import hashlib, json, os, re, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.classes.domain_states import Schema, Records
+from src.classes.domain_states import Schema, Records, SchemaSource
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import SchemaStore
-from config import QUERY_GENERATION_MODELS, DATA_DIR
+from src.classes.clients.mysql_client import MySQLClient
+from src.classes.llm_factory import LLMFactory
+from config import QUERY_MODELS, DATA_DIR
 from src.classes.logger import LoggerManager
 
 LoggerManager.setup_project_logger()
@@ -19,7 +21,7 @@ def select_model() -> str:
     """
     print("\n🤖 Available models:")
 
-    models = list(QUERY_GENERATION_MODELS.keys())
+    models = list(QUERY_MODELS.keys())
     for idx, model_name in enumerate(models, 1):
         print(f"   {idx}. {model_name}")
 
@@ -131,9 +133,10 @@ def main():
         # ------------------------------------------------------
 
         elif choice == "1":
-
+            
             # Select model
             model_name = select_model()
+            llm = LLMFactory(QUERY_MODELS[model_name])
 
             # Select database from schema files
             database_name = select_database_name()
@@ -148,13 +151,20 @@ def main():
             path = DATA_DIR / "schema" / f"{database_name}_schema.json"
             schema = Schema.from_json_file(path)
             schema_store.add_schema(schema)
+            
+            if schema.source is SchemaSource.MYSQL:
+                db_client = MySQLClient()
+                qs = query_store
+            else:
+                db_client = None
+                qs = None
 
             orchestrator = QueryOrchestrator(
-                schema=schema,
-                query_store=query_store,
+                database_name=database_name,
                 schema_store=schema_store,
-                user_request=user_request,
-                model_name=model_name,
+                llm=llm,
+                database_client=db_client,
+                query_store=qs,
             )
 
             query_session = orchestrator.generation(user_request)

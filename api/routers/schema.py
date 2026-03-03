@@ -1,127 +1,99 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from typing import List
+from fastapi import APIRouter, HTTPException, Body
+from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
+from api.models import (
+    SchemaExtractMySQLRequest, 
+    SchemaGenerateTextRequest, 
+    SchemaUpdateRequest
+)
+from api.dependencies import get_schema_store, get_mysql_client, get_llm
 
-from api.models.requests import SchemaAcquisitionRequest, SchemaUpdateRequest
-from api.models.responses import SchemaResponse, ErrorResponse
-from api.services.schema_service import SchemaService
-from api.dependencies import get_schema_store, get_data_dir
-from src.classes.RAG_service.schema_store import SchemaStore
-from pathlib import Path
-from src.classes.logger import LoggerManager
+router = APIRouter(prefix="/schema", tags=["Schema"])
 
-router = APIRouter()
-logger = LoggerManager.get_logger(__name__)
-
-
-@router.post("/acquire", 
-             response_model=SchemaResponse,
-             responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}})
-async def acquire_schema(
-    request: SchemaAcquisitionRequest,
-    background_tasks: BackgroundTasks,
-    schema_store: SchemaStore = Depends(get_schema_store),
-    data_dir: Path = Depends(get_data_dir)
-):
-    """
-    Acquire database schema from source
-    
-    - **database_name**: Name of the database
-    - **source**: Source type ("mysql" or "text")
-    - **user_text**: Schema description (required for TEXT source)
-    - **model_name**: Optional LLM model selection
-    """
-    logger.info(f"Received schema acquisition request for database: {request.database_name}")
-    
-    # Validate text source requires user_text
-    if request.source == "text" and not request.user_text:
-        raise HTTPException(
-            status_code=400, 
-            detail="user_text is required when source is 'text'"
-        )
-    
+@router.post("/mysql")
+def extract_schema_mysql(payload: SchemaExtractMySQLRequest):
+    """Extract schema directly from the connected MySQL database."""
     try:
-        service = SchemaService(
-            database_name=request.database_name,
+        schema_store = get_schema_store()
+        db_client = get_mysql_client(payload.database_name)
+        
+        # Initialize Orchestrator
+        orchestrator = SchemaOrchestrator(
+            database_name=payload.database_name,
             schema_store=schema_store,
-            data_dir=data_dir
+            database_client=db_client,
+            llm=None # LLM not strictly needed for raw extraction, but required by init logic?
+                     # If your Orchestrator REQUIRES an LLM even for SQL extraction, pass one here.
         )
         
-        result = await service.acquire_schema(
-            source=request.source,
-            user_text=request.user_text,
-            model_name=request.model_name
-        )
+        result_schema = orchestrator.acquire_new_schema()
+        return {"message": "Schema extracted successfully", "schema": result_schema.tables}
         
-        return result
-        
-    except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.put("/update",
-            response_model=SchemaResponse,
-            responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}})
-async def update_schema(
-    request: SchemaUpdateRequest,
-    schema_store: SchemaStore = Depends(get_schema_store),
-    data_dir: Path = Depends(get_data_dir)
-):
-    """
-    Update existing schema with new information
-    
-    - **database_name**: Name of the database
-    - **update_text**: Description of schema update
-    - **model_name**: Optional LLM model selection
-    """
-    logger.info(f"Received schema update request for database: {request.database_name}")
-    
+@router.post("/text")
+def generate_schema_text(payload: SchemaGenerateTextRequest):
+    """Generate schema from raw text/DDL using LLM."""
     try:
-        service = SchemaService(
-            database_name=request.database_name,
+        schema_store = get_schema_store()
+        llm = get_llm(payload.model_id, "schema")
+        
+        orchestrator = SchemaOrchestrator(
+            database_name=payload.database_name,
             schema_store=schema_store,
-            data_dir=data_dir
+            llm=llm
         )
         
-        result = await service.update_schema(
-            update_text=request.update_text,
-            model_name=request.model_name
-        )
-        
-        return result
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        result_schema = orchestrator.acquire_new_schema(user_text=payload.raw_text)
+        return {"message": "Schema generated successfully", "schema": result_schema.tables}
+
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.get("/{database_name}",
-            response_model=SchemaResponse,
-            responses={404: {"model": ErrorResponse}})
-async def get_schema(
-    database_name: str,
-    schema_store: SchemaStore = Depends(get_schema_store)
-):
-    """
-    Get schema information for a database
-    """
-    logger.info(f"Fetching schema for database: {database_name}")
-    
+@router.put("")
+def update_schema(payload: SchemaUpdateRequest):
+    """Update existing schema with natural language."""
     try:
-        schema = schema_store.print_collection()
-        if not schema:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Schema not found for database: {database_name}"
-            )
-        return schema
-    except HTTPException:
-        raise
+        schema_store = get_schema_store()
+        llm = get_llm(payload.model_id, "schema")
+        
+        orchestrator = SchemaOrchestrator(
+            database_name=payload.database_name,
+            schema_store=schema_store,
+            llm=llm
+        )
+        
+        # Ensure json is ready (load from disk)
+        if not orchestrator.schema.json_ready:
+             raise HTTPException(status_code=404, detail="Schema not found. Create it first.")
+
+        updated_schema = orchestrator.update_current_schema(user_text=payload.update_text)
+        return {"message": "Schema updated successfully", "schema": updated_schema.tables}
+
     except Exception as e:
-        logger.error(f"Error fetching schema: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("")
+def get_schema(database_name: str):
+    """Retrieve the current JSON schema."""
+    try:
+        # We can reuse the orchestrator to load the schema
+        # or access the Store/Schema object directly.
+        schema_store = get_schema_store()
+        
+        # Assuming SchemaStore has a method to get the dict, 
+        # or we instantiate Schema object to load file.
+        # Here we use the Orchestrator logic to load from file:
+        orchestrator = SchemaOrchestrator(
+             database_name=database_name,
+             schema_store=schema_store,
+             llm=None # Not needed for read-only
+        )
+        
+        if orchestrator.schema.json_ready:
+            return orchestrator.schema.tables
+        else:
+            raise HTTPException(status_code=404, detail="Schema not found")
+
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

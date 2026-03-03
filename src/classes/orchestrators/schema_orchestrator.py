@@ -1,7 +1,7 @@
 import json, os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from typing import Optional
+from typing import Optional, Any
 from pathlib import Path
 from src.classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
 from src.classes.orchestrators.base_orchestrator import BaseOrchestrator
@@ -22,17 +22,21 @@ class SchemaOrchestrator(BaseOrchestrator):
     def __init__(
         self, 
         database_name: str, 
-        llm_model: Optional[str] = None, 
-        source: SchemaSource = SchemaSource.TEXT,  # "mysql" or "text"
+        schema_store: SchemaStore,
+        llm: Optional[BaseLLM] = None, 
+        database_client: Optional[MySQLClient] = None,
         instance_path: Path = DATA_DIR
     ):
-        super().__init__(database_name, instance_path, llm_model)
+        if database_client is None and llm is None:
+            raise ValueError("Either database_client or llm_model must be provided")
         
-        self.source = source
-        self.schema_store = SchemaStore(DATA_DIR)
+        super().__init__(database_name, instance_path, llm)
+        
+        self.database_client = database_client
+        self.schema_store = schema_store
         self.schema: Schema = Schema(
             database_name=self.database_name,
-            schema_source=self.source,
+            schema_source=SchemaSource.MYSQL if database_client else SchemaSource.TEXT,
             path=self.instance_path / "schema"
         )
     
@@ -47,77 +51,11 @@ class SchemaOrchestrator(BaseOrchestrator):
             return OpenWebUILLM(model_config=SCHEMA_MODELS[choice])
         else:
             return AzureLLM(model=SCHEMA_MODELS[choice]["id"])
-    
-    def acquire_schema(self, user_text: Optional[str] = None) -> Schema:
-        """
-        Main method to acquire schema from source.
-        Returns the schema object after processing.
-        """
-        is_schema_update = bool(user_text) and self.schema and self.schema.json_ready
-
-        if self.schema and self.schema.json_ready and not is_schema_update:
-            self.logger.info(f"Schema already exists and is valid for {self.database_name}")
-            return self.schema
-            
-        if self.source == SchemaSource.MYSQL:
-            # Extract schema from MySQL database
-            response = self._extract_from_mysql()
-        elif user_text:
-            response = self._acquire_schema_with_llm(user_text)
-        else:
-            raise ValueError(f"Invalid schema source: {self.source}")
         
-        self.logger.info(f"LLM response: {response}")
-        # Parse response
-        self.schema.parse_response(response)
-        # Store in vector database
-        if self.schema.json_ready:
-            if is_schema_update:
-                self.schema_store.empty_database_schema(self.database_name)
-            self.schema_store.add_schema(self.schema)
-            self.logger.info(f"Schema for {self.database_name} acquired and stored successfully")
-        else:
-            self.logger.warning(f"Failed to acquire schema for {self.database_name}")
+    def update_current_schema(self, user_text: str):
+        if not self.schema.json_ready:
+            raise ValueError("Schema is not valid")
         
-        return self.schema
-    
-    def _extract_from_mysql(self):
-        """
-        Extract schema from MySQL database.
-        This would need implementation based on your MySQL connector.
-        """
-        self.database_client = MySQLClient(self.database_name)
-        return self.database_client.extract_schema()
-        
-    
-    def _prompt_for_schema_text(self) -> str:
-        """Prompt user to input schema text if not provided"""
-        print(f"Please provide the schema text for database '{self.database_name}':")
-        print("(Enter multiple lines, end with Ctrl+D or an empty line)")
-        lines = []
-        while True:
-            try:
-                line = input()
-                if not line:
-                    break
-                lines.append(line)
-            except EOFError:
-                break
-        return "\n".join(lines)
-    
-    def _acquire_schema_with_llm(self, user_text: str):
-        if self.llm is None:
-            raise ValueError("LLM is None cannot generate or update the schema")
-        
-        if self.schema.json_ready:
-            self.logger.info(f"Schema already exists and is valid for {self.database_name}")
-            schema_from_llm = self._update_current_schema(user_text)
-        else:
-            schema_from_llm = self._acquire_new_schema(user_text)
-        
-        return schema_from_llm
-        
-    def _update_current_schema(self, user_text: str):
         update_type = self.schema.classify_update(user_text)
         if update_type == "unknown":
             self.logger.info("Unknown update type, asking llm detect update type")
@@ -127,10 +65,35 @@ class SchemaOrchestrator(BaseOrchestrator):
         if update_type == "structural":
             prompt = self.prompt_builder.schema_update_prompt(user_text, self.schema.to_string())
             schema_raw = self.llm.generate(prompt) # pyright: ignore[reportOptionalMemberAccess]
-            self.schema.parse_response(schema_raw)
+            self._process_response(schema_raw)
         else:
             self.schema.add_semantic_note(user_text)
+        
+        return self.schema
             
-    def _acquire_new_schema(self, user_text: str):
-        prompt = self.prompt_builder.schema_generation_prompt()
-        return self.llm.generate(prompt.format(raw_schema_text=user_text)) # pyright: ignore[reportOptionalMemberAccess]
+    def acquire_new_schema(self, user_text: str | None = None):
+        if self.schema.json_ready:
+            raise ValueError("Schema is already valid")
+        
+        if self.database_client is not None:
+            response = self.database_client.extract_schema()
+        elif self.llm is not None and user_text is not None:
+            prompt = self.prompt_builder.schema_generation_prompt()
+            response = self.llm.generate(prompt.format(raw_schema_text=user_text)) # pyright: ignore[reportOptionalMemberAccess]
+        else:
+            raise Exception("Either database_client or llm_model must be provided")
+        
+        self._process_response(response)
+        
+        return self.schema
+
+    def _process_response(self, response: Any):
+        self.logger.info(f"LLM response: {response}")
+        # Parse response
+        self.schema.parse_response(response)
+        # Store in vector database
+        if self.schema.json_ready:
+            self.schema_store.add_schema(self.schema)
+            self.logger.info(f"Schema for {self.database_name} acquired and stored successfully")
+        else:
+            self.logger.warning(f"Failed to acquire schema for {self.database_name}")

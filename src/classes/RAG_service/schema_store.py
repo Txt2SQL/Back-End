@@ -27,6 +27,8 @@ class SchemaStore(VectorStore):
 
         if not docs_data:
             raise ValueError("Schema produced no documents.")
+        
+        self.empty_database_schema(schema.database_name)
 
         documents = [
             Document(

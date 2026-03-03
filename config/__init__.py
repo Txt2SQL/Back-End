@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from .settings import (
     SCHEMA_MODELS,
-    QUERY_GENERATION_MODELS,
+    QUERY_MODELS,
     REQUIRED_CREDENTIAL_VARS,
     ERROR_CATEGORIES,
     LOGGER_LEVEL,
@@ -38,7 +38,7 @@ from .paths import (
 __all__ = [
     # Settings exports
     "SCHEMA_MODELS",
-    "QUERY_GENERATION_MODELS",
+    "QUERY_MODELS",
     "REQUIRED_CREDENTIAL_VARS",
     "ERROR_CATEGORIES",
     "LOGGER_LEVEL",

@@ -5,6 +5,8 @@ from config import VECTOR_STORE_DIR, SCHEMA_MODELS
 from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import SchemaSource
+from src.classes.clients.mysql_client import MySQLClient
+from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 
 LoggerManager.setup_project_logger()
@@ -70,13 +72,16 @@ def main():
     # ------------------------------------------------------------------
 
     if method == "2":
+        db_client = MySQLClient(database_name)
+        schema_store = SchemaStore()
 
         orchestrator = SchemaOrchestrator(
             database_name=database_name,
-            source=SchemaSource.MYSQL,
+            database_client=db_client,
+            schema_store=schema_store
         )
 
-        schema = orchestrator.acquire_schema()
+        schema = orchestrator.acquire_new_schema()
 
         if schema.json_ready:
             print(f"\n✅ Schema for '{database_name}' successfully extracted and stored.")
@@ -92,14 +97,18 @@ def main():
     if method == "1":
         model_choice = choose_schema_model()
 
+        llm = LLMFactory(SCHEMA_MODELS[model_choice])
+        schema_store = SchemaStore()
+        
         orchestrator = SchemaOrchestrator(
             database_name=database_name,
-            source=SchemaSource.TEXT,
-            llm_model=model_choice,
+            schema_store=schema_store,
+            llm=llm,
         )
 
+        print("\n👉 Paste schema text (press ENTER twice to finish):")
+
         while True:
-            print("\n👉 Paste schema text (press ENTER twice to finish):")
 
             lines = []
             while True:
@@ -117,7 +126,7 @@ def main():
                 logger.error("No text provided.")
                 break
 
-            schema = orchestrator.acquire_schema(user_text=raw_text)
+            schema = orchestrator.acquire_new_schema(user_text=raw_text)
 
             if schema.json_ready:
                 print(f"\n✅ Schema for '{database_name}' processed and stored.")
@@ -139,6 +148,8 @@ def main():
             elif choice != "1":
                 print("\nInvalid choice. Exiting.")
                 break
-
+            
+            print("\n👉 Paste schema text (press ENTER twice to finish):")
+            
 if __name__ == "__main__":
     main()

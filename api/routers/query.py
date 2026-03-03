@@ -1,87 +1,89 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from typing import List
+from fastapi import APIRouter, HTTPException
+from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
+from src.classes.domain_states import Records
+from api.models import QueryRequest, QueryResponse
+from api.dependencies import get_schema_store, get_query_store, get_mysql_client, get_llm
+from src.classes.domain_states import QueryStatus
 
-from api.models.requests import QueryGenerationRequest, QueryExecutionRequest
-from api.models.responses import QueryResponse, ErrorResponse
-from api.services.query_service import QueryService
-from api.dependencies import get_schema_store, get_query_store, get_data_dir
-from src.classes.RAG_service.schema_store import SchemaStore
-from src.classes.RAG_service.query_store import QueryStore
-from pathlib import Path
-from src.classes.logger import LoggerManager
+router = APIRouter(prefix="/queries", tags=["Queries"])
 
-router = APIRouter()
-logger = LoggerManager.get_logger(__name__)
-
-
-@router.post("/generate", 
-             response_model=QueryResponse,
-             responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}})
-async def generate_query(
-    request: QueryGenerationRequest,
-    background_tasks: BackgroundTasks,
-    schema_store: SchemaStore = Depends(get_schema_store),
-    query_store: QueryStore = Depends(get_query_store),
-    data_dir: Path = Depends(get_data_dir)
-):
-    """
-    Generate SQL query from natural language request
-    
-    - **database_name**: Name of the target database
-    - **user_request**: Natural language description of desired query
-    - **model_name**: Optional LLM model selection
-    - **max_attempts**: Maximum number of generation attempts
-    """
-    logger.info(f"Received query generation request for database: {request.database_name}")
-    
+@router.post("/mysql", response_model=QueryResponse)
+def generate_query_mysql(payload: QueryRequest):
+    """Generate and Execute SQL on the real database."""
     try:
-        service = QueryService(
-            database_name=request.database_name,
+        # 1. Init Dependencies
+        llm = get_llm(payload.model_id, "query")
+        schema_store = get_schema_store()
+        query_store = get_query_store()
+        db_client = get_mysql_client(payload.database_name)
+
+        # 2. Init Orchestrator
+        orchestrator = QueryOrchestrator(
+            database_name=payload.database_name,
             schema_store=schema_store,
-            query_store=query_store,
-            data_dir=data_dir
+            llm=llm,
+            database_client=db_client,
+            query_store=query_store
         )
-        
-        result = await service.generate_query(
-            user_request=request.user_request,
-            model_name=request.model_name,
-            max_attempts=request.max_attempts or 3,
-            testing=request.testing or False
+
+        # 3. Run Generation
+        query_session = orchestrator.generation(payload.question)
+
+        # 4. Format Response
+        # Convert Records object to list of dicts if success
+        results = None
+        error = None
+        if query_session.execution_result and query_session.status == QueryStatus.SUCCESS:
+             # Assuming Records class has .to_dict() or is iterable
+            if isinstance(query_session.execution_result, Records):
+                results = query_session.execution_result.to_dict()     
+        elif isinstance(query_session.execution_result, str):
+             # Handing error strings stored in execution_result
+            error = query_session.execution_result
+
+        return QueryResponse(
+            sql=query_session.sql_code,
+            status=query_session.status,
+            results=results,
+            error=error
         )
-        
-        # Optionally store in background
-        if result.status == "SUCCESS":
-            background_tasks.add_task(
-                service.store_successful_query,
-                result
-            )
-        
-        return result
-        
-    except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        # Log error here
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/history/{database_name}",
-            response_model=List[QueryResponse])
-async def get_query_history(
-    database_name: str,
-    limit: int = 10,
-    query_store: QueryStore = Depends(get_query_store)
-):
-    """
-    Get recent query history for a database
-    """
-    logger.info(f"Fetching query history for database: {database_name}")
-    
+@router.post("/text", response_model=QueryResponse)
+def generate_query_text(payload: QueryRequest):
+    """Generate SQL only (No execution). Suitable for testing or offline mode."""
     try:
-        # You'll need to implement this method in QueryStore
-        history = query_store.get_recent_queries(database_name, limit)
-        return history
+        # 1. Init Dependencies (No DB Client)
+        llm = get_llm(payload.model_id, "query")
+        schema_store = get_schema_store()
+        
+        # QueryStore is optional in text mode according to your Orchestrator logic
+        # or we can pass it if we want to use previous failures (rag)
+        query_store = get_query_store()
+
+        # 2. Init Orchestrator (database_client=None)
+        orchestrator = QueryOrchestrator(
+            database_name=payload.database_name,
+            schema_store=schema_store,
+            llm=llm,
+            database_client=None, 
+            query_store=query_store,
+            testing=False # Set True if you want the logic to simulate execution
+        )
+
+        # 3. Run Generation
+        query_session = orchestrator.generation(payload.question)
+
+        return QueryResponse(
+            sql=query_session.sql_code,
+            status=query_session.status,
+            results=None, # No execution
+            error=None
+        )
+
     except Exception as e:
-        logger.error(f"Error fetching history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

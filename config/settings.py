@@ -24,7 +24,7 @@ SCHEMA_MODELS = {
     }
 }
 
-QUERY_GENERATION_MODELS = {
+QUERY_MODELS = {
     "gpt-4o": {
         "provider": "azure",
         "id": "gpt-4o",
