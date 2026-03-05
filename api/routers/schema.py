@@ -21,8 +21,7 @@ def extract_schema_mysql(payload: SchemaExtractMySQLRequest):
             database_name=payload.database_name,
             schema_store=schema_store,
             database_client=db_client,
-            llm=None # LLM not strictly needed for raw extraction, but required by init logic?
-                     # If your Orchestrator REQUIRES an LLM even for SQL extraction, pass one here.
+            llm=None # LLM not needed for raw extraction
         )
         
         result_schema = orchestrator.acquire_new_schema()

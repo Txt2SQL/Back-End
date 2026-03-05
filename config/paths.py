@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2] / "Ollama"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = PROJECT_ROOT / "src"
 API_DIR = PROJECT_ROOT / "api"
 DATA_DIR = PROJECT_ROOT / "data"

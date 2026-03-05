@@ -2,9 +2,9 @@ from getpass import getpass
 
 import mysql.connector
 from collections import defaultdict
-from src.classes.domain_states.query import QuerySession
-from src.classes.domain_states.enums import QueryStatus
-from src.classes.domain_states.records import Records
+from src.classes.domain_states import QuerySession
+from src.classes.domain_states import QueryStatus
+from src.classes.domain_states import Records
 from src.classes.loaders.mysql_loader import MySQLLoader
 from src.classes.logger import LoggerManager
 

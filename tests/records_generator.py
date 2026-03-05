@@ -360,28 +360,28 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache, pk_cache,
 
 def select_tables(tables, action_label):
     if not tables:
-        print("Nessuna tabella trovata nel database selezionato.")
+        print("    No tables found while selecting tables for %s." % action_label)
         logger.info("No tables found while selecting tables for %s.", action_label)
         return []
 
     table_choice = None
     while table_choice not in {"1", "2"}:
-        print(f"\nVuoi {action_label} in tutte le tabelle o in una specifica?")
-        print("1) tutte le tabelle")
-        print("2) una tabella specifica")
-        table_choice = input("Seleziona un'opzione (1/2): ").strip()
+        print(f"\nYou want {action_label} in all the tables or in a specific table?")
+        print("1) all tables")
+        print("2) specific table")
+        table_choice = input("Select an option (1/2): ").strip()
 
     if table_choice == "1":
         return tables
 
-    print("\nTabelle disponibili:")
+    print("\nAvailable tables:")
     for idx, table_name in enumerate(sorted(tables), start=1):
         print(f"{idx}) {table_name}")
 
     selected_table = None
     sorted_tables = sorted(tables)
     while selected_table is None:
-        choice = input("Scegli la tabella (nome o numero): ").strip()
+        choice = input("Select a table (by number or name): ").strip()
         if choice.isdigit():
             index = int(choice) - 1
             if 0 <= index < len(sorted_tables):
@@ -391,9 +391,19 @@ def select_tables(tables, action_label):
             selected_table = choice
 
         if selected_table is None:
-            print("Selezione non valida. Riprova.")
+            print("Invalid choice. Please select a valid table.")
 
     return [selected_table]
+
+def truncate_tables(cursor, tables):
+    """Truncate selected tables."""
+    if not tables:
+        return
+
+    for table_name in tables:
+        cursor.execute(f"TRUNCATE TABLE {quote_identifier(table_name)}")
+        print(f"    Truncated table: {table_name}")
+        logger.info("Truncated table: %s", table_name)
 
 
 def parse_arguments():
@@ -403,6 +413,12 @@ def parse_arguments():
         action="store_true",
         default=False,
         help="Create a new database from a local schema before inserting records."
+    )
+    parser.add_argument(
+        "--truncate",
+        action="store_true",
+        default=False,
+        help="In add-only mode, truncate selected tables before inserting records."
     )
     return parser.parse_args()
 
@@ -421,13 +437,20 @@ def select_database_by_index_or_name(options, prompt):
             selected_option = choice
 
         if selected_option is None:
-            print("Selezione non valida. Riprova.")
+            print("Invalid choice. Please select a valid option.")
     return selected_option
 
 
 def main():
     args = parse_arguments()
     create = args.create
+    truncate = args.truncate
+
+    if create and truncate:
+        print("The --truncate option is available only in add-only mode (without --create).")
+        logger.warning("Invalid options: --truncate cannot be used with --create.")
+        return
+
 
     db_client = None
     conn = None
@@ -458,13 +481,13 @@ def main():
                 schema_name = os.path.splitext(base_name)[0]
                 available_schemas[schema_name] = file_path
 
-            print("\nSchema disponibili (da input/existing_ddl):")
+            print("\nAvailable schemas (from input/existing_ddl):")
             for idx, schema_name in enumerate(sorted(available_schemas.keys()), start=1):
                 print(f"{idx}) {schema_name}")
 
             db_name = select_database_by_index_or_name(
                 available_schemas.keys(),
-                "Scegli lo schema/database da creare (nome o numero): "
+                "\n👉 Select a database (1-" + str(len(available_schemas)) + "): "
             )
             file_path = available_schemas[db_name]
 
@@ -492,13 +515,13 @@ def main():
                 logger.warning("No user databases available on server.")
                 return
 
-            print("\nDatabase disponibili sul server:")
+            print("\nDatabases available on the server:")
             for idx, available_db in enumerate(sorted(available_dbs), start=1):
                 print(f"{idx}) {available_db}")
 
             db_name = select_database_by_index_or_name(
                 available_dbs,
-                "Scegli il database esistente (nome o numero): "
+                "\n👉 Select a database (1-" + str(len(available_dbs)) + "): "
             )
 
             print(f"\n--- Processing {db_name} ---")
@@ -511,7 +534,7 @@ def main():
         rows_per_table = None
         while rows_per_table is None:
             rows_input = input(
-                f"Quanti record inserire per tabella? (default {DEFAULT_ROWS_PER_TABLE}): "
+                f"How many rows per table? (default {DEFAULT_ROWS_PER_TABLE}): "
             ).strip()
             if not rows_input:
                 rows_per_table = DEFAULT_ROWS_PER_TABLE
@@ -519,13 +542,18 @@ def main():
             if rows_input.isdigit() and int(rows_input) > 0:
                 rows_per_table = int(rows_input)
                 break
-            print("Inserisci un numero valido maggiore di zero.")
+            print("Invalid input. Please enter a positive integer.")
 
-        selected_tables = select_tables(tables, "inserire record")
+        selected_tables = select_tables(tables, "insert records")
         if not selected_tables:
             return
 
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
+        if truncate:
+            print("\nTruncating selected tables before insert...")
+            logger.info("Truncating selected tables before insert: %s", ", ".join(str(t) for t in selected_tables))
+            truncate_tables(cursor, selected_tables)
+
         fk_value_cache = {}
         pk_value_cache = {}
         pk_tuple_cache = {}
@@ -551,3 +579,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

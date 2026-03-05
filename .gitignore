@@ -5,8 +5,10 @@ data/schema/
 **/__pycache__/
 *.log
 *.env
+codex.patch
 tests/tmp
 tests/output/runs/supermarket_results/
 tests/output/runs/hacker_news_results/
-codex.patch
 tests/output/runs/akaunting_results/
+tests/output/runs/monica_results/
+tests/output/runs/university_results/
