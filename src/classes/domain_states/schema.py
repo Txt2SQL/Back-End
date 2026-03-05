@@ -35,6 +35,14 @@ class Schema:
         if self.file_path.exists():
             self._load_existing()
     
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
+            
+    # =====================================================
+    # LOADING
+    # =====================================================
+    
     @classmethod
     def from_json_file(cls, path: Path) -> "Schema":
         with path.open("r", encoding="utf-8") as f:
@@ -50,12 +58,18 @@ class Schema:
 
         return schema
     
-    @property
-    def logger(self):
-        return LoggerManager.get_logger(__name__)
-            
+    def _load_existing(self):
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            self.tables = json.load(f)
+
+        if self.tables is not None:
+            self.json_ready = True
+            self.schema_id = self.tables.get("schema_id") or self._compute_hash(self.tables)
+        else:
+            raise ValueError("Loaded schema is empty, cannot compute hash.")
+
     # =====================================================
-    # LLM RESPONSE PARSING
+    # PARSING
     # =====================================================
 
     def parse_response(self, text: Any):
@@ -88,32 +102,6 @@ class Schema:
                 self.logger.info("❌ LLM response parsing failed")
 
         raise ValueError("Failed to extract valid schema JSON from LLM response.")
-
-    def add_semantic_note(self, note: str):
-        if not isinstance(note, str):
-            raise ValueError("Semantic note must be a string.")
-
-        normalized_note = note.strip()
-        if not normalized_note:
-            raise ValueError("Semantic note cannot be empty.")
-
-        self.semantic_notes.append(normalized_note)
-
-    # =====================================================
-    # LOAD EXISTING
-    # =====================================================
-
-    def _load_existing(self):
-        with open(self.file_path, "r", encoding="utf-8") as f:
-            self.tables = json.load(f)
-
-        if self.tables is not None:
-            self.json_ready = True
-            self.schema_id = self.tables.get("schema_id") or self._compute_hash(self.tables)
-        else:
-            raise ValueError("Loaded schema is empty, cannot compute hash.")
-
-    # -----------------------------------------------------
 
     def _attempt_direct_json(self, text: str):
         try:
@@ -159,23 +147,7 @@ class Schema:
             return None
 
     # =====================================================
-    # UPDATE
-    # =====================================================
-    def classify_update(self, text: str) -> str:
-        """Recognizes if the text describes a structural or semantic modification."""
-
-        sql_keywords = ["CREATE TABLE", "ALTER TABLE", "ADD COLUMN", "DROP TABLE", "FOREIGN KEY", "REFERENCES"]
-        desc_keywords = ["means", "can assume", "contains", "represents", "describes", "equivalent to"]
-
-        if any(k.lower() in text.lower() for k in sql_keywords):
-            return "structural"
-        if any(k.lower() in text.lower() for k in desc_keywords):
-            return "semantic"
-
-        return "unknown"
-
-    # =====================================================
-    # VALIDATION
+    # SAVING
     # =====================================================
 
     def _validate_structure(self, data: Dict[str, Any]) -> bool:
@@ -197,10 +169,6 @@ class Schema:
             data["semantic_notes"] = []
 
         return True
-
-    # =====================================================
-    # SAVE
-    # =====================================================
 
     def _save_schema(self):
         if self.tables is None:
@@ -226,16 +194,38 @@ class Schema:
         self.logger.info("\nSchema successfully saved:\n\n")
         self.logger.info(json.dumps(final_schema, indent=2))
 
-    # =====================================================
-    # HASH
-    # =====================================================
+    def add_semantic_note(self, note: str):
+        if not isinstance(note, str):
+            raise ValueError("Semantic note must be a string.")
+
+        normalized_note = note.strip()
+        if not normalized_note:
+            raise ValueError("Semantic note cannot be empty.")
+
+        self.semantic_notes.append(normalized_note)
 
     def _compute_hash(self, data: Dict) -> str:
         canonical = json.dumps(data, sort_keys=True)
         return hashlib.sha256(canonical.encode()).hexdigest()
 
     # =====================================================
-    # RAG DOCUMENT
+    # UPDATE
+    # =====================================================
+    def classify_update(self, text: str) -> str:
+        """Recognizes if the text describes a structural or semantic modification."""
+
+        sql_keywords = ["CREATE TABLE", "ALTER TABLE", "ADD COLUMN", "DROP TABLE", "FOREIGN KEY", "REFERENCES"]
+        desc_keywords = ["means", "can assume", "contains", "represents", "describes", "equivalent to"]
+
+        if any(k.lower() in text.lower() for k in sql_keywords):
+            return "structural"
+        if any(k.lower() in text.lower() for k in desc_keywords):
+            return "semantic"
+
+        return "unknown"
+
+    # =====================================================
+    # OUTPUT
     # =====================================================
 
     def to_documents(self) -> List[Dict[str, Any]]:

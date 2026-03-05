@@ -38,11 +38,11 @@ class QuerySession:
 
         self.user_request: str = user_request or ""
         self.sql_code: Optional[str] = sql_query
+        self.valid_syntax: Optional[bool] = None
 
         self.rows_fetched: Optional[int] = None
-        self.valid_syntax: Optional[bool] = None
         self.execution_status: Optional[QueryStatus] = None
-        self.execution_result: Union[str, Records, None] = None
+        self.execution_result: Optional[Union[str, Records]] = None
 
         self.status: QueryStatus = QueryStatus.PENDING
         self.error_type: Optional[ErrorType] = None
@@ -54,13 +54,10 @@ class QuerySession:
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)
-    
-    def initialize_llm_feedback(self):
-        self.llm_feedback = LLMFeedback()
 
-    # --------------------------------------------------
+    # ==================================================
     # SQL CLEANING
-    # --------------------------------------------------
+    # ==================================================
 
     def clean_sql_from_llm(self, raw_llm_response: str) -> None:
         self.logger.debug("Cleaning LLM response")
@@ -127,9 +124,9 @@ class QuerySession:
         self.sql_code = sql_query
         self.validate_syntax()
 
-    # --------------------------------------------------
-    # SYNTAX VALIDATION
-    # --------------------------------------------------
+    # ==================================================
+    # EVALUATION
+    # ==================================================
 
     def validate_syntax(self) -> None:
         if not self.sql_code:
@@ -142,10 +139,47 @@ class QuerySession:
         except Exception as e:
             self.valid_syntax = False
             self.execution_result = str(e)
+            
+    def evaluate(self) -> None:
 
-    # --------------------------------------------------
-    # RUNTIME ERROR CLASSIFICATION
-    # --------------------------------------------------
+        self.validate_syntax()
+
+        if self.valid_syntax is False:
+            self.logger.debug("Syntax error detected")
+            self.status = QueryStatus.SYNTAX_ERROR
+            self.error_type = ErrorType.SYNTAX_ERROR
+            self._detect_knowledge_scope()
+            return
+
+        if self.execution_status and self.execution_status is not QueryStatus.SUCCESS:
+            self.logger.debug("Runtime error detected")
+            if self.execution_status is QueryStatus.TIMEOUT_ERROR:
+                self.logger.debug("Timeout error detected")
+                self.status = QueryStatus.TIMEOUT_ERROR
+            else:
+                self.status = QueryStatus.RUNTIME_ERROR
+            self._classify_runtime_error()
+            self._detect_knowledge_scope()
+            return
+
+        if self.llm_feedback is not None and self.llm_feedback.feedback_status is FeedbackStatus.CORRECT:
+            self.logger.debug("Correct feedback detected")
+            self.status = QueryStatus.SUCCESS
+            self.error_type = None
+
+        elif self.llm_feedback is not None and self.llm_feedback.feedback_status is FeedbackStatus.INCORRECT:
+            self.logger.debug("Incorrect feedback detected")
+            self.status = QueryStatus.INCORRECT
+            self.error_type = (
+                self.llm_feedback.error_category
+                or ErrorType.SEMANTIC_ERROR
+            )
+
+        else:
+            self.status = QueryStatus.SUCCESS
+            self.error_type = None
+
+        self._detect_knowledge_scope()
 
     def _classify_runtime_error(self) -> None:
 
@@ -172,10 +206,6 @@ class QuerySession:
 
         if self.llm_feedback is not None and self.llm_feedback.error_category:
             self.error_type = self.llm_feedback.error_category
-
-    # --------------------------------------------------
-    # KNOWLEDGE SCOPE
-    # --------------------------------------------------
 
     def _detect_knowledge_scope(self) -> None:
         self.logger.debug("Detecting knowledge scope")
@@ -219,55 +249,13 @@ class QuerySession:
             or (_HAVING_RE.search(sql) is not None and not has_group_by)
         )
 
-    # --------------------------------------------------
-    # FULL EVALUATION
-    # --------------------------------------------------
-
-    def evaluate(self) -> None:
-
-        self.validate_syntax()
-
-        if self.valid_syntax is False:
-            self.logger.debug("Syntax error detected")
-            self.status = QueryStatus.SYNTAX_ERROR
-            self.error_type = ErrorType.SYNTAX_ERROR
-            self._detect_knowledge_scope()
-            return
-
-        if self.execution_status and self.execution_status is not QueryStatus.SUCCESS:
-            self.logger.debug("Runtime error detected")
-            if self.execution_status is QueryStatus.TIMEOUT_ERROR:
-                self.logger.debug("Timeout error detected")
-                self.status = QueryStatus.TIMEOUT_ERROR
-            else:
-                self.status = QueryStatus.RUNTIME_ERROR
-            self._classify_runtime_error()
-            self._detect_knowledge_scope()
-            return
-
-        if self.llm_feedback is not None and self.llm_feedback.feedback_status is FeedbackStatus.CORRECT:
-            self.logger.debug("Correct feedback detected")
-            self.status = QueryStatus.SUCCESS
-            self.error_type = None
-
-        elif self.llm_feedback is not None and self.llm_feedback.feedback_status is FeedbackStatus.INCORRECT:
-            self.logger.debug("Incorrect feedback detected")
-            self.status = QueryStatus.INCORRECT
-            self.error_type = (
-                self.llm_feedback.error_category
-                or ErrorType.SEMANTIC_ERROR
-            )
-
-        else:
-            self.status = QueryStatus.SUCCESS
-            self.error_type = None
-
-        self._detect_knowledge_scope()
-
-    # --------------------------------------------------
-    # APPLY FEEDBACK
-    # --------------------------------------------------
-
+    # ==================================================
+    # FEEDBACK
+    # ==================================================
+    
+    def initialize_llm_feedback(self):
+        self.llm_feedback = LLMFeedback()
+        
     def apply_llm_feedback(self, raw_feedback: str) -> None:
         if self.llm_feedback is not None:
             self.llm_feedback.parse_llm_feedback(raw_feedback)
@@ -284,9 +272,9 @@ class QuerySession:
         self.llm_feedback.explanation = explanation
         self.llm_feedback.feedback_status = FeedbackStatus.INCORRECT
 
-    # --------------------------------------------------
+    # ==================================================
     # OUTPUT
-    # --------------------------------------------------
+    # ==================================================
 
     def to_content_block(self) -> str:
         return f"""
