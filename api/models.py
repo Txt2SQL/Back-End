@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from src.classes.domain_states.enums import QueryStatus
+from src.classes.domain_states import QueryStatus, QuerySession, Records
 
 # --- Schema Requests ---
 
@@ -19,9 +19,14 @@ class SchemaUpdateRequest(BaseModel):
 
 # --- Query Requests ---
 
-class QueryRequest(BaseModel):
+class QueryGenerationRequest(BaseModel):
     database_name: str
     question: str
+    model_id: str = "gpt-4o"
+
+class QueryEvaluationRequest(BaseModel):
+    database_name: str
+    query: QuerySession
     model_id: str = "gpt-4o"
 
 # --- Responses ---
@@ -29,6 +34,6 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     sql: Optional[str]
     status: QueryStatus
-    results: Optional[List[Dict[str, Any]]] = None
+    results: Optional[Records] = None
     error: Optional[str] = None
     reasoning: Optional[str] = None

@@ -321,4 +321,3 @@ class Schema:
                 print(f"  {i}. {preview}")
         else:
             print("\nNo semantic notes")
-        

@@ -90,58 +90,16 @@ class QueryOrchestrator(BaseOrchestrator):
                 self.logger.info("📝 Syntax validation failed")
             else:
                 self.logger.info("📝 Syntax validation passed")
-
+                
                 if self.database_client is not None:
-                    self.logger.info("📝 Detected MySQL source, starting execution...")
-
-                    # --- Execute query ---
-                    self._execute_and_evaluate_query()
-
-                    # --------------------------------------------------
-                    # Handle non-success outcomes
-                    # --------------------------------------------------
-                    if self.current_query.status is not QueryStatus.SUCCESS:
-                        
-                        self.logger.info("📝 Query execution failed with status: %s", self.current_query.status.value)
-
+                    self.evaluation(self.current_query, consecutive_runtime_errors)
+                    
+                    if self.current_query.status is QueryStatus.RUNTIME_ERROR:
                         consecutive_runtime_errors += 1
-
-                        # On second consecutive runtime error → ask explanation
-                        if consecutive_runtime_errors >= 2:
-                            self.current_query.initialize_llm_feedback()
-                            self.logger.info("📝 Asking for explanation...")
-                            prompt = self._build_feedback_prompt("explanation")
-                            response = self.current_query.ask_for_feedback(prompt)
-                            self.logger.info("📝 Explanation: \n%s", response)
-                            if self.current_query.llm_feedback is None:
-                                self.logger.info("📝 Create LLMFeedback object!")
-                                raise Exception("LLMFeedback object not found")
-                            self.current_query.set_explanation_feedback(response)
-
-                    # --------------------------------------------------
-                    # SUCCESS case → ask correctness evaluation
-                    # --------------------------------------------------
-                    if self.current_query.status is QueryStatus.SUCCESS:
-                        
+                    else:
                         consecutive_runtime_errors = 0
-                        
-                        self.logger.info("📝 Query executed successfully")
-
-                        self.current_query.initialize_llm_feedback()
-                        prompt = self._build_feedback_prompt("evaluation")
-                        response = self.current_query.ask_for_feedback(prompt)
-                        self.logger.info("📝 Evaluation response: \n%s", response)
-                        self.current_query.apply_llm_feedback(response)
-                        self.current_query.evaluate()
-
-                        if self.current_query.status is QueryStatus.SUCCESS:
-                            self.logger.info("📝 Query evaluated successfully")
-                            break
-
-                        self.logger.info("📝 Query evaluation failed - query was incorrect")
-                        # Incorrect query → feedback loop
-                else:
-                    self.logger.info("📝 Skipping execution for text source")
+                    
+                if self.current_query.status is QueryStatus.SUCCESS:
                     break
                 
             self.current_query.attempt += 1
@@ -149,15 +107,7 @@ class QueryOrchestrator(BaseOrchestrator):
         if self.testing and self.database_client is None:
             self.logger.info("Detected testing mode, asking evaluation even if source is text...")
             self.database_client = MySQLClient(self.database_name)
-            self.current_query = self.database_client.execute_query(self.current_query)
-            self.current_query.evaluate()
-            if self.current_query.status is QueryStatus.SUCCESS:
-                self.current_query.initialize_llm_feedback()
-                prompt = self._build_feedback_prompt("evaluation")
-                response = self.current_query.ask_for_feedback(prompt)
-                self.logger.info("📝 Evaluation response: \n%s", response)
-                self.current_query.apply_llm_feedback(response)
-                self.current_query.evaluate()
+            self.evaluation(self.current_query, 0)
             
         self._log_generation_result()
 
@@ -229,24 +179,55 @@ class QueryOrchestrator(BaseOrchestrator):
         self.logger.info("📝 Generation response: \n%s", response)
         
         self.current_query.clean_sql_from_llm(response)
-
-    # --------------------------------------------------
-    # EXECUTION + EVALUATION
-    # --------------------------------------------------
-
-    def _execute_and_evaluate_query(self) -> None:
+    
+    def evaluation(self, query: QuerySession, consecutive_runtime_errors: int) -> QuerySession:
         if self.database_client is None:
             raise Exception("Database client not found")
-        if self.current_query is None:
-            raise Exception("Current query not found")
         
+        self.logger.info("📝 Detected MySQL source, starting execution...")
+
+        # --- Execute query ---
         self.logger.info("📝 Executing query...")
         
         self.current_query = self.database_client.execute_query(
-            self.current_query
+            query
         )
 
         self.current_query.evaluate()
+        
+        # --------------------------------------------------
+        # Handle non-success outcomes
+        # --------------------------------------------------
+        if self.current_query.status is not QueryStatus.SUCCESS:
+            
+            self.logger.info("📝 Query execution failed with status: %s", self.current_query.status.value)
+
+            consecutive_runtime_errors += 1
+
+            # On second consecutive runtime error → ask explanation
+            if consecutive_runtime_errors >= 2:
+                self.current_query.initialize_llm_feedback()
+                self.logger.info("📝 Asking for explanation...")
+                prompt = self._build_feedback_prompt("explanation")
+                response = self.current_query.ask_for_feedback(prompt)
+                self.logger.info("📝 Explanation: \n%s", response)
+                if self.current_query.llm_feedback is None:
+                    self.logger.info("📝 Create LLMFeedback object!")
+                    raise Exception("LLMFeedback object not found")
+                self.current_query.set_explanation_feedback(response)
+        else:            
+            consecutive_runtime_errors = 0
+            
+            self.logger.info("📝 Query executed successfully")
+
+            self.current_query.initialize_llm_feedback()
+            prompt = self._build_feedback_prompt("evaluation")
+            response = self.current_query.ask_for_feedback(prompt)
+            self.logger.info("📝 Evaluation response: \n%s", response)
+            self.current_query.apply_llm_feedback(response)
+            self.current_query.evaluate()
+        
+        return self.current_query 
 
     # --------------------------------------------------
     # PROMPT BUILDERS
