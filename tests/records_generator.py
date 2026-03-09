@@ -451,7 +451,6 @@ def main():
         logger.warning("Invalid options: --truncate cannot be used with --create.")
         return
 
-
     db_client = None
     conn = None
     cursor = None
@@ -531,6 +530,24 @@ def main():
         cursor.execute("SHOW TABLES") # pyright: ignore[reportOptionalMemberAccess]
         tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
 
+        if not tables:
+            print("No tables found in the selected database.")
+            logger.warning("No tables found in selected database: %s", db_name)
+            return
+
+        print("\nAvailable tables with current row counts:")
+        for idx, table_name in enumerate(sorted(tables), start=1): # pyright: ignore[reportArgumentType]
+            cursor.execute(
+                f"SELECT COUNT(*) FROM {quote_identifier(table_name)}"
+            )
+            row_count_result = cursor.fetchone()
+            row_count = row_count_result[0] if row_count_result else 0 # pyright: ignore[reportArgumentType]
+            print(f"{idx}) {table_name} - {row_count} rows")
+
+        selected_tables = select_tables(tables, "insert records")
+        if not selected_tables:
+            return
+
         rows_per_table = None
         while rows_per_table is None:
             rows_input = input(
@@ -543,10 +560,6 @@ def main():
                 rows_per_table = int(rows_input)
                 break
             print("Invalid input. Please enter a positive integer.")
-
-        selected_tables = select_tables(tables, "insert records")
-        if not selected_tables:
-            return
 
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
         if truncate:
@@ -563,6 +576,19 @@ def main():
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
         db_client.connection.commit()
 
+        print("\nUpdated record counts for selected tables:")
+        for idx, table_name in enumerate(sorted(selected_tables), start=1): # pyright: ignore[reportArgumentType]
+            cursor.execute(
+                f"SELECT COUNT(*) FROM {quote_identifier(table_name)}"
+            )
+            row_count_result = cursor.fetchone()
+            row_count = row_count_result[0] if row_count_result else 0 # pyright: ignore[reportArgumentType]
+            print(f"{idx}) {table_name} - {row_count} rows")
+        logger.info(
+            "Displayed updated row counts for selected tables: %s",
+            ", ".join(str(t) for t in selected_tables)
+        )
+
     except Error as e:
         print(f"Error connecting to MySQL: {e}")
         logger.exception("Error in MySQL workflow.")
@@ -576,7 +602,5 @@ def main():
     print("\nDone.")
     logger.info("Done.")
 
-
 if __name__ == "__main__":
     main()
-
