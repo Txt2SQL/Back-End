@@ -52,17 +52,17 @@ class RequestResult:
 
         execution_result = query_session.execution_result if query_session else None
 
-        if status_label == "SUCCESS":
+        if status_label in ("SUCCESS", "INCORRECT"):
             rows_fetched = query_session.rows_fetched if query_session else None
             if rows_fetched is None and isinstance(execution_result, Records):
                 rows_fetched = len(execution_result)
 
-            outcome = (
-                f"({rows_fetched} rows fetched)"
-                if rows_fetched is not None
-                else "(Query executed successfully)"
-            )
-            lines.append(f"status and outcome: 🍾SUCCESS {outcome}\n")
+            if rows_fetched is not None:
+                outcome = f"({rows_fetched} rows fetched)"
+            else:
+                outcome = "(Query executed successfully)" if status_label == "SUCCESS" else "(Query executed)"
+            status_emoji = "🍾SUCCESS" if status_label == "SUCCESS" else "❌INCORRECT"
+            lines.append(f"status and outcome: {status_emoji} {outcome}\n")
             if isinstance(execution_result, Records):
                 lines.append(f"{execution_result.get_preview()}\n")
             else:
@@ -650,7 +650,8 @@ def drop_all_views(db_name: str) -> None:
     client = None
     try:
         # Connect to the specific database
-        client = MySQLClient(db_name)
+        client = MySQLClient()
+        client.set_connection(database=db_name)
         
         # Query to get all view names
         views_query = f"""
@@ -710,7 +711,9 @@ def build_schema_rag(db_name: str, source: SchemaSource) -> tuple[Schema, Schema
     drop_all_views(db_name)
     main_logger.info(f"Acquiring schema from {db_name}")
     schema = Schema(database_name=db_name, schema_source=source, path=TMP_DIR / "schema")
-    schema_dict = MySQLClient(db_name).extract_schema()
+    db_client = MySQLClient()
+    db_client.set_connection(database=db_name)
+    schema_dict = db_client.extract_schema()
     schema.parse_response(schema_dict)
     schema_store = SchemaStore(TMP_DIR / "vector_stores")
     schema_store.add_schema(schema)

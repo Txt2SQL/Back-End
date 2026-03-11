@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import sys
@@ -96,6 +97,8 @@ class QueryOrchestrator(BaseOrchestrator):
                         consecutive_runtime_errors += 1
                     else:
                         consecutive_runtime_errors = 0
+                else:
+                    break
                     
                 if self.current_query.status is QueryStatus.SUCCESS:
                     break
@@ -104,7 +107,8 @@ class QueryOrchestrator(BaseOrchestrator):
         
         if self.testing and self.database_client is None:
             self.logger.info("Detected testing mode, asking evaluation even if source is text...")
-            self.database_client = MySQLClient(self.database_name)
+            self.database_client = MySQLClient()
+            self.database_client.set_connection(self.database_name)
             self.evaluation(self.current_query, 0)
             
         self._log_generation_result()
@@ -156,7 +160,8 @@ class QueryOrchestrator(BaseOrchestrator):
         previous_fail = None
         if self.current_query.status not in [QueryStatus.SUCCESS, QueryStatus.PENDING]:
             self.logger.info("📝 Using previous failures from previous attempt")
-            previous_fail = self.current_query
+            previous_fail = copy.deepcopy(self.current_query)
+            self.current_query.reset_for_new_attempt()
         elif self.failed_queries is not None:
             self.logger.info("📝 Using previous failure from query store")
             previous_fail = self.failed_queries

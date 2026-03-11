@@ -266,6 +266,25 @@ class QuerySession:
         self.llm_feedback.explanation = explanation
         self.llm_feedback.feedback_status = FeedbackStatus.INCORRECT
 
+    def reset_for_new_attempt(self) -> None:
+        """
+        Clear attempt-specific state before generating a new SQL attempt.
+        Keeps attempt number and user_request intact.
+        """
+        self.sql_code = None
+        self.valid_syntax = None
+
+        self.rows_fetched = None
+        self.execution_status = None
+        self.execution_result = None
+
+        self.status = QueryStatus.PENDING
+        self.error_type = None
+        self.knowledge_scope = None
+
+        self.llm_feedback = None
+        self.timestamp = time.time()
+
     # ==================================================
     # OUTPUT
     # ==================================================

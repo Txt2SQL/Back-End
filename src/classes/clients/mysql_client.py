@@ -10,17 +10,15 @@ from src.classes.logger import LoggerManager
 
 class MySQLClient:
     
-    def __init__(self, database: str | None = None):
+    def __init__(self):
         self.config = MySQLLoader().config
-        self.database = database
         
-        self.set_connection()
     
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)
     
-    def set_connection(self):
+    def set_connection(self, database: str | None = None):
         try:
             self.logger.info("🔌 Establishing database connection with config: %s", {k: v for k, v in self.config.items() if k != "password"})
             connection_params = {
@@ -32,7 +30,8 @@ class MySQLClient:
                 "read_timeout": 30,         # seconds waiting for server response
                 "write_timeout": 30,        # seconds sending query
             }
-            if self.database is not None:
+            if database is not None:
+                self.database = database
                 self.logger.debug(f"📂 Setting database to: {self.database}")
                 connection_params["database"] = self.database
                 
@@ -46,7 +45,6 @@ class MySQLClient:
         self.logger.info(f"📌 Received SQL query:\n{query.sql_code}")
 
         try:
-            self.set_connection()
 
             if not self.connection.is_connected():
                 raise ConnectionError("Failed to establish a connection to the database")
