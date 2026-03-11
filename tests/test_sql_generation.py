@@ -140,6 +140,14 @@ def generator_thread(
         logger.info(f"Started generator thread for model: {model_key}, mode: {schema.source.value}")
         logger.info(f"Log file: {log_file}")
 
+        if mode == SchemaSource.MYSQL:
+            db_client = MySQLClient()
+            db_client.set_connection(database=database_name)
+            qs = query_store
+        else:
+            db_client = None
+            qs = None
+
         for idx, request in enumerate(requests, start=1):
             # Set the request index for all logs in this iteration
             LoggerManager.set_request_index(f"[Request: {idx}]")
@@ -149,13 +157,6 @@ def generator_thread(
             logger.info(f"Processing: {truncated_request}")
 
             start_time = time.time()
-            
-            if mode == SchemaSource.MYSQL:
-                db_client = MySQLClient()
-                qs = query_store
-            else:
-                db_client = None
-                qs = None
 
             try:
                 logger.debug(f"Creating QueryOrchestrator")

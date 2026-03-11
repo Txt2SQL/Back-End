@@ -186,6 +186,8 @@ class QueryOrchestrator(BaseOrchestrator):
         
         self.logger.info("📝 Detected MySQL source, starting execution...")
 
+        self.database_client.set_connection(self.database_name)
+        
         # --- Execute query ---
         self.logger.info("📝 Executing query...")
         
