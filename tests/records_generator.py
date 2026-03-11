@@ -201,31 +201,67 @@ def generate_fake_value(col_type, col_name):
     col_type = col_type.lower()
     col_name = col_name.lower()
 
-    # Heuristics based on column name
-    if 'email' in col_name:
+    # -------- TYPE CATEGORIES --------
+    is_string = any(t in col_type for t in ["varchar", "text", "char"])
+    is_int = "int" in col_type
+    is_datetime = any(t in col_type for t in ["datetime", "timestamp"])
+    is_date = col_type.startswith("date")
+    is_time = col_type.startswith("time")
+    is_decimal = any(t in col_type for t in ["decimal", "float", "double"])
+    is_bool = any(t in col_type for t in ["bool", "boolean", "tinyint(1)"])
+
+    # -------- NAME HEURISTICS (ONLY IF TYPE COMPATIBLE) --------
+    if "email" in col_name and is_string:
+        # logger.info("Generating email: %s", col_name)
         return fake.email()
-    if 'name' in col_name:
+
+    if "name" in col_name and is_string:
+        # logger.info("Generating name: %s", col_name)
         return fake.name()
-    if 'phone' in col_name:
+
+    if "phone" in col_name and is_string:
+        # logger.info("Generating phone: %s", col_name)
         return fake.phone_number()
-    if 'address' in col_name:
+
+    if "address" in col_name and is_string:
+        # logger.info("Generating address: %s", col_name)
         return fake.address()
 
-    # Heuristics based on data type
-    if 'int' in col_type or 'tinyint' in col_type:
+    # -------- TYPE-BASED GENERATION --------
+    if is_int:
+        # logger.info("Generating integer: %s", col_type)
         return random.randint(1, 100)
-    if 'varchar' in col_type or 'text' in col_type or 'char' in col_type:
-        return fake.word() if 'varchar(10)' in col_type else fake.sentence()
-    if 'datetime' in col_type or 'timestamp' in col_type:
-        return fake.date_time_between(start_date='-2y', end_date='now').strftime('%Y-%m-%d %H:%M:%S')
-    if col_type.startswith('date'):
-        return fake.date_between(start_date='-2y', end_date='today').strftime('%Y-%m-%d')
-    if col_type.startswith('time'):
-        return fake.time(pattern='%H:%M:%S')
-    if 'decimal' in col_type or 'float' in col_type or 'double' in col_type:
+
+    if is_string:
+        # logger.info("Generating string: %s", col_type)
+        return fake.word() if "varchar(10)" in col_type else fake.sentence()
+
+    if is_datetime:
+        # logger.info("Generating datetime: %s", col_type)
+        return fake.date_time_between(start_date="-2y", end_date="now").strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    if is_date:
+        # logger.info("Generating date: %s", col_type)
+        return fake.date_between(start_date="-2y", end_date="today").strftime(
+            "%Y-%m-%d"
+        )
+
+    if is_time:
+        # logger.info("Generating time: %s", col_type)
+        return fake.time(pattern="%H:%M:%S")
+
+    if is_decimal:
+        # logger.info("Generating decimal: %s", col_type)
         return round(random.uniform(10.0, 500.0), 2)
 
-    # Fallback
+    if is_bool:
+        # logger.info("Generating boolean: %s", col_type)
+        return random.choice([True, False])
+
+    # -------- FALLBACK --------
+    logger.info("Generating default value: %s", col_type)
     return "test"
 
 
@@ -233,9 +269,11 @@ def generate_primary_key_value(col_type, pk_counters):
     """Generate a PK-safe value based on column type."""
     col_type = col_type.lower()
     if 'int' in col_type or 'tinyint' in col_type:
+        logger.info("Incrementing primary key counter: %s", pk_counters['next'])
         pk_counters['next'] += 1
         return pk_counters['next']
     if 'char' in col_type or 'text' in col_type or 'varchar' in col_type:
+        logger.info("Generating UUID: %s", col_type)
         max_len = None
         length_match = re.search(r"\((\d+)\)", col_type)
         if length_match:
@@ -629,12 +667,5 @@ def main():
     logger.info("Done.")
 
 
-if __name__ == "__main__":
-    # You could set a request ID for the entire run if needed
-    # run_id = str(uuid.uuid4())[:8]
-    # LoggerManager.set_request_index(f"RUN-{run_id}")
-    
+if __name__ == "__main__":    
     main()
-    
-    # Clear request index if you set one
-    # LoggerManager.clear_request_index()

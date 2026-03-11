@@ -8,18 +8,16 @@ from pathlib import Path
 from typing import Optional, List
 
 from src.classes.orchestrators.base_orchestrator import BaseOrchestrator
-from src.classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
-from src.classes.domain_states.schema import Schema
-from src.classes.domain_states import QuerySession
+from src.classes.clients import BaseLLM
+from src.classes.domain_states import QuerySession, QueryStatus
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import Document
 from src.classes.clients.mysql_client import MySQLClient
+from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 
-from config import DATA_DIR
-from src.classes.domain_states import QueryStatus
-
+from config import DATA_DIR, QUERY_MODELS
 
 
 class QueryOrchestrator(BaseOrchestrator):
@@ -128,9 +126,6 @@ class QueryOrchestrator(BaseOrchestrator):
         self.logger.info("📝 Schema context: \n%s", self.schema_context)
         self.logger.info("📝 Table names: %s", table_names)
 
-        if self.query_store is None:
-            raise Exception("QueryStore not found")
-
         if self.database_client is not None:
             self.logger.info("📝 Database client initialized")
             self.failed_queries = (
@@ -195,6 +190,7 @@ class QueryOrchestrator(BaseOrchestrator):
 
         self.current_query.evaluate()
         
+        self.evaluator = LLMFactory(QUERY_MODELS["gpt-4o"])
         # --------------------------------------------------
         # Handle non-success outcomes
         # --------------------------------------------------
@@ -209,7 +205,7 @@ class QueryOrchestrator(BaseOrchestrator):
                 self.current_query.initialize_llm_feedback()
                 self.logger.info("📝 Asking for explanation...")
                 prompt = self._build_feedback_prompt("explanation")
-                response = self.current_query.ask_for_feedback(prompt)
+                response = self.evaluator.generate(prompt)
                 self.logger.info("📝 Explanation: \n%s", response)
                 if self.current_query.llm_feedback is None:
                     self.logger.info("📝 Create LLMFeedback object!")
@@ -222,7 +218,7 @@ class QueryOrchestrator(BaseOrchestrator):
 
             self.current_query.initialize_llm_feedback()
             prompt = self._build_feedback_prompt("evaluation")
-            response = self.current_query.ask_for_feedback(prompt)
+            response = self.evaluator.generate(prompt)
             self.logger.info("📝 Evaluation response: \n%s", response)
             self.current_query.apply_llm_feedback(response)
             self.current_query.evaluate()

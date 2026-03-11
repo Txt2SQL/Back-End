@@ -1,18 +1,14 @@
 from typing import Optional
 from config import ERROR_CATEGORIES
-from src.classes.clients import AzureLLM
 from .enums import FeedbackStatus, ErrorType
 from src.classes.logger import LoggerManager
 from config import QUERY_MODELS
-from src.classes.clients.base_llm import BaseLLM
-from src.classes.llm_factory import LLMFactory
 
 
 class LLMFeedback:
 
     def __init__(self):
         self.feedback_status: FeedbackStatus = FeedbackStatus.UNKNOWN
-        self.evaluator: BaseLLM = LLMFactory(QUERY_MODELS["gpt-4o"])
         self.error_category: Optional[ErrorType] = None
         self.explanation: Optional[str] = None
         self.retry_instruction: Optional[str] = None

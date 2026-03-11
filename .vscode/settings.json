@@ -25,4 +25,22 @@
     ],
     "windowColors.baseColor": "#022002",
     "python-envs.defaultEnvManager": "ms-python.python:system",
+    "sqltools.connections": [
+        {
+            "mysqlOptions": {
+                "authProtocol": "default",
+                "enableSsl": "Disabled"
+            },
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 3306,
+            "driver": "MySQL",
+            "name": "Text-to-SQL",
+            "group": "UniTN",
+            "database": "supermarket",
+            "username": "root",
+            "password": "Vittorio.1931"
+        }
+    ],
 }

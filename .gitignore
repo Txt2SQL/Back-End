@@ -1,6 +1,5 @@
 venv/
 .vscode/
-data/vector_store/schema/*
 data/schema/
 **/__pycache__/
 *.log
@@ -12,3 +11,4 @@ tests/output/runs/hacker_news_results/
 tests/output/runs/akaunting_results/
 tests/output/runs/monica_results/
 tests/output/runs/university_results/
+data/vector_stores/schema_store/*

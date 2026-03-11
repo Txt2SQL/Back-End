@@ -259,12 +259,6 @@ class QuerySession:
     def apply_llm_feedback(self, raw_feedback: str) -> None:
         if self.llm_feedback is not None:
             self.llm_feedback.parse_llm_feedback(raw_feedback)
-    
-    def ask_for_feedback(self, prompt: str) -> str:
-        if self.llm_feedback is not None:
-            return self.llm_feedback.evaluator.generate(prompt)
-        else:
-            raise ValueError("No LLM feedback available")
             
     def set_explanation_feedback(self, explanation: str) -> None:
         if self.llm_feedback is None:

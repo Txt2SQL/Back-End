@@ -150,7 +150,6 @@ def main():
 
             path = DATA_DIR / "schema" / f"{database_name}_schema.json"
             schema = Schema.from_json_file(path)
-            schema_store.add_schema(schema)
             
             if schema.source is SchemaSource.MYSQL:
                 db_client = MySQLClient()

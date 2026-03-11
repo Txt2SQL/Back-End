@@ -191,8 +191,7 @@ class Schema:
         with open(self.file_path, "w", encoding="utf-8") as f:
             json.dump(final_schema, f, indent=2)
 
-        self.logger.info("\nSchema successfully saved:\n\n")
-        self.logger.info(json.dumps(final_schema, indent=2))
+        self.logger.info("\nSchema successfully saved:\n\n" + json.dumps(final_schema, indent=2))
 
     def add_semantic_note(self, note: str):
         if not isinstance(note, str):
