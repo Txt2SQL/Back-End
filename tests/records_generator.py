@@ -15,7 +15,12 @@ DDL_DIR = INPUT_DIR / 'existing_ddl'
 DEFAULT_ROWS_PER_TABLE = 100  # How many fake rows to generate per table
 
 fake = Faker()
+
+# Initialize the project logger once at startup
 LoggerManager.setup_project_logger()
+
+# Get a logger for this module - this will be a child of the project logger
+# since we're not providing a log_file parameter
 logger = LoggerManager.get_logger(__name__)
 
 
@@ -256,7 +261,7 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache, pk_cache,
         col_type = next(c['type'] for c in columns if c['name'] == col)
         if 'int' in col_type.lower() or 'tinyint' in col_type.lower():
             existing_values = get_existing_values(cursor, table_name, col, pk_cache)
-            pk_counters[col] = {'next': max(existing_values, default=0)}
+            pk_counters[col] = {'next': max(existing_values, default=0) + 1}  # Start from max+1
 
     # Filter out auto_increment columns (database handles them)
     insert_cols = [c for c in columns if not c['is_auto_increment']]
@@ -324,9 +329,9 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache, pk_cache,
                 pk_index = col_names.index(pk_col)
                 pk_values.append(row_data[pk_index])
             pk_tuple = tuple(pk_values)
-            if pk_tuple in existing_pk_tuples: # pyright: ignore[reportOperatorIssue]
+            if pk_tuple in existing_pk_tuples:  # pyright: ignore[reportOperatorIssue]
                 continue
-            existing_pk_tuples.add(pk_tuple) # pyright: ignore[reportOptionalMemberAccess]
+            existing_pk_tuples.add(pk_tuple)  # pyright: ignore[reportOptionalMemberAccess]
         data_batch.append(tuple(row_data))
 
     if not data_batch:
@@ -375,25 +380,46 @@ def select_tables(tables, action_label):
         return tables
 
     print("\nAvailable tables:")
-    for idx, table_name in enumerate(sorted(tables), start=1):
+    sorted_tables = sorted(tables)
+    for idx, table_name in enumerate(sorted_tables, start=1):
         print(f"{idx}) {table_name}")
 
-    selected_table = None
-    sorted_tables = sorted(tables)
-    while selected_table is None:
-        choice = input("Select a table (by number or name): ").strip()
-        if choice.isdigit():
-            index = int(choice) - 1
-            if 0 <= index < len(sorted_tables):
-                selected_table = sorted_tables[index]
-                break
-        if choice in tables:
-            selected_table = choice
+    selected_tables = []
+    while not selected_tables:
+        choice = input("Select table(s) (numbers or names, comma-separated): ").strip()
+        if not choice:
+            print("Invalid choice. Please select at least one table.")
+            continue
 
-        if selected_table is None:
-            print("Invalid choice. Please select a valid table.")
+        tokens = [token.strip() for token in choice.split(",") if token.strip()]
+        picked = []
+        invalid = []
+        for token in tokens:
+            if token.isdigit():
+                index = int(token) - 1
+                if 0 <= index < len(sorted_tables):
+                    picked.append(sorted_tables[index])
+                else:
+                    invalid.append(token)
+            else:
+                if token in tables:
+                    picked.append(token)
+                else:
+                    invalid.append(token)
 
-    return [selected_table]
+        if invalid:
+            print(f"Invalid choice(s): {', '.join(invalid)}. Please select valid table numbers or names.")
+            continue
+
+        # De-duplicate while preserving order
+        seen = set()
+        for table_name in picked:
+            if table_name not in seen:
+                seen.add(table_name)
+                selected_tables.append(table_name)
+
+    return selected_tables
+
 
 def truncate_tables(cursor, tables):
     """Truncate selected tables."""
@@ -499,7 +525,7 @@ def main():
                 return
 
             create_database(cursor, db_name)
-            cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+            cursor.execute(f"USE {quote_identifier(db_name)}")  # pyright: ignore[reportOptionalMemberAccess]
             execute_sql_file(cursor, file_path)
             db_client.connection.commit()
             logger.info("DDL executed and committed for %s.", db_name)
@@ -525,10 +551,10 @@ def main():
 
             print(f"\n--- Processing {db_name} ---")
             logger.info("Processing existing database: %s", db_name)
-            cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+            cursor.execute(f"USE {quote_identifier(db_name)}")  # pyright: ignore[reportOptionalMemberAccess]
 
-        cursor.execute("SHOW TABLES") # pyright: ignore[reportOptionalMemberAccess]
-        tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
+        cursor.execute("SHOW TABLES")  # pyright: ignore[reportOptionalMemberAccess]
+        tables = [table[0] for table in cursor.fetchall()]  # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
 
         if not tables:
             print("No tables found in the selected database.")
@@ -536,12 +562,12 @@ def main():
             return
 
         print("\nAvailable tables with current row counts:")
-        for idx, table_name in enumerate(sorted(tables), start=1): # pyright: ignore[reportArgumentType]
+        for idx, table_name in enumerate(sorted(tables), start=1):  # pyright: ignore[reportArgumentType]
             cursor.execute(
                 f"SELECT COUNT(*) FROM {quote_identifier(table_name)}"
             )
             row_count_result = cursor.fetchone()
-            row_count = row_count_result[0] if row_count_result else 0 # pyright: ignore[reportArgumentType]
+            row_count = row_count_result[0] if row_count_result else 0  # pyright: ignore[reportArgumentType]
             print(f"{idx}) {table_name} - {row_count} rows")
 
         selected_tables = select_tables(tables, "insert records")
@@ -561,7 +587,7 @@ def main():
                 break
             print("Invalid input. Please enter a positive integer.")
 
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")  # pyright: ignore[reportOptionalMemberAccess]
         if truncate:
             print("\nTruncating selected tables before insert...")
             logger.info("Truncating selected tables before insert: %s", ", ".join(str(t) for t in selected_tables))
@@ -573,16 +599,16 @@ def main():
         ordered_tables = order_tables_by_dependency(cursor, selected_tables)
         for table in ordered_tables:
             populate_table(cursor, table, rows_per_table, fk_value_cache, pk_value_cache, pk_tuple_cache)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")  # pyright: ignore[reportOptionalMemberAccess]
         db_client.connection.commit()
 
         print("\nUpdated record counts for selected tables:")
-        for idx, table_name in enumerate(sorted(selected_tables), start=1): # pyright: ignore[reportArgumentType]
+        for idx, table_name in enumerate(sorted(selected_tables), start=1):  # pyright: ignore[reportArgumentType]
             cursor.execute(
                 f"SELECT COUNT(*) FROM {quote_identifier(table_name)}"
             )
             row_count_result = cursor.fetchone()
-            row_count = row_count_result[0] if row_count_result else 0 # pyright: ignore[reportArgumentType]
+            row_count = row_count_result[0] if row_count_result else 0  # pyright: ignore[reportArgumentType]
             print(f"{idx}) {table_name} - {row_count} rows")
         logger.info(
             "Displayed updated row counts for selected tables: %s",
@@ -602,5 +628,13 @@ def main():
     print("\nDone.")
     logger.info("Done.")
 
+
 if __name__ == "__main__":
+    # You could set a request ID for the entire run if needed
+    # run_id = str(uuid.uuid4())[:8]
+    # LoggerManager.set_request_index(f"RUN-{run_id}")
+    
     main()
+    
+    # Clear request index if you set one
+    # LoggerManager.clear_request_index()
