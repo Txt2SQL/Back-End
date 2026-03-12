@@ -18,7 +18,7 @@ from src.classes.clients.mysql_client import MySQLClient
 from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 
-from config import DATA_DIR, QUERY_MODELS
+from config import DATA_DIR, QUERY_MODELS, PLANNER_MODELS, EVALUATION_MODELS
 
 
 class QueryOrchestrator(BaseOrchestrator):
@@ -31,7 +31,7 @@ class QueryOrchestrator(BaseOrchestrator):
         self,
         database_name: str,
         schema_store: SchemaStore,
-        llm: BaseLLM,
+        model_name: str,
         database_client: Optional[MySQLClient] = None,
         query_store: Optional[QueryStore] = None, # query_store should not be created if source = "text"
         max_attempts: int = 4,
@@ -40,7 +40,9 @@ class QueryOrchestrator(BaseOrchestrator):
     ):
         super().__init__(database_name, instance_path)
 
-        self.llm = llm
+        self.planner = LLMFactory.create(PLANNER_MODELS[model_name])
+        self.assembler = LLMFactory.create(QUERY_MODELS["sqlcoder:34b"])
+
         self.schema_store = schema_store
         self.max_attempts = max_attempts
 
@@ -136,13 +138,23 @@ class QueryOrchestrator(BaseOrchestrator):
                 if self.query_store else None
             )
             self.logger.info("📝 Returned %d failed queries", len(self.failed_queries) if self.failed_queries is not None else 0)
-            self.join_hints = self.database_client.get_foreign_keys(table_names)
-            self.logger.info("📝 Returned %d join hints", len(self.join_hints))
+            join_hints = self.database_client.get_foreign_keys(table_names)
+            self.logger.info("📝 Returned %d join hints", len(join_hints))
             
         else:
             self.failed_queries = None
-            self.join_hints = None
+            join_hints = []
 
+        planning_prompt = self.prompt_builder.planning_prompt(
+            user_request=user_request,
+            schema_context=self.schema_context,
+            join_hints=join_hints,
+        )
+
+        self.logger.info("Sending planning prompt to LLM...")
+        self.plan = self.planner.generate(planning_prompt)    
+        self.logger.info("📝 Planning response: \n%s", self.plan)
+    
     # --------------------------------------------------
     # SQL GENERATION ATTEMPT
     # --------------------------------------------------
@@ -164,20 +176,20 @@ class QueryOrchestrator(BaseOrchestrator):
         elif self.failed_queries is not None:
             self.logger.info("📝 Using previous failure from query store")
             previous_fail = self.failed_queries
-
+                
         prompt = self.prompt_builder.query_generation_prompt(
             user_request=user_request,
             schema_context=self.schema_context,
             previous_fail=previous_fail,
-            join_hints=self.join_hints,
+            plan=self.plan
         )
 
         self.logger.info("Sending generation prompt to LLM...")
-        response = self.llm.generate(prompt)
+        raw_sql = self.assembler.generate(prompt)
         
-        self.logger.info("📝 Generation response: \n%s", response)
+        self.logger.info("📝 Generation response: \n%s", raw_sql)
         
-        self.current_query.clean_sql_from_llm(response)
+        self.current_query.clean_sql_from_llm(raw_sql)
     
     def evaluation(self, query: QuerySession, consecutive_runtime_errors: int) -> QuerySession:
         if self.database_client is None:
@@ -194,7 +206,7 @@ class QueryOrchestrator(BaseOrchestrator):
 
         self.current_query.evaluate()
         
-        self.evaluator = LLMFactory(QUERY_MODELS["gpt-4o"])
+        self.evaluator = LLMFactory(EVALUATION_MODELS["gpt-4o"])
         # --------------------------------------------------
         # Handle non-success outcomes
         # --------------------------------------------------

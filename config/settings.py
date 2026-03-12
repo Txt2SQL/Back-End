@@ -24,7 +24,7 @@ SCHEMA_MODELS = {
     }
 }
 
-QUERY_MODELS = {
+PLANNER_MODELS = {
     "gpt-4o": {
         "provider": "azure",
         "id": "gpt-4o",
@@ -51,12 +51,39 @@ QUERY_MODELS = {
         "api_endpoint": "/api/chat/completions",
         "log_file": "codellama",
     },
+    "Qwen3-Coder-Next": {
+        "provider": "openwebui",
+        "id": "qwen3-coder-next",
+        "api_type": "chat",      # 🔥 key addition
+        "api_endpoint": "/api/chat/completions",
+        "log_file": "Qwen3-Coder-Next",
+    },
+}
+
+QUERY_MODELS = {
+    "codestral:22b": {
+        "provider": "openwebui",
+        "id": "ollama@isarco02.codestral:22b",
+        "api_type": "chat",      # 🔥 key addition
+        "api_key": "CHAT_API_KEY",
+        "api_base": "CHAT_ADDRESS",
+        "api_endpoint": "/api/chat/completions",
+        "log_file": "codestral",
+    },
     "sqlcoder:34b": {
         "provider": "openwebui",
         "id": "sqlcoder-34b-alpha",
         "api_type": "completion",      # 🔥 key addition
         "api_endpoint": "/completions",
         "log_file": "sqlcoder",
+    },
+}
+
+EVALUATION_MODELS = {
+    "gpt-4o": {
+        "provider": "azure",
+        "id": "gpt-4o",
+        "log_file": "gpt-4o",
     },
     "Qwen3-Coder-Next": {
         "provider": "openwebui",

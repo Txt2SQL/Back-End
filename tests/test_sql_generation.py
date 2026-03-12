@@ -22,7 +22,7 @@ from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import SchemaSource, QueryStatus, Records
 from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
-from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
+from config import PLANNER_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
 
 TMP_DIR = TESTS_DIR / "tmp"
 
@@ -122,10 +122,9 @@ def generator_thread(
     Process all requests for a single model.
     Each model uses its own isolated logger writing to its own log file.
     """
-    llm = LLMFactory(QUERY_MODELS[model_key])
-
+    
     # Create dedicated log file for this model
-    log_name = QUERY_MODELS[model_key]["log_file"]
+    log_name = PLANNER_MODELS[model_key]["log_file"]
     log_file = logs_dir / f"{log_name}.log"
 
     # Create isolated per-model logger (thread-safe, no propagation)
@@ -163,7 +162,7 @@ def generator_thread(
                 orch = QueryOrchestrator(
                     database_name=database_name,
                     schema_store=schema_store,
-                    llm=llm,
+                    model_name=model_key,
                     database_client=db_client,
                     query_store=qs,
                     max_attempts=3,
@@ -255,7 +254,7 @@ def _print_model_progress(model_progress: Dict[str, int], num_requests: int, rec
     header = f"✨ Live model progress | total results: {received}/{total_expected}"
     lines = [header, "─" * min(term_width, max(30, len(header)))]
 
-    for i, model in enumerate(QUERY_MODELS.keys(), 1):
+    for i, model in enumerate(PLANNER_MODELS.keys(), 1):
         done = model_progress.get(model, 0)
         pct = (done / num_requests * 100) if num_requests > 0 else 0
         bar = _progress_bar(done, num_requests)
@@ -288,7 +287,7 @@ def printer_thread(
     next_index = 1
     total_expected = num_models * num_requests
     received = 0
-    model_progress = {model: 0 for model in QUERY_MODELS.keys()}
+    model_progress = {model: 0 for model in PLANNER_MODELS.keys()}
 
     # Use LoggerManager for printer thread
     logger = LoggerManager.get_logger("printer", log_file=logs_dir / "printer.log")
@@ -353,7 +352,7 @@ def _write_request_file(
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(f"❇️[Request]\n{request_text}\n\n")
         # Write results in the same order as models (from config)
-        for i, model_key in enumerate(QUERY_MODELS.keys(), 1):
+        for i, model_key in enumerate(PLANNER_MODELS.keys(), 1):
             res = results.get(model_key)
             if res is None:
                 f.write(f"{i}. 🤖[{model_key}]\n\nNo result\n\n")
@@ -429,7 +428,7 @@ def _write_statistics(
             "attempts": 0,
             "count": 0,
         }
-        for model in QUERY_MODELS.keys()
+        for model in PLANNER_MODELS.keys()
     }
 
     for _, models_dict in results_by_index.items():
@@ -760,7 +759,7 @@ def run_stress_test(mode: str, database_name: str, output_name: str | None = Non
     main_logger.info("Starting core execution phase")
 
     result_queue = queue.Queue()
-    num_models = len(QUERY_MODELS)
+    num_models = len(PLANNER_MODELS)
 
     # Start printer thread
     printer = threading.Thread(
@@ -772,7 +771,7 @@ def run_stress_test(mode: str, database_name: str, output_name: str | None = Non
 
     # Start generator threads (one per model)
     threads = []
-    for model_key in QUERY_MODELS.keys():
+    for model_key in PLANNER_MODELS.keys():
         t = threading.Thread(
             target=generator_thread,
             args=(database_name, model_key, 

@@ -107,5 +107,4 @@ class LLMFeedback:
 
 {self.explanation}
 
-{self.retry_instruction or ""}
 """.strip()

@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 
 from .settings import (
     SCHEMA_MODELS,
+    PLANNER_MODELS,
+    EVALUATION_MODELS,
     QUERY_MODELS,
     REQUIRED_CREDENTIAL_VARS,
     ERROR_CATEGORIES,
@@ -38,6 +40,8 @@ from .paths import (
 __all__ = [
     # Settings exports
     "SCHEMA_MODELS",
+    "PLANNER_MODELS",
+    "EVALUATION_MODELS",
     "QUERY_MODELS",
     "REQUIRED_CREDENTIAL_VARS",
     "ERROR_CATEGORIES",

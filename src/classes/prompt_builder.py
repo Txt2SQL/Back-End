@@ -84,7 +84,7 @@ Rules:
         user_request: str,
         schema_context: str,
         previous_fail: list[Document] | QuerySession | None, # penalties or error feedback from previous attempts
-        join_hints: list[str] | None,
+        plan: str,
     ) -> str:
         """
         Create prompt for SQL generation.
@@ -92,44 +92,21 @@ Rules:
         self.logger.info("Creating prompt for request: '%s'", user_request)
 
         self.logger.debug("Schema context length: %s characters", len(schema_context))
+        
+        template = f"""
+        
+### Database Schema
 
-        template = f""" 
-You are an expert SQL database assistant.
-You will be provided with:
-1. The partial description of the database schema (only the relevant tables)
-2. The user's request in natural language.
-3. Examples of previous SQL failures to correct
+{schema_context}
 
-Your task is to return a **single SQL query** that satisfies the request,
-using the provided tables and columns.
+### User Request
 
-=== REQUEST ===
 {user_request}
 
-=== SCHEMA ===
-{schema_context}
-    
-    """    
-        if join_hints: 
-            self.logger.info("received %d join hints", len(join_hints))
-            relations_section = self._build_relation_section(join_hints)
-            template = template + f"""
-    {relations_section}
-    """
+### Query Plan
 
-        template = template + f"""
-
-
-IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
-- Do NOT use columns outside the schema
-- Do NOT invent field or table names that don't exist.
-- Always qualify columns when joining
-- Do NOT use SELECT *
-- Do NOT add WHERE clauses or conditions unless explicitly requested.
-- Do NOT join tables unless necessary for the request.
-- If using aggregates, include GROUP BY  
+{plan}
 """
-    
         if previous_fail:
             if isinstance(previous_fail, list):
                 self.logger.info("received %d previous failures", len(previous_fail))
@@ -139,30 +116,137 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
                 fail_content = previous_fail.format_error_feedback()
 
             if fail_content:
-                template = template + f"""
+                template += f"""
                 
-    === PREVIOUS QUERY ERROR TO FIX ===
-    {fail_content}
+### Previous error:
 
-    You must correct the query considering this error.
-    Do NOT repeat the same mistake.
+{fail_content}
+
+Fix the previous SQL query so it executes correctly and answers the request.
+
+Use only tables and columns in the schema.
+
+Return only the corrected SQL query.
     """
+        else:
+            template += f"""
 
-        template = template + f"""
-
-Before writing the SQL query, internally determine:
-- Which tables are required
-- How they are joined
-- Whether aggregation or grouping is required
-- Which columns are selected
-
-Do NOT output this reasoning.
-Only output the final SQL query.
-    
-SQL QUERY (DO NOT ADD COMMENTS OR EXPLANATION TEXT BEFORE AND AFTER THE QUERY):
-    """
+Generate a MySQL query that follows the plan.
+Return only SQL.
+"""
+        
         self._log_prompt("query_generation_prompt", template)
         return template
+    
+    def planning_prompt(self, user_request: str, schema_context: str, join_hints: list[str]) -> str:
+        """
+        Create prompt for planning.
+        """
+        if join_hints is None:
+            join_hints = []
+        
+        template = """
+
+    You are an expert database query planner.
+
+    Your job is to analyze a natural language request and produce a structured query plan.
+    You must NOT generate SQL.
+
+    The goal is to determine:
+    - which tables are required
+    - how tables are joined
+    - what filters or conditions exist
+    - whether aggregation is required
+    - what columns should appear in the final result
+
+    The plan must strictly follow the database schema provided.
+
+    You must NEVER invent tables or columns.
+
+    1) USER REQUEST
+    {user_request}
+
+    2) DATABASE SCHEMA
+    {schema_context}
+
+    3) JOIN PATH HINTS
+    {join_hints}
+
+    --------------------------------
+
+    PLANNING RULES
+
+    1. Only use tables and columns that exist in the schema.
+    2. Use the join hints when tables must be connected.
+    3. Include aggregation only if the request clearly requires it.
+    4. Do not add filters or conditions unless they are explicitly implied by the request.
+    5. If a "most", "top", "highest", or similar request appears, determine the required aggregation and ranking.
+    6. If a subquery is needed to compute intermediate results, indicate this in the plan.
+    7. Only include tables that are necessary to satisfy the request.
+
+    --------------------------------
+
+    OUTPUT FORMAT
+
+    Return ONLY valid JSON in the following structure.
+
+    {{      # Note the double curly braces
+    "goal": "short description of the query goal",
+
+    "tables": [
+        "table1",
+        "table2"
+    ],
+
+    "joins": [
+        "table1.column = table2.column"
+    ],
+
+    "filters": [
+        "optional conditions derived from the request"
+    ],
+
+    "aggregations": [
+        {{
+        "column": "table.column",
+        "function": "COUNT | SUM | AVG | MAX | MIN",
+        "purpose": "why the aggregation is needed"
+        }}
+    ],
+
+    "group_by": [
+        "table.column"
+    ],
+
+    "order_by": {{
+        "column": "table.column",
+        "direction": "ASC | DESC"
+    }},
+
+    "limit": "number or null",
+
+    "requires_subquery": true | false,
+
+    "final_columns": [
+        "table.column"
+    ]
+    }}
+
+    --------------------------------
+
+    IMPORTANT CONSTRAINTS
+
+    - DO NOT generate SQL.
+    - DO NOT explain the reasoning.
+    - DO NOT include text before or after the JSON.
+    - Only output the JSON plan.
+
+            """
+        # Also fix this line - you need to assign the result
+        formatted_template = template.format(user_request=user_request, schema_context=schema_context, join_hints=join_hints)
+        self._log_prompt("planning_prompt", formatted_template)
+        return formatted_template
+        
 
     def schema_generation_prompt(self) -> str:
         """
@@ -294,7 +378,7 @@ Answer only with "A" or "B".
         if not relations:
             return ""
 
-        lines = ["=== JOIN PATH HINTS ==="]
+        lines = []
         for i, r in enumerate(relations, 1):
             lines.append(f"{i:2}. {r}")
 
