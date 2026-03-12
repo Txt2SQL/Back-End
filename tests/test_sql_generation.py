@@ -141,8 +141,7 @@ def generator_thread(
         logger.info(f"Log file: {log_file}")
 
         if mode == SchemaSource.MYSQL:
-            db_client = MySQLClient()
-            db_client.set_connection(database=database_name)
+            db_client = MySQLClient(database=database_name)
             qs = query_store
         else:
             db_client = None
@@ -651,9 +650,8 @@ def drop_all_views(db_name: str) -> None:
     client = None
     try:
         # Connect to the specific database
-        client = MySQLClient()
-        client.set_connection(database=db_name)
-        
+        client = MySQLClient(db_name)
+                
         # Query to get all view names
         views_query = f"""
             SELECT TABLE_NAME 
@@ -712,8 +710,7 @@ def build_schema_rag(db_name: str, source: SchemaSource) -> tuple[Schema, Schema
     drop_all_views(db_name)
     main_logger.info(f"Acquiring schema from {db_name}")
     schema = Schema(database_name=db_name, schema_source=source, path=TMP_DIR / "schema")
-    db_client = MySQLClient()
-    db_client.set_connection(database=db_name)
+    db_client = MySQLClient(db_name)
     schema_dict = db_client.extract_schema()
     schema.parse_response(schema_dict)
     schema_store = SchemaStore(TMP_DIR / "vector_stores")

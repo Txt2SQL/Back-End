@@ -107,8 +107,7 @@ class QueryOrchestrator(BaseOrchestrator):
         
         if self.testing and self.database_client is None:
             self.logger.info("Detected testing mode, asking evaluation even if source is text...")
-            self.database_client = MySQLClient()
-            self.database_client.set_connection(self.database_name)
+            self.database_client = MySQLClient(database=self.database_name)
             self.evaluation(self.current_query, 0)
             
         self._log_generation_result()
@@ -185,8 +184,6 @@ class QueryOrchestrator(BaseOrchestrator):
             raise Exception("Database client not found")
         
         self.logger.info("📝 Detected MySQL source, starting execution...")
-
-        self.database_client.set_connection(self.database_name)
         
         # --- Execute query ---
         self.logger.info("📝 Executing query...")
