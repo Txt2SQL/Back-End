@@ -306,7 +306,7 @@ Answer only with "A" or "B".
         """
         if self.logger.isEnabledFor(LOGGER_LEVEL):
             self.logger.debug(
-                "\n\n/////// GENERATED PROMPT: %s ///////n%s\n/////// END PROMPT ///////n",
+                "\n\n/////// GENERATED PROMPT: %s ///////\n%s\n/////// END PROMPT ///////\n",
                 name,
                 prompt
             )
