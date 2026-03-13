@@ -41,7 +41,7 @@ class QueryOrchestrator(BaseOrchestrator):
         super().__init__(database_name, instance_path)
 
         self.planner = LLMFactory.create(PLANNER_MODELS[model_name])
-        self.assembler = LLMFactory.create(QUERY_MODELS["sqlcoder:34b"])
+        self.assembler = LLMFactory.create(QUERY_MODELS["codestral:22b"])
 
         self.schema_store = schema_store
         self.max_attempts = max_attempts
