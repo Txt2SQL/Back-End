@@ -36,3 +36,4 @@ class FeedbackStatus(str, Enum):
     UNKNOWN = "UNKNOWN"
     CORRECT = "CORRECT"
     INCORRECT = "INCORRECT"
+    RUNTIME_ERROR = "RUNTIME_ERROR" 

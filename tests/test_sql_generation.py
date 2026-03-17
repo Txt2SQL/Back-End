@@ -19,77 +19,17 @@ from src.classes.RAG_service.schema_store import Schema
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
-from src.classes.domain_states import SchemaSource, QueryStatus, Records
+from src.classes.domain_states import SchemaSource, QueryStatus
 from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
-from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
+from tests.output_object import RequestResult
+from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST
 
 TMP_DIR = TESTS_DIR / "tmp"
 
 # Initialize LoggerManager at the start
 LoggerManager.setup_project_logger()
 main_logger = LoggerManager.get_logger("main")
-
-
-@dataclass
-class RequestResult:
-    request_index: int
-    model_name: str
-    query_session: Optional[QuerySession]
-    time_taken: float  # seconds
-    success: bool  # whether completed without exception
-    
-    def format_output_content(self, index: int) -> str:
-        query_session = self.query_session
-        lines = []
-
-        lines.append(f"{index}. 🤖[{self.model_name}]\n")
-        lines.append(f"🧮 Query:\n\n{query_session.sql_code if query_session else 'N/A'}\n")
-        # ----------------------------
-        # Status + Outcome formatting
-        # ----------------------------
-        status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
-
-        execution_result = query_session.execution_result if query_session else None
-
-        if status_label in ("SUCCESS", "INCORRECT"):
-            rows_fetched = query_session.rows_fetched if query_session else None
-            if rows_fetched is None and isinstance(execution_result, Records):
-                rows_fetched = len(execution_result)
-
-            if rows_fetched is not None:
-                outcome = f"({rows_fetched} rows fetched)"
-            else:
-                outcome = "(Query executed successfully)" if status_label == "SUCCESS" else "(Query executed)"
-            status_emoji = "🍾SUCCESS" if status_label == "SUCCESS" else "❌INCORRECT"
-            lines.append(f"status and outcome: {status_emoji} {outcome}\n")
-            if isinstance(execution_result, Records):
-                lines.append(f"{execution_result.get_preview()}\n")
-            else:
-                lines.append(f"{execution_result}\n")
-        else:
-            error_msg = execution_result if isinstance(execution_result, str) else "Unknown error"
-            lines.append(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n")
-        # ----------------------------
-        # LLM Feedback formatting
-        # ----------------------------
-        feedback = query_session.llm_feedback if query_session else None
-        if feedback and feedback.error_category:
-            explanation = feedback.explanation or ""
-            lines.append(
-                f"LLM Feedback: 👎INCORRECT ({feedback.error_category.value} - {explanation})\n"
-            )
-        else:
-            lines.append("LLM Feedback: 👍CORRECT\n")
-
-        # ----------------------------
-        # Attempts + Time
-        # ----------------------------
-        attempts = query_session.attempt if query_session else 0
-        lines.append(f"🏁Attempts: {attempts}")
-        lines.append(f"⌚Request time: {self.time_taken:.2f}\n")
-
-        return "\n".join(lines)
 
 # ----------------------------------------------------------------------
 # Thread-safe wrapper for QueryStore
@@ -163,7 +103,7 @@ def generator_thread(
                 orch = QueryOrchestrator(
                     database_name=database_name,
                     schema_store=schema_store,
-                    llm=llm,
+                    model_name=model_key,
                     database_client=db_client,
                     query_store=qs,
                     max_attempts=3,

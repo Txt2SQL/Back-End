@@ -161,7 +161,7 @@ def main():
             orchestrator = QueryOrchestrator(
                 database_name=database_name,
                 schema_store=schema_store,
-                llm=llm,
+                model_name=model_name,
                 database_client=db_client,
                 query_store=qs,
             )

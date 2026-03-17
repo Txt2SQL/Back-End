@@ -264,7 +264,7 @@ class QuerySession:
         if self.llm_feedback is None:
             self.llm_feedback = LLMFeedback()
         self.llm_feedback.explanation = explanation
-        self.llm_feedback.feedback_status = FeedbackStatus.INCORRECT
+        self.llm_feedback.feedback_status = FeedbackStatus.RUNTIME_ERROR
 
     def reset_for_new_attempt(self) -> None:
         """

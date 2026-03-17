@@ -31,7 +31,7 @@ class QueryOrchestrator(BaseOrchestrator):
         self,
         database_name: str,
         schema_store: SchemaStore,
-        llm: BaseLLM,
+        model_name: str,
         database_client: Optional[MySQLClient] = None,
         query_store: Optional[QueryStore] = None, # query_store should not be created if source = "text"
         max_attempts: int = 4,
@@ -40,7 +40,7 @@ class QueryOrchestrator(BaseOrchestrator):
     ):
         super().__init__(database_name, instance_path)
 
-        self.llm = llm
+        self.llm = LLMFactory.create(QUERY_MODELS[model_name])
         self.schema_store = schema_store
         self.max_attempts = max_attempts
 
