@@ -267,7 +267,6 @@ WHERE pp.together_count = poc1.total_orders
 ORDER BY pp.together_count DESC;
 
 -- MyQuery
-
 WITH product_totals AS (
     SELECT 
         PRODUCT_ID,

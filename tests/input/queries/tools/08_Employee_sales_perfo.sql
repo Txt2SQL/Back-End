@@ -228,9 +228,7 @@ GROUP BY e.employee_id, e.first_name, e.last_name, e.email, top_customer.first_n
 ORDER BY total_revenue DESC;
 
 -- MyQuery
-
 WITH employee_stats AS (
-    -- Calculate basic stats for each employee
     SELECT 
         O.EMPLOYEE_ID,
         COUNT(DISTINCT O.ORDER_ID) AS orders_processed,
@@ -241,7 +239,6 @@ WITH employee_stats AS (
     GROUP BY O.EMPLOYEE_ID
 ),
 customer_purchases AS (
-    -- Find top customer for each employee
     SELECT 
         O.EMPLOYEE_ID,
         O.CUSTOMER_ID,

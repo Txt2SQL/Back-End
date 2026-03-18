@@ -1,4 +1,4 @@
--- Customer purchase history with details. Show complete purchase history for each customer including: Customer name, order date, product names, quantities, and total per order
+-- Customer purchase history with details. Show complete purchase history for each customer including: Customer name, order date, number of product, quantities, and total spent per order
 
 -- SQLAI
 SELECT
@@ -126,19 +126,16 @@ GROUP BY c.customer_id, c.first_name, c.last_name, o.order_id, o.order_date, o.t
 ORDER BY c.customer_id, o.order_date DESC;
 
 -- MyQuery
-
 SELECT 
-    C.CUSTOMER_ID,
-    C.FIRST_NAME,
-    C.LAST_NAME,
+    CONCAT(C.FIRST_NAME, ' ', C.LAST_NAME) AS customer_name,
     C.EMAIL,
     O.ORDER_ID,
-    O.ORDER_DATE,
+    DATE_FORMAT(O.ORDER_DATE, '%Y-%m-%d') AS order_date,
     O.STATUS AS order_status,
     COUNT(DISTINCT OD.PRODUCT_ID) AS number_of_products,
     SUM(OD.QUANTITY) AS total_items,
-    SUM(OD.QUANTITY * OD.UNIT_PRICE) AS order_total,
-    O.TOTAL_AMOUNT AS recorded_order_total  -- For verification
+    FORMAT(SUM(OD.QUANTITY * OD.UNIT_PRICE), 2) AS calculated_order_total,
+    FORMAT(O.TOTAL_AMOUNT, 2) AS recorded_order_total
 FROM CUSTOMERS C
 JOIN ORDERS O ON C.CUSTOMER_ID = O.CUSTOMER_ID
 JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
@@ -151,6 +148,7 @@ GROUP BY
     O.ORDER_DATE,
     O.STATUS,
     O.TOTAL_AMOUNT
+HAVING ABS(SUM(OD.QUANTITY * OD.UNIT_PRICE) - O.TOTAL_AMOUNT) < 0.01
 ORDER BY 
     C.LAST_NAME, 
     C.FIRST_NAME, 

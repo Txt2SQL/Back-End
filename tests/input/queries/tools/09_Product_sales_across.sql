@@ -229,9 +229,7 @@ GROUP BY c.category_name, main_supplier.supplier_name
 ORDER BY total_sales_quantity DESC;
 
 -- MyQuery
-
 WITH supplier_category_ranking AS (
-    -- Find the main supplier for each category based on sales quantity
     SELECT 
         C.CATEGORY_ID,
         C.CATEGORY_NAME,

@@ -142,7 +142,6 @@ GROUP BY c.customer_id, c.first_name, c.last_name, c.email, p.product_name
 ORDER BY total_quantity_purchased DESC;
 
 -- MyQuery
-
 SELECT C.CUSTOMER_ID, C.FIRST_NAME, C.LAST_NAME
 FROM CUSTOMERS C
 WHERE C.CUSTOMER_ID IN (

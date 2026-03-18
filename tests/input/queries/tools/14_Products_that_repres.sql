@@ -263,7 +263,6 @@ WHERE NOT EXISTS (
 ORDER BY avg_monthly_spending DESC;
 
 -- MyQuery
-
 WITH revenue_stats AS (
     SELECT 
         P.PRODUCT_NAME,

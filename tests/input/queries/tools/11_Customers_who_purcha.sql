@@ -169,7 +169,6 @@ WHERE (
 ORDER BY c.customer_id;
 
 -- MyQuery
-
 SELECT DISTINCT 
     C.CUSTOMER_ID, 
     CONCAT(C.FIRST_NAME,' ',C.LAST_NAME) AS customer_name

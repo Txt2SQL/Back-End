@@ -142,7 +142,6 @@ END) >= 3
 ORDER BY premium_products DESC, midrange_products DESC, budget_products DESC;
 
 -- MyQuery
-
 SELECT 
     S.SUPPLIER_NAME,
     SUM(P.PRICE < 10) AS budget_products,

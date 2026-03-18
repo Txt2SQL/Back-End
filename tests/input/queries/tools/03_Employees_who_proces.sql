@@ -1,4 +1,4 @@
--- mployees who processed more orders than average. Find employees who have processed more orders than the average number of orders per employee
+-- Employees who processed more orders than average. Find employees who have processed more orders than the average number of orders per employee
 
 -- SQLAI
 WITH emp_orders AS (
@@ -135,7 +135,6 @@ HAVING COUNT(o.order_id) > (
 ORDER BY orders_processed DESC
 
 -- MyQuery
-
 SELECT E.EMPLOYEE_ID, E.FIRST_NAME, E.LAST_NAME
 FROM EMPLOYEES E
 JOIN ORDERS O ON E.EMPLOYEE_ID = O.EMPLOYEE_ID
