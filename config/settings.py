@@ -37,7 +37,7 @@ QUERY_MODELS = {
     },
     "codestral:22b": {
         "provider": "openwebui",
-        "id": "ollama@isarco02.codestral:22b",
+        "id": "mistralai/codestral-22b-v0.1",
         "api_type": "chat",      # 🔥 key addition
         "api_key": "CHAT_API_KEY",
         "api_base": "CHAT_ADDRESS",
@@ -46,18 +46,25 @@ QUERY_MODELS = {
     },
     "codellama:34b": {
         "provider": "openwebui",
-        "id": "ollama@isarco02.codellama:34b",
+        "id": "codellama-34b",
         "api_type": "chat",      # 🔥 key addition
         "api_endpoint": "/api/chat/completions",
         "log_file": "codellama",
     },
-    "sqlcoder:34b": {
-        "provider": "openwebui",
-        "id": "sqlcoder-34b-alpha",
-        "api_type": "completion",      # 🔥 key addition
-        "api_endpoint": "/completions",
-        "log_file": "sqlcoder",
-    },
+    # "sqlcoder:34b": {
+    #     "provider": "openwebui",
+    #     "id": "sqlcoder-34b-alpha",
+    #     "api_type": "completion",      # 🔥 key addition
+    #     "api_endpoint": "/completions",
+    #     "log_file": "sqlcoder",
+    # },
+    # "omnisql:7b": {
+    #     "provider": "openwebui",
+    #     "id": "omnisql-7b",
+    #     "api_type": "completion",      # 🔥 key addition
+    #     "api_endpoint": "/completions",
+    #     "log_file": "omnisql",
+    # },
     "Qwen3-Coder-Next": {
         "provider": "openwebui",
         "id": "qwen3-coder-next",
@@ -65,6 +72,13 @@ QUERY_MODELS = {
         "api_endpoint": "/api/chat/completions",
         "log_file": "Qwen3-Coder-Next",
     },
+    # "gpt-oss-20b": {
+    #     "provider": "openwebui",
+    #     "id": "openai/gpt-oss-20b",
+    #     "api_type": "completion",      # 🔥 key addition
+    #     "api_endpoint": "/completions",
+    #     "log_file": "gpt-oss-20b",
+    # },
 }
 
 REQUIRED_CREDENTIAL_VARS = [

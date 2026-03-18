@@ -7,8 +7,7 @@ writes per-request result files, and produces a summary statistics file.
 import argparse, sys, os, time, threading, queue, shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any
-from dataclasses import dataclass
+from typing import List, Dict, Optional
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
