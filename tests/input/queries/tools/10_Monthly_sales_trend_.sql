@@ -379,7 +379,6 @@ ORDER BY monthly_stats.month_year DESC;
 
 -- MyQuery
 WITH monthly_aggregates AS (
-    -- Base monthly sales
     SELECT 
         DATE_FORMAT(O.ORDER_DATE, '%Y-%m') AS month,
         DATE_FORMAT(O.ORDER_DATE, '%M %Y') AS month_name,
