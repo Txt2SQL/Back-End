@@ -14,7 +14,7 @@ class AzureLLM(BaseLLM):
             api_key=cfg["AZURE_API_KEY"],
             azure_endpoint=cfg["AZURE_ENDPOINT"],  # pyright: ignore[reportArgumentType]
             api_version=cfg["AZURE_API_VERSION"],
-            timeout=self.timeout,  # <-- ADDED: set client-level timeout
+            timeout=self.timeout,
         )
         self.model = model
 

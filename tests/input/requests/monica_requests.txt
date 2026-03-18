@@ -1,30 +1,26 @@
-Get all active contacts for a specific account.
-Find all starred or favorite contacts.
-Search for contacts by first name, last name, or nickname.
-Get contact information including their gender.
-List contacts with their birthdays, ordered by month and day.
-Find active contacts that do not have an email address on file.
-Get the 10 most recent activities associated with a specific contact.
-Find contacts who haven't been talked to in the last 30 days.
-Get all upcoming, active reminders scheduled for today.
-Get all notes for a specific contact, ordered by creation date.
-Find all documents attached to a specific contact.
-List all gifts associated with a contact, including status and value.
-Find active debts, showing the amount and the associated contact.
-Get all photos associated with a specific contact.
-Find all active contacts that have an avatar or profile photo.
-Get a list of all tags created for a specific account.
-Find all contacts associated with a specific tag ID.
-Get all stored addresses and locations for a specific contact.
-Get all pending tasks for a specific contact.
-Find all tasks (both completed and incomplete) for an account, including contact names.
-Get a list of companies and the number of contacts associated with each.
-Get basic information for users, including timezone and locale.
-Get the 10 most recent recorded calls for a specific contact.
-Get a total count of contacts broken down by starred, active, and deceased status.
-Get a count of activities grouped by their activity type.
-Get all life events for a contact, including the event type and notes.
-Get a list of relationships for a contact, showing the relationship type and the related person.
-Get a list of pets owned by a specific contact, including pet types.
-Get custom contact fields and their associated data for a specific contact.
-Get the most recent subscription information, including plan type and end dates.
+Upcoming Birthdays: Find all contacts who have a birthday stored in the `special_dates` table occurring in the next 30 days.
+Gift Ideas: Retrieve a list of all gifts that are currently in a "planned" status, including the name of the gift and the contact it is for.
+Debt Tracker: Show all contacts who owe money (`in_debt` flag), including the amount and the reason.
+Tag Cloud: List all unique tags created for a specific account and the date they were created.
+Recent Notes: Get the 10 most recent notes added to the system, showing the note body and the date it was created.
+Contact Methods: Find all `contact_fields` (like emails or phone numbers) for all the contacts ids, joining with `contact_field_types` to show the type name (e.g., "Work Email").
+Company Directory: List all companies stored in the database and the number of employees each has.
+Social Media Profiles: Filter `contact_fields` to only show data where the `contact_field_type` is related to social media protocols.
+Account Trial Status: Identify all accounts whose `trial_ends_at` date has already passed.
+Most Contacted: Rank contacts by the number of `calls` they have received, from highest to lowest.
+Activity Summary: Show a count of activities grouped by `activity_type` (e.g., "Dinner," "Phone Call") for all the users.
+Debt Balance: Calculate the total net balance of debt for all the contacts (Total Owed to them vs. Total they Owe).
+Contact Completeness: List contacts and a count of how many `contact_fields` (phone, email, etc.) are populated for each.
+Address Book with Map: Join `contacts`, `addresses`, and `places` to get a full list of contacts with their street, city, and GPS coordinates.
+Last Interaction: Find the name of every contact and the date of the most recent `conversation` or `call` logged with them.
+Pet Owners: List all contacts who have pets, including the name of the pet and the pet category (e.g., "Dog," "Cat").
+Reminder Audit: Find all reminders that are currently "active" but have no entries in the `reminder_outbox`, indicating they might be misconfigured.
+Tag Distribution: Find the top 5 most used tags across all contacts in a specific account.
+Interaction Consistency: calculate the average number of days between `activities` for each contact to see who you are losing touch with.
+Emotional Trend Analysis: Use `emotion_call` and `emotions` to find the most frequent "Primary Emotion" felt during calls over the last 6 months, partitioned by month.
+Top Earners by Company: In the `occupations` table, find the contact with the highest salary per company.
+Stay in Touch Gaps: calculate the gap in days between the current call and the next scheduled call for every contact.
+Annual Activity Growth (Window Function)**: Using the `activity_statistics` table, show the year-over-year growth percentage of activities for each contact using `LAG()`.
+Engagement Tiering: Divide all contacts into 4 quartiles (tiers) based on the `number_of_views` they have received in the `contacts` table.
+Love Relationship History: Query the `metadata_love_relationships` joined with `relationships` to find the longest-running "active" relationship for each account, including notes and official dates.
+Account Usage Heatmap: Create a query that returns a count of `audit_logs` per day of the week and hour of the day for the last 90 days to determine peak usage times.

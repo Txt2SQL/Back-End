@@ -21,4 +21,6 @@ class BaseLLM(ABC):
             return self.response.strip()
         if hasattr(self.response, "content"):
             return str(self.response.content).strip()
+        if hasattr(self.response, "text"):
+            return str(self.response.text).strip()
         return str(self.response).strip()
