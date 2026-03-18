@@ -561,7 +561,7 @@ def load_requests(db_name: str) -> List[str]:
 def create_output_dir(db_name: str, output_name: str | None = None) -> tuple[Path, Path, Path]:
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     run_name = output_name if output_name else f"results_{timestamp}"
-    output_dir = TESTS_DIR / 'output' / 'runs' / f"{db_name}_results" / run_name
+    output_dir = TESTS_DIR / 'output' / 'generations' / f"{db_name}_results" / run_name
     queries_dir = output_dir / 'queries'
     logs_dir = output_dir / 'logs'
     queries_dir.mkdir(parents=True, exist_ok=True)

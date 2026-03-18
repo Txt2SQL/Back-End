@@ -6,9 +6,5 @@ data/schema/
 *.env
 codex.patch
 tests/tmp
-tests/output/runs/supermarket_results/
-tests/output/runs/hacker_news_results/
-tests/output/runs/akaunting_results/
-tests/output/runs/monica_results/
-tests/output/runs/university_results/
+tests/output/*/*/
 data/vector_stores/schema_store/*

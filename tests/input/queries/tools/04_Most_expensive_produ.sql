@@ -69,7 +69,7 @@ WHERE
 -- Sequel
 SELECT 
 	c.`category_name` AS Category, 
-	p.`product_name` AS Product Name, 
+	p.`product_name` AS Product_Name, 
 	CONCAT('$', FORMAT(p.`price`, 2)) AS `Price` 
 FROM supermarket.products p 
 INNER JOIN supermarket.categories c ON p.`category_id` = c.`category_id` 

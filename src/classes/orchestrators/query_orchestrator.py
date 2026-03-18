@@ -237,7 +237,7 @@ class QueryOrchestrator(BaseOrchestrator):
         if self.current_query is None:
             raise Exception("Current query not found")
         if self.schema_context is None:
-            raise Exception("Schema context not found")
+            self.schema_context, _ = self.schema_store.get_context(self.current_query.user_request)
         
         self.logger.info("📝 Building %s prompt...", prompt_type)
 

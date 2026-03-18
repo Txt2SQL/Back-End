@@ -7,7 +7,7 @@ Input format (per .sql file in tests/input/queries/tools):
 - Then, repeated blocks:
   -- <tool name>
   <SQL query ...>
-  If the first non-empty line after the tool name is "NONE",
+  If the first non-empty line after the tool name is "NONE" or "NULL",
   the tool is treated as unable to handle the request.
 """
 
@@ -18,7 +18,7 @@ import time
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -85,7 +85,8 @@ def _parse_tool_queries(path: Path) -> Tuple[str, List[Tuple[str, Optional[str]]
         if not sql_text:
             queries.append((tool, None))
             return
-        if sql_text.upper() == "NONE":
+        upper_text = sql_text.upper().rstrip(";").strip()
+        if upper_text in {"NONE", "NULL"}:
             queries.append((tool, None))
             return
         queries.append((tool, sql_text))
@@ -133,7 +134,7 @@ def _process_file(
     file_path: Path,
     output_dir: Path,
     schema_store: SchemaStore,
-) -> None:
+) -> Tuple[str, List[RequestResult]]:
     user_request, tool_queries = _parse_tool_queries(file_path)
 
     db_client = MySQLClient(database=DATABASE_NAME)
@@ -205,14 +206,187 @@ def _process_file(
         f.write(f"Source file: {file_path.name}\n\n")
         if not results:
             f.write("No tool queries found in this file.\n")
-            return
+            return user_request, results
         for idx, res in enumerate(results, start=1):
             if res.query_session is None:
                 f.write(f"{idx}. [{res.model_name}]\n\n")
-                f.write("the tool wasn't able to handle the request\n\n")
+                f.write("status and outcome: the tool wasn't able to handle the request\n\n")
                 continue
             f.write(res.format_output_content(idx))
             f.write("\n\n")
+    print(f"Evaluation of the file {file_path.name} completed")
+    return user_request, results
+
+
+def _write_statistics(
+    results_by_index: Dict[int, List[RequestResult]],
+    num_requests: int,
+    stats_path: Path,
+    requests: List[str],
+) -> None:
+    """Aggregate statistics and write to final_stats.txt."""
+    def print_table(title: str, headers: List[str], rows: List[List[str]], footer: Optional[List[str]] = None) -> List[str]:
+        """Build an ASCII table and return it as a list of lines."""
+        lines: List[str] = []
+        lines.append(f"\n{title}")
+        lines.append("-" * 60)
+
+        all_data = [headers] + rows
+        if footer:
+            all_data.append(footer)
+
+        col_widths = [
+            max(len(str(cell)) for cell in [row[i] for row in all_data])
+            for i in range(len(headers))
+        ]
+
+        def format_row(row: List[str]) -> str:
+            return " | ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
+
+        lines.append(format_row(headers))
+        separator = "-+-".join("-" * w for w in col_widths)
+        lines.append(separator)
+
+        for row in rows:
+            lines.append(format_row(row))
+
+        if footer:
+            lines.append(separator)
+            lines.append(format_row(footer))
+
+        return lines
+
+    total_requests = num_requests
+    total_tests = 0
+    successful_executions = 0
+    correct_queries = 0
+    incorrect_queries = 0
+    runtime_errors = 0
+    syntax_errors = 0
+    other_errors = 0
+
+    global_total_time = 0.0
+
+    tool_names = sorted(
+        {res.model_name for results in results_by_index.values() for res in results}
+    )
+
+    tool_stats = {
+        tool: {
+            "correct": 0,
+            "incorrect": 0,
+            "runtime": 0,
+            "syntax": 0,
+            "executions": 0,
+            "total_time": 0.0,
+            "count": 0,
+        }
+        for tool in tool_names
+    }
+
+    for _, results in results_by_index.items():
+        for res in results:
+            total_tests += 1
+            tool_stats[res.model_name]["executions"] += 1
+            if res.success:
+                query_session = res.query_session
+                successful_executions += 1
+
+                tool_stats[res.model_name]["total_time"] += res.time_taken
+                global_total_time += res.time_taken
+                tool_stats[res.model_name]["count"] += 1
+
+                status = query_session.status.value if query_session and query_session.status else None
+
+                if status == QueryStatus.SUCCESS.value:
+                    correct_queries += 1
+                    tool_stats[res.model_name]["correct"] += 1
+                elif status == QueryStatus.INCORRECT.value:
+                    incorrect_queries += 1
+                    tool_stats[res.model_name]["incorrect"] += 1
+                elif status == QueryStatus.RUNTIME_ERROR.value:
+                    runtime_errors += 1
+                    tool_stats[res.model_name]["runtime"] += 1
+                elif status == QueryStatus.SYNTAX_ERROR.value:
+                    syntax_errors += 1
+                    tool_stats[res.model_name]["syntax"] += 1
+                else:
+                    other_errors += 1
+            else:
+                other_errors += 1
+
+    time_avg = sorted(
+        tool_stats.items(),
+        key=lambda x: x[1]["total_time"] / x[1]["count"] if x[1]["count"] > 0 else float("inf"),
+    )
+    status_rank = sorted(
+        tool_stats.items(),
+        key=lambda x: (
+            -(
+                x[1]["correct"] / x[1]["executions"]
+                if x[1]["executions"] > 0 else 0
+            ),
+            -x[1]["correct"],
+            x[1]["runtime"],
+            x[1]["syntax"],
+        ),
+    )
+
+    total_correct_percent = (correct_queries / total_tests * 100) if total_tests > 0 else 0
+    global_avg_time = (global_total_time / total_tests) if total_tests > 0 else 0
+
+    lines = []
+    lines.append("/°" * 50 + "/\n")
+    lines.append("📊 TEST SUMMARY")
+    lines.append("\n" + "/°" * 50 + "/")
+    lines.extend([
+        "",
+        f"Total requests tested : {total_requests}",
+        f"Total tool executions: {total_tests}",
+        f"✅ Correct queries : {correct_queries}",
+        f"❌ Incorrect queries  : {incorrect_queries}",
+        f"⚠️  Syntax errors     : {syntax_errors}",
+        f"❌ Runtime errors    : {runtime_errors}",
+        f"🔧 Other errors      : {other_errors}",
+        f"🟢 Completed runs    : {successful_executions}",
+        f"🎯 Total correct %    : {total_correct_percent:.2f}%",
+        "",
+    ])
+
+    lines.extend(
+        print_table(
+            "🏁 Status ranking",
+            ["Rank", "Tool", "CORRECT", "RUNTIME", "INCORRECT", "CORRECT %"],
+            [
+                [
+                    str(i + 1),
+                    tool,
+                    str(int(stats["correct"])),
+                    str(int(stats["runtime"])),
+                    str(int(stats["incorrect"])),
+                    f"{(stats['correct'] / stats['executions'] * 100) if stats['executions'] > 0 else 0:.2f}%",
+                ]
+                for i, (tool, stats) in enumerate(status_rank)
+            ],
+            footer=[
+                "",
+                "TOTAL",
+                str(correct_queries),
+                str(runtime_errors),
+                str(incorrect_queries),
+                f"{total_correct_percent:.2f}%"
+            ]
+        )
+    )
+
+    best_tool = status_rank[0][0] if status_rank else "N/A"
+    lines.append(f"\n🏆 Best overall tool: {best_tool}")
+    lines.append("=" * 60)
+
+    with open(stats_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    print("\n" + "\n".join(lines))
 
 
 def main() -> None:
@@ -236,14 +410,27 @@ def main() -> None:
 
     schema_store = _build_schema_store(tmp_dir)
 
+    results_by_index: Dict[int, List[RequestResult]] = {}
+    requests: List[str] = []
+
     for file_index, file_path in enumerate(sql_files, start=1):
-        t = threading.Thread(
-            target=_process_file,
-            args=(file_index, file_path, output_dir, schema_store),
-            name=f"tool_eval_{file_index}",
-        )
+        container: Dict[str, Optional[Tuple[str, List[RequestResult]]]] = {"result": None}
+
+        def _runner() -> None:
+            container["result"] = _process_file(file_index, file_path, output_dir, schema_store)
+
+        t = threading.Thread(target=_runner, name=f"tool_eval_{file_index}")
         t.start()
         t.join()
+
+        if container["result"] is None:
+            continue
+        user_request, results = container["result"]
+        requests.append(user_request)
+        results_by_index[file_index] = results
+
+    stats_path = output_dir / "final_stats.txt"
+    _write_statistics(results_by_index, len(requests), stats_path, requests)
 
     print(f"Done. Output written to: {output_dir}")
 
