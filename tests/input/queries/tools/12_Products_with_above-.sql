@@ -206,3 +206,46 @@ JOIN (
     GROUP BY o.employee_id, c.address
 ) as top_address ON e.employee_id = top_address.employee_id AND top_address.rn = 1
 ORDER BY top_address.customer_count DESC, e.employee_id;
+
+-- MyQuery
+
+WITH product_stats AS (
+    SELECT 
+        P.PRODUCT_NAME,
+        C.CATEGORY_NAME,
+        COALESCE(SUM(OD.QUANTITY), 0) AS total_sales,
+        ROUND(
+            AVG(COALESCE(SUM(OD.QUANTITY), 0)) OVER (PARTITION BY P.CATEGORY_ID),
+            2
+        ) AS category_avg_sales
+    FROM PRODUCTS P
+    LEFT JOIN CATEGORIES C ON P.CATEGORY_ID = C.CATEGORY_ID
+    LEFT JOIN ORDER_DETAILS OD ON P.PRODUCT_ID = OD.PRODUCT_ID
+    GROUP BY P.PRODUCT_ID, P.PRODUCT_NAME, P.CATEGORY_ID, C.CATEGORY_NAME
+)
+SELECT *
+FROM product_stats
+WHERE total_sales > category_avg_sales
+ORDER BY CATEGORY_NAME, total_sales DESC;WITH employee_address_stats AS (
+    -- Calculate customer count for each employee and address combination
+    SELECT 
+        O.EMPLOYEE_ID,
+        CONCAT(E.FIRST_NAME, ' ', E.LAST_NAME) AS employee_name,
+        E.POSITION,
+        C.ADDRESS,
+        COUNT(DISTINCT C.CUSTOMER_ID) AS customers_served,
+        MAX(COUNT(DISTINCT C.CUSTOMER_ID)) OVER (PARTITION BY O.EMPLOYEE_ID) AS max_customers_for_employee
+    FROM EMPLOYEES E
+    JOIN ORDERS O ON E.EMPLOYEE_ID = O.EMPLOYEE_ID
+    JOIN CUSTOMERS C ON O.CUSTOMER_ID = C.CUSTOMER_ID
+    WHERE C.ADDRESS IS NOT NULL AND C.ADDRESS != ''
+    GROUP BY O.EMPLOYEE_ID, E.FIRST_NAME, E.LAST_NAME, E.POSITION, C.ADDRESS
+)
+SELECT 
+    employee_name,
+    POSITION,
+    ADDRESS AS primary_service_address,
+    customers_served
+FROM employee_address_stats
+WHERE customers_served = max_customers_for_employee
+ORDER BY customers_served DESC, employee_name;

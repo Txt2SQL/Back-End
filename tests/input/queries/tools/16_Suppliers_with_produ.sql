@@ -140,3 +140,21 @@ HAVING COUNT(DISTINCT CASE
     WHEN p.price > 50 THEN 'Premium'
 END) >= 3
 ORDER BY premium_products DESC, midrange_products DESC, budget_products DESC;
+
+-- MyQuery
+
+SELECT 
+    S.SUPPLIER_NAME,
+    SUM(P.PRICE < 10) AS budget_products,
+    SUM(P.PRICE BETWEEN 10 AND 50) AS midrange_products,
+    SUM(P.PRICE > 50) AS premium_products,
+    COUNT(*) AS total_products
+FROM SUPPLIERS S
+JOIN PRODUCTS P ON S.SUPPLIER_ID = P.SUPPLIER_ID
+GROUP BY S.SUPPLIER_ID, S.SUPPLIER_NAME
+HAVING COUNT(DISTINCT CASE 
+    WHEN P.PRICE < 10 THEN 1
+    WHEN P.PRICE BETWEEN 10 AND 50 THEN 2
+    WHEN P.PRICE > 50 THEN 3
+END) >= 3
+ORDER BY total_products DESC;

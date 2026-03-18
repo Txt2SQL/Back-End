@@ -261,3 +261,27 @@ WHERE NOT EXISTS (
          OR monthly_check.monthly_spending > customer_avg.avg_monthly_spending * 1.2)
 )
 ORDER BY avg_monthly_spending DESC;
+
+-- MyQuery
+
+WITH revenue_stats AS (
+    SELECT 
+        P.PRODUCT_NAME,
+        C.CATEGORY_NAME,
+        SUM(OD.QUANTITY * OD.UNIT_PRICE) AS product_revenue,
+        SUM(SUM(OD.QUANTITY * OD.UNIT_PRICE)) OVER (PARTITION BY P.CATEGORY_ID) AS category_revenue
+    FROM PRODUCTS P
+    JOIN CATEGORIES C ON P.CATEGORY_ID = C.CATEGORY_ID
+    LEFT JOIN ORDER_DETAILS OD ON P.PRODUCT_ID = OD.PRODUCT_ID
+    GROUP BY P.PRODUCT_ID, P.PRODUCT_NAME, P.CATEGORY_ID, C.CATEGORY_NAME
+)
+SELECT 
+    PRODUCT_NAME,
+    CATEGORY_NAME,
+    FORMAT(product_revenue, 2) AS product_revenue,
+    FORMAT(category_revenue, 2) AS category_revenue,
+    CONCAT(ROUND(product_revenue / category_revenue * 100, 2), '%') AS contribution
+FROM revenue_stats
+WHERE product_revenue / category_revenue > 0.3
+  AND product_revenue > 0
+ORDER BY CATEGORY_NAME, product_revenue DESC;

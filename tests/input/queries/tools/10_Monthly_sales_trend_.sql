@@ -376,3 +376,74 @@ LEFT JOIN (
     ) as customer_sales
 ) as top_customer ON monthly_stats.month_year = top_customer.month_year AND top_customer.rn = 1
 ORDER BY monthly_stats.month_year DESC;
+
+-- MyQuery
+
+WITH monthly_sales AS (
+    -- Calculate monthly revenue
+    SELECT 
+        DATE_FORMAT(O.ORDER_DATE, '%Y-%m') AS month,
+        DATE_FORMAT(O.ORDER_DATE, '%M %Y') AS month_name,
+        SUM(OD.QUANTITY * OD.UNIT_PRICE) AS total_revenue,
+        COUNT(DISTINCT O.ORDER_ID) AS total_orders
+    FROM ORDERS O
+    JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
+    GROUP BY DATE_FORMAT(O.ORDER_DATE, '%Y-%m'), DATE_FORMAT(O.ORDER_DATE, '%M %Y')
+),
+monthly_top_product AS (
+    -- Find top selling product per month
+    SELECT 
+        DATE_FORMAT(O.ORDER_DATE, '%Y-%m') AS month,
+        P.PRODUCT_NAME AS top_product,
+        SUM(OD.QUANTITY) AS product_quantity,
+        ROW_NUMBER() OVER (PARTITION BY DATE_FORMAT(O.ORDER_DATE, '%Y-%m') ORDER BY SUM(OD.QUANTITY) DESC) AS rn
+    FROM ORDERS O
+    JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
+    JOIN PRODUCTS P ON OD.PRODUCT_ID = P.PRODUCT_ID
+    GROUP BY DATE_FORMAT(O.ORDER_DATE, '%Y-%m'), P.PRODUCT_NAME
+),
+monthly_top_employee AS (
+    -- Find best performing employee per month by revenue
+    SELECT 
+        DATE_FORMAT(O.ORDER_DATE, '%Y-%m') AS month,
+        CONCAT(E.FIRST_NAME, ' ', E.LAST_NAME) AS top_employee,
+        SUM(OD.QUANTITY * OD.UNIT_PRICE) AS employee_revenue,
+        ROW_NUMBER() OVER (PARTITION BY DATE_FORMAT(O.ORDER_DATE, '%Y-%m') ORDER BY SUM(OD.QUANTITY * OD.UNIT_PRICE) DESC) AS rn
+    FROM ORDERS O
+    JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
+    JOIN EMPLOYEES E ON O.EMPLOYEE_ID = E.EMPLOYEE_ID
+    GROUP BY DATE_FORMAT(O.ORDER_DATE, '%Y-%m'), O.EMPLOYEE_ID, E.FIRST_NAME, E.LAST_NAME
+),
+monthly_top_customer AS (
+    -- Find most active customer per month by order count
+    SELECT 
+        DATE_FORMAT(O.ORDER_DATE, '%Y-%m') AS month,
+        CONCAT(C.FIRST_NAME, ' ', C.LAST_NAME) AS top_customer,
+        COUNT(DISTINCT O.ORDER_ID) AS customer_orders,
+        ROW_NUMBER() OVER (PARTITION BY DATE_FORMAT(O.ORDER_DATE, '%Y-%m') ORDER BY COUNT(DISTINCT O.ORDER_ID) DESC) AS rn
+    FROM ORDERS O
+    JOIN CUSTOMERS C ON O.CUSTOMER_ID = C.CUSTOMER_ID
+    GROUP BY DATE_FORMAT(O.ORDER_DATE, '%Y-%m'), O.CUSTOMER_ID, C.FIRST_NAME, C.LAST_NAME
+)
+SELECT 
+    MS.month_name,
+    MS.total_orders,
+    FORMAT(MS.total_revenue, 2) AS total_revenue,
+    MTP.top_product,
+    MTE.top_employee,
+    MTC.top_customer
+FROM monthly_sales MS
+LEFT JOIN monthly_top_product MTP ON MS.month = MTP.month AND MTP.rn = 1
+LEFT JOIN monthly_top_employee MTE ON MS.month = MTE.month AND MTE.rn = 1
+LEFT JOIN monthly_top_customer MTC ON MS.month = MTC.month AND MTC.rn = 1
+ORDER BY MS.month;SELECT DISTINCT 
+    C.CUSTOMER_ID, 
+    CONCAT(C.FIRST_NAME,' ',C.LAST_NAME) AS customer_name
+FROM CUSTOMERS C
+WHERE (
+    SELECT COUNT(DISTINCT P.CATEGORY_ID)
+    FROM ORDERS O
+    JOIN ORDER_DETAILS OD ON O.ORDER_ID=OD.ORDER_ID
+    JOIN PRODUCTS P ON OD.PRODUCT_ID=P.PRODUCT_ID
+    WHERE O.CUSTOMER_ID=C.CUSTOMER_ID
+) = (SELECT COUNT(*) FROM CATEGORIES);

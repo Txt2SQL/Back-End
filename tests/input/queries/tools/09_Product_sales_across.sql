@@ -227,3 +227,37 @@ LEFT JOIN (
 ) as main_supplier ON c.category_id = main_supplier.category_id AND main_supplier.rn = 1
 GROUP BY c.category_name, main_supplier.supplier_name
 ORDER BY total_sales_quantity DESC;
+
+-- MyQuery
+
+WITH supplier_category_ranking AS (
+    -- Find the main supplier for each category based on sales quantity
+    SELECT 
+        C.CATEGORY_ID,
+        C.CATEGORY_NAME,
+        S.SUPPLIER_NAME AS main_supplier,
+        COUNT(DISTINCT P.PRODUCT_ID) AS products_from_supplier,
+        COALESCE(SUM(OD.QUANTITY), 0) AS sales_from_supplier,
+        ROW_NUMBER() OVER (
+            PARTITION BY C.CATEGORY_ID 
+            ORDER BY COALESCE(SUM(OD.QUANTITY), 0) DESC
+        ) AS rn
+    FROM CATEGORIES C
+    LEFT JOIN PRODUCTS P ON C.CATEGORY_ID = P.CATEGORY_ID
+    LEFT JOIN SUPPLIERS S ON P.SUPPLIER_ID = S.SUPPLIER_ID
+    LEFT JOIN ORDER_DETAILS OD ON P.PRODUCT_ID = OD.PRODUCT_ID
+    GROUP BY C.CATEGORY_ID, C.CATEGORY_NAME, S.SUPPLIER_ID, S.SUPPLIER_NAME
+)
+SELECT 
+    C.CATEGORY_NAME,
+    COUNT(DISTINCT P.PRODUCT_ID) AS total_products,
+    COALESCE(SUM(OD.QUANTITY), 0) AS total_sales_quantity,
+    SCR.main_supplier,
+    SCR.sales_from_supplier AS main_supplier_sales
+FROM CATEGORIES C
+LEFT JOIN PRODUCTS P ON C.CATEGORY_ID = P.CATEGORY_ID
+LEFT JOIN ORDER_DETAILS OD ON P.PRODUCT_ID = OD.PRODUCT_ID
+LEFT JOIN supplier_category_ranking SCR 
+    ON C.CATEGORY_ID = SCR.CATEGORY_ID AND SCR.rn = 1
+GROUP BY C.CATEGORY_ID, C.CATEGORY_NAME, SCR.main_supplier, SCR.sales_from_supplier
+ORDER BY total_sales_quantity DESC;

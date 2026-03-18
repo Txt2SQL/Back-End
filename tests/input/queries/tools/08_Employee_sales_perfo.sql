@@ -226,3 +226,45 @@ LEFT JOIN (
 ) as top_customer ON e.employee_id = top_customer.employee_id AND top_customer.rn = 1
 GROUP BY e.employee_id, e.first_name, e.last_name, e.email, top_customer.first_name, top_customer.last_name, top_customer.total_spent
 ORDER BY total_revenue DESC;
+
+-- MyQuery
+
+WITH employee_stats AS (
+    -- Calculate basic stats for each employee
+    SELECT 
+        O.EMPLOYEE_ID,
+        COUNT(DISTINCT O.ORDER_ID) AS orders_processed,
+        COALESCE(SUM(OD.QUANTITY * OD.UNIT_PRICE), 0) AS total_revenue
+    FROM EMPLOYEES E
+    LEFT JOIN ORDERS O ON E.EMPLOYEE_ID = O.EMPLOYEE_ID
+    LEFT JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
+    GROUP BY O.EMPLOYEE_ID
+),
+customer_purchases AS (
+    -- Find top customer for each employee
+    SELECT 
+        O.EMPLOYEE_ID,
+        O.CUSTOMER_ID,
+        SUM(OD.QUANTITY * OD.UNIT_PRICE) AS customer_revenue,
+        SUM(OD.QUANTITY) AS total_quantity,
+        ROW_NUMBER() OVER (PARTITION BY O.EMPLOYEE_ID ORDER BY SUM(OD.QUANTITY * OD.UNIT_PRICE) DESC) AS rn
+    FROM ORDERS O
+    JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
+    GROUP BY O.EMPLOYEE_ID, O.CUSTOMER_ID
+)
+SELECT 
+    E.EMPLOYEE_ID,
+    E.FIRST_NAME,
+    E.LAST_NAME,
+    E.POSITION,
+    ES.orders_processed,
+    FORMAT(ES.total_revenue, 2) AS total_revenue,
+    CONCAT(C.FIRST_NAME, ' ', C.LAST_NAME) AS top_customer,
+    C.EMAIL AS top_customer_email,
+    FORMAT(CP.customer_revenue, 2) AS revenue_from_top_customer,
+    CP.total_quantity AS quantity_from_top_customer
+FROM EMPLOYEES E
+LEFT JOIN employee_stats ES ON E.EMPLOYEE_ID = ES.EMPLOYEE_ID
+LEFT JOIN customer_purchases CP ON E.EMPLOYEE_ID = CP.EMPLOYEE_ID AND CP.rn = 1
+LEFT JOIN CUSTOMERS C ON CP.CUSTOMER_ID = C.CUSTOMER_ID
+ORDER BY ES.total_revenue DESC;

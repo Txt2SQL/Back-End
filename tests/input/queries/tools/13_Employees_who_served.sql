@@ -228,3 +228,29 @@ JOIN (
 ) as category_revenue ON p.category_id = category_revenue.category_id
 WHERE (product_revenue.product_revenue / category_revenue.category_total_revenue) * 100 > 30
 ORDER BY percentage_contribution DESC, category_name;
+
+-- MyQuery
+
+WITH employee_address_stats AS (
+    -- Calculate customer count for each employee and address combination
+    SELECT 
+        O.EMPLOYEE_ID,
+        CONCAT(E.FIRST_NAME, ' ', E.LAST_NAME) AS employee_name,
+        E.POSITION,
+        C.ADDRESS,
+        COUNT(DISTINCT C.CUSTOMER_ID) AS customers_served,
+        MAX(COUNT(DISTINCT C.CUSTOMER_ID)) OVER (PARTITION BY O.EMPLOYEE_ID) AS max_customers_for_employee
+    FROM EMPLOYEES E
+    JOIN ORDERS O ON E.EMPLOYEE_ID = O.EMPLOYEE_ID
+    JOIN CUSTOMERS C ON O.CUSTOMER_ID = C.CUSTOMER_ID
+    WHERE C.ADDRESS IS NOT NULL AND C.ADDRESS != ''
+    GROUP BY O.EMPLOYEE_ID, E.FIRST_NAME, E.LAST_NAME, E.POSITION, C.ADDRESS
+)
+SELECT 
+    employee_name,
+    POSITION,
+    ADDRESS AS primary_service_address,
+    customers_served
+FROM employee_address_stats
+WHERE customers_served = max_customers_for_employee
+ORDER BY customers_served DESC, employee_name;

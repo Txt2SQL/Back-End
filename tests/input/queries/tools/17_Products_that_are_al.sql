@@ -265,3 +265,32 @@ JOIN product_order_counts poc2 ON pp.product_id_2 = poc2.product_id
 WHERE pp.together_count = poc1.total_orders
   AND pp.together_count = poc2.total_orders
 ORDER BY pp.together_count DESC;
+
+-- MyQuery
+
+WITH product_totals AS (
+    SELECT 
+        PRODUCT_ID,
+        COUNT(DISTINCT ORDER_ID) AS total_orders
+    FROM ORDER_DETAILS
+    GROUP BY PRODUCT_ID
+)
+SELECT 
+    P1.PRODUCT_NAME AS product_1,
+    P2.PRODUCT_NAME AS product_2,
+    COUNT(DISTINCT OD1.ORDER_ID) AS co_purchases,
+    PT1.total_orders AS product_1_total_orders,
+    PT2.total_orders AS product_2_total_orders
+FROM ORDER_DETAILS OD1
+JOIN ORDER_DETAILS OD2 ON OD1.ORDER_ID = OD2.ORDER_ID
+JOIN PRODUCTS P1 ON OD1.PRODUCT_ID = P1.PRODUCT_ID
+JOIN PRODUCTS P2 ON OD2.PRODUCT_ID = P2.PRODUCT_ID
+JOIN product_totals PT1 ON OD1.PRODUCT_ID = PT1.PRODUCT_ID
+JOIN product_totals PT2 ON OD2.PRODUCT_ID = PT2.PRODUCT_ID
+WHERE OD1.PRODUCT_ID < OD2.PRODUCT_ID
+GROUP BY OD1.PRODUCT_ID, OD2.PRODUCT_ID, P1.PRODUCT_NAME, P2.PRODUCT_NAME, 
+         PT1.total_orders, PT2.total_orders
+HAVING co_purchases = PT1.total_orders
+   AND co_purchases = PT2.total_orders
+   AND co_purchases >= 3
+ORDER BY co_purchases DESC;

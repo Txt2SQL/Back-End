@@ -140,3 +140,20 @@ WHERE od.product_id = (
 )
 GROUP BY c.customer_id, c.first_name, c.last_name, c.email, p.product_name
 ORDER BY total_quantity_purchased DESC;
+
+-- MyQuery
+
+SELECT C.CUSTOMER_ID, C.FIRST_NAME, C.LAST_NAME
+FROM CUSTOMERS C
+WHERE C.CUSTOMER_ID IN (
+    SELECT O.CUSTOMER_ID
+    FROM ORDERS O
+    JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
+    WHERE OD.PRODUCT_ID = (
+        SELECT PRODUCT_ID
+        FROM ORDER_DETAILS
+        GROUP BY PRODUCT_ID
+        ORDER BY COUNT(*) DESC
+        LIMIT 1
+    )
+);

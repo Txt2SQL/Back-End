@@ -137,3 +137,26 @@ LEFT JOIN products p ON s.supplier_id = p.supplier_id
 LEFT JOIN order_details od ON p.product_id = od.product_id
 GROUP BY s.supplier_id, s.supplier_name, s.contact_person, s.email
 ORDER BY total_revenue DESC;
+
+-- MyQuery
+
+SELECT 
+    S.SUPPLIER_ID,
+    S.SUPPLIER_NAME,
+    S.CONTACT_PERSON,
+    S.PHONE,
+    S.EMAIL,
+    COUNT(DISTINCT P.PRODUCT_ID) AS total_products_supplied,
+    COALESCE(SUM(OD.QUANTITY), 0) AS total_quantity_sold,
+    COALESCE(SUM(OD.QUANTITY * OD.UNIT_PRICE), 0) AS total_revenue,
+    COUNT(DISTINCT OD.ORDER_ID) AS total_orders_with_products
+FROM SUPPLIERS S
+    JOIN PRODUCTS P ON S.SUPPLIER_ID = P.SUPPLIER_ID
+    JOIN ORDER_DETAILS OD ON P.PRODUCT_ID = OD.PRODUCT_ID
+GROUP BY 
+    S.SUPPLIER_ID,
+    S.SUPPLIER_NAME,
+    S.CONTACT_PERSON,
+    S.PHONE,
+    S.EMAIL
+ORDER BY total_revenue DESC, S.SUPPLIER_NAME;

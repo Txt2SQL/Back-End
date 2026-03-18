@@ -124,3 +124,34 @@ JOIN orders o ON c.customer_id = o.customer_id
 JOIN order_details od ON o.order_id = od.order_id
 GROUP BY c.customer_id, c.first_name, c.last_name, o.order_id, o.order_date, o.total_amount
 ORDER BY c.customer_id, o.order_date DESC;
+
+-- MyQuery
+
+SELECT 
+    C.CUSTOMER_ID,
+    C.FIRST_NAME,
+    C.LAST_NAME,
+    C.EMAIL,
+    O.ORDER_ID,
+    O.ORDER_DATE,
+    O.STATUS AS order_status,
+    COUNT(DISTINCT OD.PRODUCT_ID) AS number_of_products,
+    SUM(OD.QUANTITY) AS total_items,
+    SUM(OD.QUANTITY * OD.UNIT_PRICE) AS order_total,
+    O.TOTAL_AMOUNT AS recorded_order_total  -- For verification
+FROM CUSTOMERS C
+JOIN ORDERS O ON C.CUSTOMER_ID = O.CUSTOMER_ID
+JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
+GROUP BY 
+    C.CUSTOMER_ID,
+    C.FIRST_NAME,
+    C.LAST_NAME,
+    C.EMAIL,
+    O.ORDER_ID,
+    O.ORDER_DATE,
+    O.STATUS,
+    O.TOTAL_AMOUNT
+ORDER BY 
+    C.LAST_NAME, 
+    C.FIRST_NAME, 
+    O.ORDER_DATE DESC;

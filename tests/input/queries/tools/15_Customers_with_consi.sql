@@ -256,3 +256,29 @@ WHERE NOT EXISTS (
          OR monthly_check.monthly_spending > customer_avg.avg_monthly_spending * 1.2)
 )
 ORDER BY avg_monthly_spending DESC;
+
+-- MyQuery
+
+WITH monthly_stats AS (
+    SELECT 
+        CONCAT(C.FIRST_NAME, ' ', C.LAST_NAME) AS customer_name,
+        MONTH(O.ORDER_DATE) AS month_num,
+        SUM(OD.QUANTITY * OD.UNIT_PRICE) AS spending,
+        AVG(SUM(OD.QUANTITY * OD.UNIT_PRICE)) OVER (PARTITION BY C.CUSTOMER_ID) AS avg_spending
+    FROM CUSTOMERS C
+    JOIN ORDERS O ON C.CUSTOMER_ID = O.CUSTOMER_ID
+    JOIN ORDER_DETAILS OD ON O.ORDER_ID = OD.ORDER_ID
+    WHERE YEAR(O.ORDER_DATE) = 2024
+    GROUP BY C.CUSTOMER_ID, C.FIRST_NAME, C.LAST_NAME, MONTH(O.ORDER_DATE)
+)
+SELECT 
+    customer_name,
+    FORMAT(AVG(spending), 2) AS avg_monthly_spending,
+    COUNT(*) AS months_active,
+    'CONSISTENT' AS consistency_flag
+FROM monthly_stats
+GROUP BY customer_name, avg_spending
+HAVING MIN(spending) >= avg_spending * 0.8 
+   AND MAX(spending) <= avg_spending * 1.2
+   AND COUNT(*) >= 3
+ORDER BY avg_spending DESC;
