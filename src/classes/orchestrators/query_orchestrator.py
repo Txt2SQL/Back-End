@@ -1,5 +1,4 @@
 import copy
-import json
 import os
 import sys
 
@@ -7,14 +6,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from pathlib import Path
 from typing import Optional, List
+from langchain_core.documents import Document
 
 from src.classes.orchestrators.base_orchestrator import BaseOrchestrator
-from src.classes.clients import BaseLLM
+from src.classes.clients import BaseLLM, MySQLClient
 from src.classes.domain_states import QuerySession, QueryStatus
-from src.classes.RAG_service.schema_store import SchemaStore
-from src.classes.RAG_service.query_store import QueryStore
-from src.classes.RAG_service.schema_store import Document
-from src.classes.clients.mysql_client import MySQLClient
+from src.classes.RAG_service import SchemaStore, QueryStore
 from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 
@@ -288,11 +285,11 @@ class QueryOrchestrator(BaseOrchestrator):
 
         if self.current_query.status is QueryStatus.SUCCESS:
             self.logger.info(
-                "✅ Query generated successfully: %s",
+                "✅ Query generated successfully: \n%s",
                 self.current_query.sql_code,
             )
         else:
             self.logger.warning(
-                "⚠️ Query generation issue: %s",
+                "⚠️ Query generation issue: \n%s",
                 self.current_query.status.value,
             )
