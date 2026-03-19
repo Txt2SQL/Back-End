@@ -390,18 +390,18 @@ def _write_statistics(
                 global_total_time += res.time_taken
                 model_stats[model]["count"] += 1
 
-                status = query_session.status.value if query_session and query_session.status else None
+                status = query_session.status if query_session and query_session.status else None
 
-                if status == QueryStatus.SUCCESS.value:
+                if status == QueryStatus.SUCCESS:
                     correct_queries += 1
                     model_stats[model]["correct"] += 1
-                elif status == QueryStatus.INCORRECT.value:
+                elif status == QueryStatus.INCORRECT:
                     incorrect_queries += 1
                     model_stats[model]["incorrect"] += 1
-                elif status == QueryStatus.RUNTIME_ERROR.value:
+                elif status == QueryStatus.RUNTIME_ERROR:
                     runtime_errors += 1
                     model_stats[model]["runtime"] += 1
-                elif status == QueryStatus.SYNTAX_ERROR.value:
+                elif status == QueryStatus.SYNTAX_ERROR:
                     syntax_errors += 1
                     model_stats[model]["syntax"] += 1
                 else:
