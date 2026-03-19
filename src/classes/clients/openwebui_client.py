@@ -27,7 +27,7 @@ class OpenWebUILLM(BaseLLM):
         return LoggerManager.get_logger(__name__)
         
     def generate(self, prompt: str, **kwargs) -> str:
-        self.logger.info(f"Generating response from url: {self.url}{self.endpoint} and api key is {self.api_key}")
+        self.logger.info(f"Generating response from url: {self.url}{self.endpoint} and model: {self.model}...")
         try:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",

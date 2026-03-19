@@ -61,7 +61,7 @@ class LoggerManager:
     # synchronization
     _lock = threading.RLock()
 
-    MAIN_LOG_LEVEL = logging.INFO
+    MAIN_LOG_LEVEL = logging.DEBUG
     THREAD_LOG_LEVEL = logging.DEBUG
 
     # ==========================================================

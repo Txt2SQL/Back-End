@@ -136,7 +136,6 @@ def main():
             
             # Select model
             model_name = select_model()
-            llm = LLMFactory(QUERY_MODELS[model_name])
 
             # Select database from schema files
             database_name = select_database_name()
