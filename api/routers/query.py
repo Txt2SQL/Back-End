@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.domain_states import Records
 from api.models import QueryGenerationRequest, QueryEvaluationRequest, QueryResponse
-from api.dependencies import get_schema_store, get_query_store, get_mysql_client, get_llm
+from api.dependencies import get_schema_store, get_query_store, get_mysql_client
 from src.classes.domain_states import QueryStatus
 
 router = APIRouter(prefix="/queries", tags=["Queries"])
@@ -12,7 +12,6 @@ def generate_query_mysql(payload: QueryGenerationRequest):
     """Generate and Execute SQL on the real database."""
     try:
         # 1. Init Dependencies
-        llm = get_llm(payload.model_id, "query")
         schema_store = get_schema_store()
         query_store = get_query_store()
         db_client = get_mysql_client(payload.database_name)
@@ -21,7 +20,7 @@ def generate_query_mysql(payload: QueryGenerationRequest):
         orchestrator = QueryOrchestrator(
             database_name=payload.database_name,
             schema_store=schema_store,
-            llm=llm,
+            model_name=payload.model_id,
             database_client=db_client,
             query_store=query_store
         )
@@ -58,7 +57,6 @@ def generate_query_text(payload: QueryGenerationRequest):
     """Generate SQL only (No execution). Suitable for testing or offline mode."""
     try:
         # 1. Init Dependencies (No DB Client)
-        llm = get_llm(payload.model_id, "query")
         schema_store = get_schema_store()
         
         # QueryStore is optional in text mode according to your Orchestrator logic
@@ -69,10 +67,9 @@ def generate_query_text(payload: QueryGenerationRequest):
         orchestrator = QueryOrchestrator(
             database_name=payload.database_name,
             schema_store=schema_store,
-            llm=llm,
+            model_name=payload.model_id,
             database_client=None, 
             query_store=query_store,
-            testing=False # Set True if you want the logic to simulate execution
         )
 
         # 3. Run Generation
@@ -93,7 +90,6 @@ def generate_query_text(payload: QueryGenerationRequest):
 def evaluate_query(payload: QueryEvaluationRequest):
     try:
         # 1. Init Dependencies
-        llm = get_llm(payload.model_id, "query")
         schema_store = get_schema_store()
         db_client = get_mysql_client(payload.database_name)
 
@@ -101,7 +97,7 @@ def evaluate_query(payload: QueryEvaluationRequest):
         orchestrator = QueryOrchestrator(
             database_name=payload.database_name,
             schema_store=schema_store,
-            llm=llm,
+            model_name=payload.model_id,
             database_client=db_client
         )
 
