@@ -70,8 +70,13 @@ class QueryOrchestrator(BaseOrchestrator):
         self._init_generation_context(user_request)
 
         consecutive_runtime_errors = 0
+        pre_execution_attempts = 0
+        evaluation_attempts = 0
+        runtime_error_limit = 10
+        evaluation_attempts_limit = 5
+        has_executable_query = False
 
-        while self.current_query.attempt <= self.max_attempts:
+        while True:
             
             self.logger.info("📝 Attempt: %s", self.current_query.attempt)
 
@@ -82,22 +87,48 @@ class QueryOrchestrator(BaseOrchestrator):
             self._generate_sql_attempt(user_request)
 
             if self.current_query.valid_syntax is False:
-                
                 self.logger.info("📝 Syntax validation failed")
+                pre_execution_attempts += 1
+
+                if pre_execution_attempts >= runtime_error_limit:
+                    self.logger.warning(
+                        "⚠️ Runtime error limit reached (%d). Stopping generation.",
+                        runtime_error_limit,
+                    )
+                    break
             else:
                 self.logger.info("📝 Syntax validation passed")
-                
+
                 if self.database_client is not None:
                     self.evaluation(self.current_query, consecutive_runtime_errors)
-                    
-                    if self.current_query.status is QueryStatus.RUNTIME_ERROR:
+
+                    if self.current_query.status in [QueryStatus.RUNTIME_ERROR, QueryStatus.TIMEOUT_ERROR]:
                         consecutive_runtime_errors += 1
                     else:
                         consecutive_runtime_errors = 0
+
+                    if self.current_query.execution_status is QueryStatus.SUCCESS:
+                        has_executable_query = True
+                        evaluation_attempts += 1
+                    else:
+                        pre_execution_attempts += 1
+                        if pre_execution_attempts >= runtime_error_limit:
+                            self.logger.warning(
+                                "⚠️ Runtime error limit reached (%d). Stopping generation.",
+                                runtime_error_limit,
+                            )
+                            break
+
+                    if self.current_query.status is QueryStatus.SUCCESS:
+                        break
+
+                    if has_executable_query and evaluation_attempts >= evaluation_attempts_limit:
+                        self.logger.warning(
+                            "⚠️ Evaluation attempt limit reached (%d). Stopping generation.",
+                            evaluation_attempts_limit,
+                        )
+                        break
                 else:
-                    break
-                    
-                if self.current_query.status is QueryStatus.SUCCESS:
                     break
                 
             self.current_query.attempt += 1
