@@ -55,7 +55,7 @@ class QueryOrchestrator(BaseOrchestrator):
         return LoggerManager.get_logger(__name__)
 
     # --------------------------------------------------
-    # MAIN GENERATION LOOP
+    # QUERY ACTIONS
     # --------------------------------------------------
 
     def generation(self, user_request: str) -> QuerySession:
@@ -133,71 +133,6 @@ class QueryOrchestrator(BaseOrchestrator):
         self._log_generation_result()
 
         return self.current_query
-
-    # --------------------------------------------------
-    # CONTEXT INITIALIZATION
-    # --------------------------------------------------
-
-    def _init_generation_context(self, user_request: str) -> None:
-        
-        self.logger.info("📝 Initializing generation context...")
-
-        self.schema_context, table_names = self.schema_store.get_context(
-            user_request
-        )
-        
-        self.logger.info("📝 Schema context: \n%s", self.schema_context)
-        self.logger.info("📝 Table names: %s", table_names)
-
-        if self.database_client is not None:
-            self.logger.info("📝 Database client initialized")
-            self.failed_queries = (
-                self.query_store.retrieve_failed_queries(user_request)
-                if self.query_store else None
-            )
-            self.logger.info("📝 Returned %d failed queries", len(self.failed_queries) if self.failed_queries is not None else 0)
-            self.join_hints = self.database_client.get_foreign_keys(table_names)
-            self.logger.info("📝 Returned %d join hints", len(self.join_hints))
-            
-        else:
-            self.failed_queries = None
-            self.join_hints = None
-
-    # --------------------------------------------------
-    # SQL GENERATION ATTEMPT
-    # --------------------------------------------------
-
-    def _generate_sql_attempt(self, user_request: str) -> None:
-
-        if self.schema_context is None:
-            raise Exception("Schema context not found")
-        if self.current_query is None:
-            raise Exception("Current query not found")
-        
-        self.logger.info("📝 Generating SQL...")
-        
-        previous_fail = None
-        if self.current_query.status not in [QueryStatus.SUCCESS, QueryStatus.PENDING]:
-            self.logger.info("📝 Using previous failures from previous attempt")
-            previous_fail = copy.deepcopy(self.current_query)
-            self.current_query.reset_for_new_attempt()
-        elif self.failed_queries is not None:
-            self.logger.info("📝 Using previous failure from query store")
-            previous_fail = self.failed_queries
-
-        prompt = self.prompt_builder.query_generation_prompt(
-            user_request=user_request,
-            schema_context=self.schema_context,
-            previous_fail=previous_fail,
-            join_hints=self.join_hints,
-        )
-
-        self.logger.info("Sending generation prompt to LLM...")
-        response = self.llm.generate(prompt)
-        
-        self.logger.info("📝 Generation response: \n%s", response)
-        
-        self.current_query.clean_sql_from_llm(response)
     
     def evaluation(self, query: QuerySession, consecutive_runtime_errors: int) -> QuerySession:
         if self.database_client is None:
@@ -248,10 +183,67 @@ class QueryOrchestrator(BaseOrchestrator):
             self.current_query.evaluate()
         
         return self.current_query 
+    
+    # --------------------------------------------------
+    # PRIVATE METHODS
+    # --------------------------------------------------
 
-    # --------------------------------------------------
-    # PROMPT BUILDERS
-    # --------------------------------------------------
+    def _init_generation_context(self, user_request: str) -> None:
+        
+        self.logger.info("📝 Initializing generation context...")
+
+        self.schema_context, table_names = self.schema_store.get_context(
+            user_request
+        )
+        
+        self.logger.info("📝 Schema context: \n%s", self.schema_context)
+        self.logger.info("📝 Table names: %s", table_names)
+
+        if self.database_client is not None:
+            self.logger.info("📝 Database client initialized")
+            self.failed_queries = (
+                self.query_store.retrieve_failed_queries(user_request)
+                if self.query_store else None
+            )
+            self.logger.info("📝 Returned %d failed queries", len(self.failed_queries) if self.failed_queries is not None else 0)
+            self.join_hints = self.database_client.get_foreign_keys(table_names)
+            self.logger.info("📝 Returned %d join hints", len(self.join_hints))
+            
+        else:
+            self.failed_queries = None
+            self.join_hints = None
+
+    def _generate_sql_attempt(self, user_request: str) -> None:
+
+        if self.schema_context is None:
+            raise Exception("Schema context not found")
+        if self.current_query is None:
+            raise Exception("Current query not found")
+        
+        self.logger.info("📝 Generating SQL...")
+        
+        previous_fail = None
+        if self.current_query.status not in [QueryStatus.SUCCESS, QueryStatus.PENDING]:
+            self.logger.info("📝 Using previous failures from previous attempt")
+            previous_fail = copy.deepcopy(self.current_query)
+            self.current_query.reset_for_new_attempt()
+        elif self.failed_queries is not None:
+            self.logger.info("📝 Using previous failure from query store")
+            previous_fail = self.failed_queries
+
+        prompt = self.prompt_builder.query_generation_prompt(
+            user_request=user_request,
+            schema_context=self.schema_context,
+            previous_fail=previous_fail,
+            join_hints=self.join_hints,
+        )
+
+        self.logger.info("Sending generation prompt to LLM...")
+        response = self.llm.generate(prompt)
+        
+        self.logger.info("📝 Generation response: \n%s", response)
+        
+        self.current_query.clean_sql_from_llm(response)
 
     def _build_feedback_prompt(self, prompt_type: str) -> str:
         if self.current_query is None:
