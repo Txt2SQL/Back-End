@@ -36,7 +36,6 @@ class QueryOrchestrator(BaseOrchestrator):
         query_store: Optional[QueryStore] = None, # query_store should not be created if source = "text"
         max_attempts: int = 4,
         instance_path: Path = DATA_DIR,
-        testing: bool = False
     ):
         super().__init__(database_name, instance_path)
 
@@ -46,8 +45,6 @@ class QueryOrchestrator(BaseOrchestrator):
 
         self.database_client = database_client
         self.query_store = query_store
-
-        self.testing = testing
 
         self.current_query: Optional[QuerySession] = None
         self.schema_context: Optional[str] = None
@@ -104,11 +101,6 @@ class QueryOrchestrator(BaseOrchestrator):
                     break
                 
             self.current_query.attempt += 1
-        
-        if self.testing and self.database_client is None:
-            self.logger.info("Detected testing mode, asking evaluation even if source is text...")
-            self.database_client = MySQLClient(database=self.database_name)
-            self.evaluation(self.current_query, 0)
             
         self._log_generation_result()
 

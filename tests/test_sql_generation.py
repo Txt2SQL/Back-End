@@ -107,12 +107,16 @@ def generator_thread(
                     query_store=qs,
                     max_attempts=3,
                     instance_path=TMP_DIR,
-                    testing=True
                 )
 
                 logger.debug(f"Starting generation")
 
                 result_session = orch.generation(request)
+                
+                if mode == SchemaSource.TEXT:
+                    db_client = MySQLClient(database=database_name)
+                    orch.database_client = db_client
+                    result_session = orch.evaluation(result_session, 0)
 
                 elapsed = time.time() - start_time
 
