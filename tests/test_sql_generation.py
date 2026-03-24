@@ -4,10 +4,11 @@ Runs multiple requests against all configured LLM models concurrently,
 writes per-request result files, and produces a summary statistics file.
 """
 
-import argparse, sys, os, time, threading, queue, shutil
+import argparse, sys, os, time, threading, queue, shutil, math, random
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
+from scipy.stats import pearsonr, spearmanr
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -18,7 +19,7 @@ from src.classes.RAG_service.schema_store import Schema
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
-from src.classes.domain_states import SchemaSource, QueryStatus
+from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
 from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 from tests.output_object import RequestResult
@@ -356,6 +357,7 @@ def _write_statistics(
     syntax_errors = 0
     other_errors = 0
     total_attempts = 0
+    error_type_counts: Dict[tuple[str, str], int] = {}
     
     # Global sums for footer
     global_total_time = 0.0
@@ -398,12 +400,49 @@ def _write_statistics(
                 elif status == QueryStatus.INCORRECT:
                     incorrect_queries += 1
                     model_stats[model]["incorrect"] += 1
+                    feedback = query_session.llm_feedback if query_session else None
+                    error_category = (
+                        feedback.error_category.value
+                        if feedback
+                        and feedback.feedback_status == FeedbackStatus.INCORRECT
+                        and feedback.error_category
+                        else "UNKNOWN_ERROR"
+                    )
+                    error_type_counts[(error_category, "INCORRECT")] = (
+                        error_type_counts.get((error_category, "INCORRECT"), 0) + 1
+                    )
                 elif status == QueryStatus.RUNTIME_ERROR:
                     runtime_errors += 1
                     model_stats[model]["runtime"] += 1
+                    runtime_category = (
+                        query_session.error_type.value
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.RUNTIME_ERROR.value
+                    )
+                    error_type_counts[(runtime_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((runtime_category, "RUNTIME_ERROR"), 0) + 1
+                    )
                 elif status == QueryStatus.SYNTAX_ERROR:
                     syntax_errors += 1
                     model_stats[model]["syntax"] += 1
+                    syntax_category = (
+                        query_session.error_type.value
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.SYNTAX_ERROR.value
+                    )
+                    error_type_counts[(syntax_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((syntax_category, "RUNTIME_ERROR"), 0) + 1
+                    )
+                elif status == QueryStatus.TIMEOUT_ERROR:
+                    other_errors += 1
+                    timeout_category = (
+                        query_session.error_type.value
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.TIMEOUT_ERROR.value
+                    )
+                    error_type_counts[(timeout_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((timeout_category, "RUNTIME_ERROR"), 0) + 1
+                    )
                 else:
                     other_errors += 1
             else:
@@ -518,6 +557,211 @@ def _write_statistics(
                 str(syntax_errors), 
                 f"{total_correct_percent:.2f}%"
             ]
+        )
+    )
+
+    error_type_rows = [
+        [str(i + 1), category, source_type, str(count)]
+        for i, ((category, source_type), count) in enumerate(
+            sorted(
+                error_type_counts.items(),
+                key=lambda item: (-item[1], item[0][1], item[0][0]),
+            )
+        )
+    ]
+
+    lines.extend(
+        print_table(
+            "🏁 Error type ranking",
+            ["Rank", "Category", "Type", "Count"],
+            error_type_rows,
+            footer=[
+                "",
+                "TOTAL",
+                "",
+                str(sum(error_type_counts.values())),
+            ],
+        )
+    )
+    
+    complexities = []
+    complexity_successes = []
+    attempts = []
+    attempt_successes = []
+    per_model_correlation_data = {
+        model: {
+            "attempts": [],
+            "attempt_successes": [],
+            "complexities": [],
+            "complexity_successes": [],
+        }
+        for model in QUERY_MODELS.keys()
+    }
+    per_model_complexity_buckets = {
+        model: {
+            "low": [],
+            "medium": [],
+            "high": [],
+            "total": [],
+        }
+        for model in QUERY_MODELS.keys()
+    }
+
+    request_complexity_scores: Dict[int, Optional[float]] = {}
+    request_complexity_levels: Dict[int, Optional[str]] = {}
+
+    for request_index in range(1, num_requests + 1):
+        models_dict = results_by_index.get(request_index, {})
+        correct_complexities = []
+        all_complexities = []
+
+        for res in models_dict.values():
+            complexity = res.get_query_complexity()
+            if complexity is None:
+                continue
+
+            all_complexities.append(complexity)
+
+            if (
+                res.success
+                and res.query_session
+                and res.query_session.status == QueryStatus.SUCCESS
+            ):
+                correct_complexities.append(complexity)
+
+        request_complexity: Optional[float]
+        if correct_complexities:
+            request_complexity = float(random.choice(correct_complexities))
+        elif all_complexities:
+            request_complexity = sum(all_complexities) / len(all_complexities)
+        else:
+            request_complexity = None
+
+        request_complexity_scores[request_index] = request_complexity
+        request_complexity_levels[request_index] = (
+            RequestResult.complexity_level_from_score(request_complexity)
+            if request_complexity is not None
+            else None
+        )
+    
+    for request_index, models_dict in results_by_index.items():
+        request_complexity = request_complexity_scores.get(request_index)
+        request_complexity_level = request_complexity_levels.get(request_index)
+
+        for model, res in models_dict.items():
+            if res.success and res.query_session:
+                qs = res.query_session
+                success = 1 if qs.status == QueryStatus.SUCCESS else 0
+
+                attempts.append(qs.attempt)
+                attempt_successes.append(success)
+                per_model_correlation_data[model]["attempts"].append(qs.attempt)
+                per_model_correlation_data[model]["attempt_successes"].append(success)
+
+                if request_complexity is not None:
+                    complexities.append(request_complexity)
+                    complexity_successes.append(success)
+                    per_model_correlation_data[model]["complexities"].append(request_complexity)
+                    per_model_correlation_data[model]["complexity_successes"].append(success)
+                    per_model_complexity_buckets[model]["total"].append(success)
+
+                    if request_complexity_level is not None:
+                        per_model_complexity_buckets[model][request_complexity_level].append(success)
+    
+    buckets = {
+        "low": [],
+        "medium": [],
+        "high": [],
+        "total": [],
+    }
+
+    for c, s in zip(complexities, complexity_successes):
+        buckets["total"].append(s)
+        if c <= 2:
+            buckets["low"].append(s)
+        elif c <= 5:
+            buckets["medium"].append(s)
+        else:
+            buckets["high"].append(s)
+
+    def format_success_rate(values: List[int]) -> str:
+        if not values:
+            return "N/A"
+        return f"{(sum(values) / len(values)):.2%}"
+
+    complexity_rows = []
+    for model in QUERY_MODELS.keys():
+        model_buckets = per_model_complexity_buckets[model]
+        complexity_rows.append([
+            model,
+            format_success_rate(model_buckets["low"]),
+            format_success_rate(model_buckets["medium"]),
+            format_success_rate(model_buckets["high"]),
+            format_success_rate(model_buckets["total"]),
+        ])
+
+    lines.extend(
+        print_table(
+            "🏁 Complexity success rate by model",
+            ["Model", "Low", "Medium", "High", "Total"],
+            complexity_rows,
+            footer=[
+                "TOTAL",
+                format_success_rate(buckets["low"]),
+                format_success_rate(buckets["medium"]),
+                format_success_rate(buckets["high"]),
+                format_success_rate(buckets["total"]),
+            ],
+        )
+    )
+
+    def safe_corr(values: List[int], outcomes: List[int], method: str) -> str:
+        if len(values) < 2 or len(outcomes) < 2:
+            return "N/A"
+        if len(set(values)) <= 1 or len(set(outcomes)) <= 1:
+            return "N/A"
+
+        result = pearsonr(values, outcomes) if method == "pearson" else spearmanr(values, outcomes)
+
+        statistic = getattr(result, "statistic", None)
+        pvalue = getattr(result, "pvalue", None)
+
+        if statistic is None or pvalue is None:
+            return "N/A"
+        if math.isnan(statistic) or math.isnan(pvalue):
+            return "N/A"
+
+        return f"{statistic:.3f} (p={pvalue:.3f})"
+
+    pearson_attempts_success = safe_corr(attempts, attempt_successes, "pearson")
+    spearman_attempts_success = safe_corr(attempts, attempt_successes, "spearman")
+
+    pearson_cs = safe_corr(complexities, complexity_successes, "pearson")
+    spearman_cs = safe_corr(complexities, complexity_successes, "spearman")
+
+    per_model_corr_rows = []
+    for model in QUERY_MODELS.keys():
+        model_data = per_model_correlation_data[model]
+        per_model_corr_rows.append([
+            model,
+            safe_corr(model_data["attempts"], model_data["attempt_successes"], "pearson"),
+            safe_corr(model_data["attempts"], model_data["attempt_successes"], "spearman"),
+            safe_corr(model_data["complexities"], model_data["complexity_successes"], "pearson"),
+            safe_corr(model_data["complexities"], model_data["complexity_successes"], "spearman"),
+        ])
+
+    lines.extend(
+        print_table(
+            "🏁 Correlation by model",
+            ["Model", "Attempts Pearson", "Attempts Spearman", "Complexity Pearson", "Complexity Spearman"],
+            per_model_corr_rows,
+            footer=[
+                "TOTAL",
+                pearson_attempts_success,
+                spearman_attempts_success,
+                pearson_cs,
+                spearman_cs,
+            ],
         )
     )
 
