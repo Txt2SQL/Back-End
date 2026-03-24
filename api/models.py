@@ -37,3 +37,7 @@ class QueryResponse(BaseModel):
     results: Optional[Records] = None
     error: Optional[str] = None
     reasoning: Optional[str] = None
+
+
+class DatabaseListResponse(BaseModel):
+    databases: List[str]

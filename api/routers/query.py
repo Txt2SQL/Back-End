@@ -1,11 +1,27 @@
 from fastapi import APIRouter, HTTPException
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.domain_states import Records
-from api.models import QueryGenerationRequest, QueryEvaluationRequest, QueryResponse
+from api.models import (
+    DatabaseListResponse,
+    QueryGenerationRequest,
+    QueryEvaluationRequest,
+    QueryResponse,
+)
 from api.dependencies import get_schema_store, get_query_store, get_mysql_client
 from src.classes.domain_states import QueryStatus
 
 router = APIRouter(prefix="/queries", tags=["Queries"])
+
+
+@router.get("/mysql/databases", response_model=DatabaseListResponse)
+def list_mysql_databases():
+    """Return all databases available on the current MySQL connection."""
+    try:
+        db_client = get_mysql_client()
+        databases = db_client.list_databases()
+        return DatabaseListResponse(databases=databases)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/mysql", response_model=QueryResponse)
 def generate_query_mysql(payload: QueryGenerationRequest):

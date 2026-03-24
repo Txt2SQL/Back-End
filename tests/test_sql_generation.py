@@ -276,7 +276,7 @@ def printer_thread(
                 logger.warning(f"Incomplete results for index {idx} (should not happen)")
 
     # Write final statistics
-    _write_statistics(results_by_index, num_requests, queries_dir.parent / "final_stats.txt", requests)
+    _write_statistics(results_by_index, num_requests, queries_dir.parent / "final_stats.txt")
     logger.info("Printer finished.")
     if sys.stdout.isatty():
         print("✅ All model requests have been processed.\n")
@@ -311,7 +311,6 @@ def _write_statistics(
     results_by_index: Dict[int, Dict[str, RequestResult]],
     num_requests: int,
     stats_path: Path,
-    requests: List[str],
 ) -> None:
     """Aggregate statistics and write to final_stats.txt."""
     def print_table(title: str, headers: List[str], rows: List[List[str]], footer: Optional[List[str]] = None) -> List[str]:

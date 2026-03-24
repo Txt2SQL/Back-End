@@ -69,8 +69,8 @@ class QueryOrchestrator(BaseOrchestrator):
         consecutive_runtime_errors = 0
         pre_execution_attempts = 0
         evaluation_attempts = 0
-        runtime_error_limit = 10
-        evaluation_attempts_limit = 5
+        runtime_error_limit = 5
+        evaluation_attempts_limit = 3
         has_executable_query = False
 
         while True:

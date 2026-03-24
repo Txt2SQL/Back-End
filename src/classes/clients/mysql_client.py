@@ -173,6 +173,29 @@ class MySQLClient:
         self.logger.info("🏁 Schema extraction completed")
 
         return schema
+
+    def list_databases(self) -> list[str]:
+        """Return all databases visible to the current MySQL connection."""
+        try:
+            self.set_connection()
+
+            if not self.connection.is_connected():
+                raise ConnectionError("Failed to establish a connection to the database")
+
+            cursor = self.connection.cursor()
+            cursor.execute("SHOW DATABASES")
+            databases = [row[0] for row in cursor.fetchall()]
+
+            cursor.close()
+            self.connection.close()
+            self.logger.info("📚 Loaded %s database(s) from MySQL", len(databases))
+
+            return databases
+
+        except Exception:
+            if hasattr(self, "connection") and self.connection.is_connected():
+                self.connection.close()
+            raise
     
     def get_foreign_keys(self, table_names: list[str] | None = None) -> list[str]:
         """
