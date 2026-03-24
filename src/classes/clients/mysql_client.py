@@ -184,13 +184,13 @@ class MySQLClient:
 
             cursor = self.connection.cursor()
             cursor.execute("SHOW DATABASES")
-            databases = [row[0] for row in cursor.fetchall()]
+            databases = [row[0] for row in cursor.fetchall()] # pyright: ignore[reportArgumentType]
 
             cursor.close()
             self.connection.close()
             self.logger.info("📚 Loaded %s database(s) from MySQL", len(databases))
 
-            return databases
+            return databases # pyright: ignore[reportReturnType]
 
         except Exception:
             if hasattr(self, "connection") and self.connection.is_connected():
@@ -264,13 +264,6 @@ class MySQLClient:
         
         self.logger.info("  Foreign key relationships: %s", len(unique_relationships))
         return unique_relationships
-    
-    def list_databases(self) -> list[str]:
-        cursor = self.connection.cursor()
-        cursor.execute("SHOW DATABASES")
-        rows = cursor.fetchall()
-        cursor.close()
-        return [row[0] for row in rows] # pyright: ignore[reportReturnType, reportArgumentType]
     
     def close_connection(self):
         if self.connection.is_connected():

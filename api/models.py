@@ -10,19 +10,19 @@ class SchemaExtractMySQLRequest(BaseModel):
 class SchemaGenerateTextRequest(BaseModel):
     database_name: str
     raw_text: str = Field(..., description="DDL or description of the schema")
-    model_id: str = "gpt-4o"
+    model_id: str
 
 class SchemaUpdateRequest(BaseModel):
     database_name: str
     update_text: str = Field(..., description="Natural language description of the update")
-    model_id: str = "gpt-4o"
+    model_id: str
 
 # --- Query Requests ---
 
 class QueryGenerationRequest(BaseModel):
     database_name: str
     question: str
-    model_id: str = "gpt-4o"
+    model_id: str
 
 class QueryEvaluationRequest(BaseModel):
     database_name: str
