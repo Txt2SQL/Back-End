@@ -1,3 +1,5 @@
+import re
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -10,6 +12,62 @@ class RequestResult:
     query_session: Optional[QuerySession]
     time_taken: float  # seconds
     success: bool  # whether completed without exception
+    complexity: int = 0
+    
+    def compute_query_complexity(self):
+        sql = self.query_session.sql_code if self.query_session else None
+        
+        if not sql:
+            return
+
+        score = 0   
+
+        # Count joins
+        score += len(re.findall(r"\bJOIN\b", sql, re.IGNORECASE)) * 2
+
+        # Aggregations
+        score += len(re.findall(r"\b(SUM|AVG|MIN|MAX|COUNT)\s*\(", sql, re.IGNORECASE)) * 2
+
+        # GROUP BY
+        if re.search(r"\bGROUP\s+BY\b", sql, re.IGNORECASE):
+            score += 2
+
+        # HAVING
+        if re.search(r"\bHAVING\b", sql, re.IGNORECASE):
+            score += 2
+
+        # Window functions
+        score += len(re.findall(r"\bOVER\s*\(", sql, re.IGNORECASE)) * 3
+
+        # Subqueries
+        score += len(re.findall(r"\bSELECT\b", sql, re.IGNORECASE)) - 1  # nested SELECTs
+
+        self.complexity = score
+
+    def get_query_complexity(self) -> Optional[int]:
+        sql = self.query_session.sql_code if self.query_session else None
+        if not sql:
+            return None
+
+        if self.complexity == 0:
+            self.compute_query_complexity()
+
+        return self.complexity
+
+    @staticmethod
+    def complexity_level_from_score(score: float) -> str:
+        if score <= 2:
+            return "low"
+        if score <= 5:
+            return "medium"
+        return "high"
+
+    def get_complexity_level(self) -> Optional[str]:
+        complexity = self.get_query_complexity()
+        if complexity is None:
+            return None
+
+        return self.complexity_level_from_score(complexity)
     
     def format_output_content(self, index: int) -> str:
         query_session = self.query_session
