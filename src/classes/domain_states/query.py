@@ -298,8 +298,6 @@ Generated SQL:
 {self.sql_code}
 
 Status: {self.status.value}
-Error type: {self.error_type.value if self.error_type else None}
-Knowledge scope: {self.knowledge_scope.value if self.knowledge_scope else None}
 """.strip()
 
     def to_document_metadata(self) -> dict:

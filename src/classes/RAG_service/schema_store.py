@@ -1,4 +1,3 @@
-from typing import List
 from pathlib import Path
 from src.classes.RAG_service.base_vector_store import VectorStore
 from langchain_core.documents import Document

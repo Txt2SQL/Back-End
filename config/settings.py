@@ -63,20 +63,13 @@ QUERY_MODELS = {
     #     "api_endpoint": "/completions",
     #     "log_file": "omnisql",
     # },
-    "Qwen3-Coder-Next": {
+    "Qwen3.5:35bt": {
         "provider": "openwebui",
-        "id": "qwen3-coder-next",
+        "id": "qwen3.5-35b-a3b",
         "api_type": "chat",
         "api_endpoint": "/api/chat/completions",
-        "log_file": "Qwen3-Coder-Next",
+        "log_file": "Qwen3.5",
     },
-    # "gpt-oss-20b": {
-    #     "provider": "openwebui",
-    #     "id": "openai/gpt-oss-20b",
-    #     "api_type": "completion",
-    #     "api_endpoint": "/completions",
-    #     "log_file": "gpt-oss-20b",
-    # },
 }
 
 REQUIRED_CREDENTIAL_VARS = [
