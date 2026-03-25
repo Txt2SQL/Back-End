@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from src.classes.domain_states import QueryStatus, QuerySession, Records
+from typing import Any
+
+from pydantic import BaseModel, Field, model_validator
+
+from src.classes.domain_states import QueryStatus
 
 # --- Schema Requests ---
 
@@ -24,20 +26,30 @@ class QueryGenerationRequest(BaseModel):
     question: str
     model_id: str
 
+class QueryPayload(BaseModel):
+    user_request: str | None = None
+    sql_query: str | None = None
+
+    @model_validator(mode="after")
+    def validate_query_input(self) -> "QueryPayload":
+        if self.user_request is None and self.sql_query is None:
+            raise ValueError("At least one of 'user_request' or 'sql_query' must be provided")
+        return self
+
 class QueryEvaluationRequest(BaseModel):
     database_name: str
-    query: QuerySession
+    query: QueryPayload
     model_id: str = "gpt-4o"
 
 # --- Responses ---
 
 class QueryResponse(BaseModel):
-    sql: Optional[str]
+    sql: str | None
     status: QueryStatus
-    results: Optional[Records] = None
-    error: Optional[str] = None
-    reasoning: Optional[str] = None
+    results: list[dict[str, Any]] | None = None
+    error: str | None = None
+    reasoning: str | None = None
 
 
 class DatabaseListResponse(BaseModel):
-    databases: List[str]
+    databases: list[str]
