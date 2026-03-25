@@ -414,7 +414,7 @@ def _write_statistics(
                     runtime_errors += 1
                     model_stats[model]["runtime"] += 1
                     runtime_category = (
-                        query_session.error_type.value
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
                         if query_session and getattr(query_session, "error_type", None)
                         else QueryStatus.RUNTIME_ERROR.value
                     )
@@ -425,7 +425,7 @@ def _write_statistics(
                     syntax_errors += 1
                     model_stats[model]["syntax"] += 1
                     syntax_category = (
-                        query_session.error_type.value
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
                         if query_session and getattr(query_session, "error_type", None)
                         else QueryStatus.SYNTAX_ERROR.value
                     )
@@ -435,7 +435,7 @@ def _write_statistics(
                 elif status == QueryStatus.TIMEOUT_ERROR:
                     other_errors += 1
                     timeout_category = (
-                        query_session.error_type.value
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
                         if query_session and getattr(query_session, "error_type", None)
                         else QueryStatus.TIMEOUT_ERROR.value
                     )
