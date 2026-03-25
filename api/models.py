@@ -53,3 +53,7 @@ class QueryResponse(BaseModel):
 
 class DatabaseListResponse(BaseModel):
     databases: list[str]
+
+
+class QueryModelListResponse(BaseModel):
+    models: list[str]

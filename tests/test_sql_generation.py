@@ -775,8 +775,7 @@ def _write_statistics(
     
 def select_database():
     client = MySQLClient()  # connects without specific database
-    system_dbs = {"information_schema", "mysql", "performance_schema", "sys"}
-    dbs = [db for db in client.list_databases() if db.lower() not in system_dbs]
+    dbs = client.list_databases()
     client.close_connection()
     if not dbs:
         print("No user databases available.")
