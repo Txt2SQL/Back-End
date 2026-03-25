@@ -100,7 +100,7 @@ class Schema:
         self.semantic_notes.append(normalized_note)
 
     # =====================================================
-    # LOAD EXISTING
+    # PARSING ATTEMPTS
     # =====================================================
 
     def _load_existing(self):
@@ -112,8 +112,6 @@ class Schema:
             self.schema_id = self.tables.get("schema_id") or self._compute_hash(self.tables)
         else:
             raise ValueError("Loaded schema is empty, cannot compute hash.")
-
-    # -----------------------------------------------------
 
     def _attempt_direct_json(self, text: str):
         try:
@@ -157,6 +155,7 @@ class Schema:
             return json.loads(widest)
         except Exception:
             return None
+    # -----------------------------------------------------
 
     # =====================================================
     # UPDATE

@@ -40,7 +40,7 @@ class MySQLClient:
             self.logger.debug("✅ Database connection established successfully")
         except mysql.connector.Error as err:
             self.logger.error(f"Error connecting to the database: {err}")
-            raise
+            raise ValueError(err)
     
     def execute_query(self, query: QuerySession):
         self.logger.info(f"📌 Received SQL query:\n{query.sql_code}")
