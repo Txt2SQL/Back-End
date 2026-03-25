@@ -4,11 +4,11 @@ Runs multiple requests against all configured LLM models concurrently,
 writes per-request result files, and produces a summary statistics file.
 """
 
-import argparse, sys, os, time, threading, queue, shutil
+import argparse, sys, os, time, threading, queue, shutil, math, random
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any
-from dataclasses import dataclass
+from typing import List, Dict, Optional
+from scipy.stats import pearsonr, spearmanr
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -19,77 +19,17 @@ from src.classes.RAG_service.schema_store import Schema
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
-from src.classes.domain_states import SchemaSource, QueryStatus, Records
+from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
 from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
-from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, VECTOR_STORE_DIR
+from tests.output_object import RequestResult
+from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST
 
 TMP_DIR = TESTS_DIR / "tmp"
 
 # Initialize LoggerManager at the start
 LoggerManager.setup_project_logger()
 main_logger = LoggerManager.get_logger("main")
-
-
-@dataclass
-class RequestResult:
-    request_index: int
-    model_name: str
-    query_session: Optional[QuerySession]
-    time_taken: float  # seconds
-    success: bool  # whether completed without exception
-    
-    def format_output_content(self, index: int) -> str:
-        query_session = self.query_session
-        lines = []
-
-        lines.append(f"{index}. 🤖[{self.model_name}]\n")
-        lines.append(f"🧮 Query:\n\n{query_session.sql_code if query_session else 'N/A'}\n")
-        # ----------------------------
-        # Status + Outcome formatting
-        # ----------------------------
-        status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
-
-        execution_result = query_session.execution_result if query_session else None
-
-        if status_label == "SUCCESS":
-            rows_fetched = query_session.rows_fetched if query_session else None
-            if rows_fetched is None and isinstance(execution_result, Records):
-                rows_fetched = len(execution_result)
-
-            outcome = (
-                f"({rows_fetched} rows fetched)"
-                if rows_fetched is not None
-                else "(Query executed successfully)"
-            )
-            lines.append(f"status and outcome: 🍾SUCCESS {outcome}\n")
-            if isinstance(execution_result, Records):
-                lines.append(f"{execution_result.get_preview()}\n")
-            else:
-                lines.append(f"{execution_result}\n")
-        else:
-            error_msg = execution_result if isinstance(execution_result, str) else "Unknown error"
-            lines.append(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n")
-        # ----------------------------
-        # LLM Feedback formatting
-        # ----------------------------
-        feedback = query_session.llm_feedback if query_session else None
-        if feedback and feedback.error_category:
-            explanation = feedback.explanation or ""
-            lines.append(
-                f"LLM Feedback: 👎INCORRECT ({feedback.error_category.value} - {explanation})\n"
-            )
-        else:
-            lines.append("LLM Feedback: 👍CORRECT\n")
-
-        # ----------------------------
-        # Attempts + Time
-        # ----------------------------
-        attempts = query_session.attempt if query_session else 0
-        lines.append(f"🏁Attempts: {attempts}")
-        lines.append(f"⌚Request time: {self.time_taken:.2f}\n")
-
-        return "\n".join(lines)
 
 # ----------------------------------------------------------------------
 # Thread-safe wrapper for QueryStore
@@ -140,6 +80,13 @@ def generator_thread(
         logger.info(f"Started generator thread for model: {model_key}, mode: {schema.source.value}")
         logger.info(f"Log file: {log_file}")
 
+        if mode == SchemaSource.MYSQL:
+            db_client = MySQLClient(database=database_name)
+            qs = query_store
+        else:
+            db_client = None
+            qs = None
+
         for idx, request in enumerate(requests, start=1):
             # Set the request index for all logs in this iteration
             LoggerManager.set_request_index(f"[Request: {idx}]")
@@ -149,13 +96,6 @@ def generator_thread(
             logger.info(f"Processing: {truncated_request}")
 
             start_time = time.time()
-            
-            if mode == SchemaSource.MYSQL:
-                db_client = MySQLClient()
-                qs = query_store
-            else:
-                db_client = None
-                qs = None
 
             try:
                 logger.debug(f"Creating QueryOrchestrator")
@@ -163,17 +103,21 @@ def generator_thread(
                 orch = QueryOrchestrator(
                     database_name=database_name,
                     schema_store=schema_store,
-                    llm=llm,
+                    model_name=model_key,
                     database_client=db_client,
                     query_store=qs,
                     max_attempts=3,
                     instance_path=TMP_DIR,
-                    testing=True
                 )
 
                 logger.debug(f"Starting generation")
 
                 result_session = orch.generation(request)
+                
+                if mode == SchemaSource.TEXT:
+                    db_client = MySQLClient(database=database_name)
+                    orch.database_client = db_client
+                    result_session = orch.evaluation(result_session, 0)
 
                 elapsed = time.time() - start_time
 
@@ -332,7 +276,7 @@ def printer_thread(
                 logger.warning(f"Incomplete results for index {idx} (should not happen)")
 
     # Write final statistics
-    _write_statistics(results_by_index, num_requests, queries_dir.parent / "final_stats.txt", requests)
+    _write_statistics(results_by_index, num_requests, queries_dir.parent / "final_stats.txt")
     logger.info("Printer finished.")
     if sys.stdout.isatty():
         print("✅ All model requests have been processed.\n")
@@ -367,7 +311,6 @@ def _write_statistics(
     results_by_index: Dict[int, Dict[str, RequestResult]],
     num_requests: int,
     stats_path: Path,
-    requests: List[str],
 ) -> None:
     """Aggregate statistics and write to final_stats.txt."""
     def print_table(title: str, headers: List[str], rows: List[List[str]], footer: Optional[List[str]] = None) -> List[str]:
@@ -413,6 +356,7 @@ def _write_statistics(
     syntax_errors = 0
     other_errors = 0
     total_attempts = 0
+    error_type_counts: Dict[tuple[str, str], int] = {}
     
     # Global sums for footer
     global_total_time = 0.0
@@ -447,20 +391,57 @@ def _write_statistics(
                 global_total_time += res.time_taken
                 model_stats[model]["count"] += 1
 
-                status = query_session.status.value if query_session and query_session.status else None
+                status = query_session.status if query_session and query_session.status else None
 
-                if status == QueryStatus.SUCCESS.value:
+                if status == QueryStatus.SUCCESS:
                     correct_queries += 1
                     model_stats[model]["correct"] += 1
-                elif status == QueryStatus.INCORRECT.value:
+                elif status == QueryStatus.INCORRECT:
                     incorrect_queries += 1
                     model_stats[model]["incorrect"] += 1
-                elif status == QueryStatus.RUNTIME_ERROR.value:
+                    feedback = query_session.llm_feedback if query_session else None
+                    error_category = (
+                        feedback.error_category.value
+                        if feedback
+                        and feedback.feedback_status == FeedbackStatus.INCORRECT
+                        and feedback.error_category
+                        else "UNKNOWN_ERROR"
+                    )
+                    error_type_counts[(error_category, "INCORRECT")] = (
+                        error_type_counts.get((error_category, "INCORRECT"), 0) + 1
+                    )
+                elif status == QueryStatus.RUNTIME_ERROR:
                     runtime_errors += 1
                     model_stats[model]["runtime"] += 1
-                elif status == QueryStatus.SYNTAX_ERROR.value:
+                    runtime_category = (
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.RUNTIME_ERROR.value
+                    )
+                    error_type_counts[(runtime_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((runtime_category, "RUNTIME_ERROR"), 0) + 1
+                    )
+                elif status == QueryStatus.SYNTAX_ERROR:
                     syntax_errors += 1
                     model_stats[model]["syntax"] += 1
+                    syntax_category = (
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.SYNTAX_ERROR.value
+                    )
+                    error_type_counts[(syntax_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((syntax_category, "RUNTIME_ERROR"), 0) + 1
+                    )
+                elif status == QueryStatus.TIMEOUT_ERROR:
+                    other_errors += 1
+                    timeout_category = (
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.TIMEOUT_ERROR.value
+                    )
+                    error_type_counts[(timeout_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((timeout_category, "RUNTIME_ERROR"), 0) + 1
+                    )
                 else:
                     other_errors += 1
             else:
@@ -578,6 +559,211 @@ def _write_statistics(
         )
     )
 
+    error_type_rows = [
+        [str(i + 1), category, source_type, str(count)]
+        for i, ((category, source_type), count) in enumerate(
+            sorted(
+                error_type_counts.items(),
+                key=lambda item: (-item[1], item[0][1], item[0][0]),
+            )
+        )
+    ]
+
+    lines.extend(
+        print_table(
+            "🏁 Error type ranking",
+            ["Rank", "Category", "Type", "Count"],
+            error_type_rows,
+            footer=[
+                "",
+                "TOTAL",
+                "",
+                str(sum(error_type_counts.values())),
+            ],
+        )
+    )
+    
+    complexities = []
+    complexity_successes = []
+    attempts = []
+    attempt_successes = []
+    per_model_correlation_data = {
+        model: {
+            "attempts": [],
+            "attempt_successes": [],
+            "complexities": [],
+            "complexity_successes": [],
+        }
+        for model in QUERY_MODELS.keys()
+    }
+    per_model_complexity_buckets = {
+        model: {
+            "low": [],
+            "medium": [],
+            "high": [],
+            "total": [],
+        }
+        for model in QUERY_MODELS.keys()
+    }
+
+    request_complexity_scores: Dict[int, Optional[float]] = {}
+    request_complexity_levels: Dict[int, Optional[str]] = {}
+
+    for request_index in range(1, num_requests + 1):
+        models_dict = results_by_index.get(request_index, {})
+        correct_complexities = []
+        all_complexities = []
+
+        for res in models_dict.values():
+            complexity = res.get_query_complexity()
+            if complexity is None:
+                continue
+
+            all_complexities.append(complexity)
+
+            if (
+                res.success
+                and res.query_session
+                and res.query_session.status == QueryStatus.SUCCESS
+            ):
+                correct_complexities.append(complexity)
+
+        request_complexity: Optional[float]
+        if correct_complexities:
+            request_complexity = float(random.choice(correct_complexities))
+        elif all_complexities:
+            request_complexity = sum(all_complexities) / len(all_complexities)
+        else:
+            request_complexity = None
+
+        request_complexity_scores[request_index] = request_complexity
+        request_complexity_levels[request_index] = (
+            RequestResult.complexity_level_from_score(request_complexity)
+            if request_complexity is not None
+            else None
+        )
+    
+    for request_index, models_dict in results_by_index.items():
+        request_complexity = request_complexity_scores.get(request_index)
+        request_complexity_level = request_complexity_levels.get(request_index)
+
+        for model, res in models_dict.items():
+            if res.success and res.query_session:
+                qs = res.query_session
+                success = 1 if qs.status == QueryStatus.SUCCESS else 0
+
+                attempts.append(qs.attempt)
+                attempt_successes.append(success)
+                per_model_correlation_data[model]["attempts"].append(qs.attempt)
+                per_model_correlation_data[model]["attempt_successes"].append(success)
+
+                if request_complexity is not None:
+                    complexities.append(request_complexity)
+                    complexity_successes.append(success)
+                    per_model_correlation_data[model]["complexities"].append(request_complexity)
+                    per_model_correlation_data[model]["complexity_successes"].append(success)
+                    per_model_complexity_buckets[model]["total"].append(success)
+
+                    if request_complexity_level is not None:
+                        per_model_complexity_buckets[model][request_complexity_level].append(success)
+    
+    buckets = {
+        "low": [],
+        "medium": [],
+        "high": [],
+        "total": [],
+    }
+
+    for c, s in zip(complexities, complexity_successes):
+        buckets["total"].append(s)
+        if c <= 2:
+            buckets["low"].append(s)
+        elif c <= 5:
+            buckets["medium"].append(s)
+        else:
+            buckets["high"].append(s)
+
+    def format_success_rate(values: List[int]) -> str:
+        if not values:
+            return "N/A"
+        return f"{(sum(values) / len(values)):.2%}"
+
+    complexity_rows = []
+    for model in QUERY_MODELS.keys():
+        model_buckets = per_model_complexity_buckets[model]
+        complexity_rows.append([
+            model,
+            format_success_rate(model_buckets["low"]),
+            format_success_rate(model_buckets["medium"]),
+            format_success_rate(model_buckets["high"]),
+            format_success_rate(model_buckets["total"]),
+        ])
+
+    lines.extend(
+        print_table(
+            "🏁 Complexity success rate by model",
+            ["Model", "Low", "Medium", "High", "Total"],
+            complexity_rows,
+            footer=[
+                "TOTAL",
+                format_success_rate(buckets["low"]),
+                format_success_rate(buckets["medium"]),
+                format_success_rate(buckets["high"]),
+                format_success_rate(buckets["total"]),
+            ],
+        )
+    )
+
+    def safe_corr(values: List[int], outcomes: List[int], method: str) -> str:
+        if len(values) < 2 or len(outcomes) < 2:
+            return "N/A"
+        if len(set(values)) <= 1 or len(set(outcomes)) <= 1:
+            return "N/A"
+
+        result = pearsonr(values, outcomes) if method == "pearson" else spearmanr(values, outcomes)
+
+        statistic = getattr(result, "statistic", None)
+        pvalue = getattr(result, "pvalue", None)
+
+        if statistic is None or pvalue is None:
+            return "N/A"
+        if math.isnan(statistic) or math.isnan(pvalue):
+            return "N/A"
+
+        return f"{statistic:.3f} (p={pvalue:.3f})"
+
+    pearson_attempts_success = safe_corr(attempts, attempt_successes, "pearson")
+    spearman_attempts_success = safe_corr(attempts, attempt_successes, "spearman")
+
+    pearson_cs = safe_corr(complexities, complexity_successes, "pearson")
+    spearman_cs = safe_corr(complexities, complexity_successes, "spearman")
+
+    per_model_corr_rows = []
+    for model in QUERY_MODELS.keys():
+        model_data = per_model_correlation_data[model]
+        per_model_corr_rows.append([
+            model,
+            safe_corr(model_data["attempts"], model_data["attempt_successes"], "pearson"),
+            safe_corr(model_data["attempts"], model_data["attempt_successes"], "spearman"),
+            safe_corr(model_data["complexities"], model_data["complexity_successes"], "pearson"),
+            safe_corr(model_data["complexities"], model_data["complexity_successes"], "spearman"),
+        ])
+
+    lines.extend(
+        print_table(
+            "🏁 Correlation by model",
+            ["Model", "Attempts Pearson", "Attempts Spearman", "Complexity Pearson", "Complexity Spearman"],
+            per_model_corr_rows,
+            footer=[
+                "TOTAL",
+                pearson_attempts_success,
+                spearman_attempts_success,
+                pearson_cs,
+                spearman_cs,
+            ],
+        )
+    )
+
     best_model = status_rank[0][0] if status_rank else "N/A"
     lines.append(f"\n🏆 Best overall model: {best_model}")
     lines.append("=" * 60)
@@ -589,8 +775,7 @@ def _write_statistics(
     
 def select_database():
     client = MySQLClient()  # connects without specific database
-    system_dbs = {"information_schema", "mysql", "performance_schema", "sys"}
-    dbs = [db for db in client.list_databases() if db.lower() not in system_dbs]
+    dbs = client.list_databases()
     client.close_connection()
     if not dbs:
         print("No user databases available.")
@@ -621,7 +806,7 @@ def load_requests(db_name: str) -> List[str]:
 def create_output_dir(db_name: str, output_name: str | None = None) -> tuple[Path, Path, Path]:
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     run_name = output_name if output_name else f"results_{timestamp}"
-    output_dir = TESTS_DIR / 'output' / 'runs' / f"{db_name}_results" / run_name
+    output_dir = TESTS_DIR / 'output' / 'generations' / f"{db_name}_results" / run_name
     queries_dir = output_dir / 'queries'
     logs_dir = output_dir / 'logs'
     queries_dir.mkdir(parents=True, exist_ok=True)
@@ -651,7 +836,7 @@ def drop_all_views(db_name: str) -> None:
     try:
         # Connect to the specific database
         client = MySQLClient(db_name)
-        
+                
         # Query to get all view names
         views_query = f"""
             SELECT TABLE_NAME 
@@ -710,7 +895,8 @@ def build_schema_rag(db_name: str, source: SchemaSource) -> tuple[Schema, Schema
     drop_all_views(db_name)
     main_logger.info(f"Acquiring schema from {db_name}")
     schema = Schema(database_name=db_name, schema_source=source, path=TMP_DIR / "schema")
-    schema_dict = MySQLClient(db_name).extract_schema()
+    db_client = MySQLClient(db_name)
+    schema_dict = db_client.extract_schema()
     schema.parse_response(schema_dict)
     schema_store = SchemaStore(TMP_DIR / "vector_stores")
     schema_store.add_schema(schema)

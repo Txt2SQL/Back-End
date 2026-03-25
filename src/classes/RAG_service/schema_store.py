@@ -1,4 +1,3 @@
-from typing import List
 from pathlib import Path
 from src.classes.RAG_service.base_vector_store import VectorStore
 from langchain_core.documents import Document
@@ -91,15 +90,26 @@ class SchemaStore(VectorStore):
         join_terms = {"join", "across", "between", "related", "each"}
 
         has_aggregation = bool(request_tokens.intersection(aggregate_terms))
-        has_join_intent = bool(request_tokens.intersection(join_terms)) or " by " in f" {request_lower} "
-
+        
+        join_indicators = {
+            "per", "each", "for each",
+            "with", "without",
+            "have", "has", "had",
+            "included", "not in", "never",
+            "exists", "missing"
+        }
+        
+        has_join_intent = (
+            bool(request_tokens.intersection(join_terms | join_indicators))
+            or " by " in f" {request_lower} "
+        )
         # Start with a conservative context size and increase only when complexity suggests it.
         k = 3
         if has_aggregation:
             k += 2
             self.logger.debug("Request contains aggregation terms, increasing k to %s", k)
         if has_join_intent:
-            k += 1
+            k += 2
             self.logger.debug("Request contains join intent, increasing k to %s", k)
         
         self.logger.info("Retrieval parameters - has_aggregation: %s, has_join_intent: %s, k: %s", 

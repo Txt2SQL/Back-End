@@ -30,5 +30,5 @@ def get_llm(model_id: str, model_type: str = "schema"):
     
     return LLMFactory.create(config)
 
-def get_mysql_client(database_name: str) -> MySQLClient:
+def get_mysql_client(database_name: str | None = None) -> MySQLClient:
     return MySQLClient(database=database_name)

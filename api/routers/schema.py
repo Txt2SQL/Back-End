@@ -1,13 +1,34 @@
+import traceback
+
 from fastapi import APIRouter, HTTPException, Body
 from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
 from api.models import (
     SchemaExtractMySQLRequest, 
     SchemaGenerateTextRequest, 
-    SchemaUpdateRequest
+    SchemaUpdateRequest,
+    DatabaseListResponse
 )
 from api.dependencies import get_schema_store, get_mysql_client, get_llm
 
 router = APIRouter(prefix="/schema", tags=["Schema"])
+
+@router.get("/mysql/databases", response_model=DatabaseListResponse)
+def list_mysql_databases():
+    """Return all databases available on the current MySQL connection."""
+    try:
+        print("[list_mysql_databases] Request received")
+        print("[list_mysql_databases] Creating MySQL client")
+        db_client = get_mysql_client()
+        safe_config = {k: v for k, v in db_client.config.items() if "PASSWORD" not in k.upper()}
+        print(f"[list_mysql_databases] Client created with config: {safe_config}")
+        print("[list_mysql_databases] Calling list_databases()")
+        databases = db_client.list_databases()
+        print(f"[list_mysql_databases] Retrieved {len(databases)} databases")
+        return DatabaseListResponse(databases=databases)
+    except Exception as e:
+        print(f"[list_mysql_databases] ERROR: {type(e).__name__}: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/mysql")
 def extract_schema_mysql(payload: SchemaExtractMySQLRequest):

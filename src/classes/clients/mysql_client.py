@@ -15,7 +15,7 @@ class MySQLClient:
         self.database = database
         
         self.set_connection()
-    
+            
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)
@@ -173,6 +173,33 @@ class MySQLClient:
         self.logger.info("🏁 Schema extraction completed")
 
         return schema
+
+    def list_databases(self) -> list[str]:
+        """Return all databases visible to the current MySQL connection."""
+        try:
+            self.set_connection()
+
+            if not self.connection.is_connected():
+                raise ConnectionError("Failed to establish a connection to the database")
+
+            cursor = self.connection.cursor()
+            cursor.execute("SHOW DATABASES")
+            databases = [row[0] for row in cursor.fetchall()] # pyright: ignore[reportArgumentType]
+
+            cursor.close()
+            self.connection.close()
+            databases = [
+                database
+                for database in databases
+                if database not in {"sys", "information_schema", "mysql", "performance_schema"}
+            ]
+            self.logger.info("📚 Loaded %s database(s) from MySQL", len(databases))
+            return databases # pyright: ignore[reportReturnType]
+
+        except Exception:
+            if hasattr(self, "connection") and self.connection.is_connected():
+                self.connection.close()
+            raise
     
     def get_foreign_keys(self, table_names: list[str] | None = None) -> list[str]:
         """
@@ -241,13 +268,6 @@ class MySQLClient:
         
         self.logger.info("  Foreign key relationships: %s", len(unique_relationships))
         return unique_relationships
-    
-    def list_databases(self) -> list[str]:
-        cursor = self.connection.cursor()
-        cursor.execute("SHOW DATABASES")
-        rows = cursor.fetchall()
-        cursor.close()
-        return [row[0] for row in rows] # pyright: ignore[reportReturnType, reportArgumentType]
     
     def close_connection(self):
         if self.connection.is_connected():

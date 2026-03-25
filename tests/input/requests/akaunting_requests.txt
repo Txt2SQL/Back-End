@@ -1,21 +1,20 @@
-Get total revenue by month for a specific company. Track revenue trends and identify seasonal patterns.
-Find top 10 customers by total billed amount. Identify most valuable customers for relationship management.
-Get monthly expense breakdown by category. Budget analysis and expense control.
-Get overdue invoices (past due date). Cash flow management and collections follow-up
-Find unpaid bills with aging analysis. Manage accounts payable and cash outflow planning
-Get account balance summary. Financial position overview and reconciliation
-Get low stock items (below reorder level).
-Find best selling products by revenue.
-Get customer contact information with recent activity.
-Find vendors with pending bills.
-Get unreconciled transactions for an account.
-Find transactions without proper documentation.
-Get monthly profit & loss summary.
-Get tax summary for a period.
-Get user permissions summary.
-Find active users with their company access.
-Find recently modified records (for audit purposes).
-Get failed jobs for troubleshooting.
-Get currency exchange rates and usage.
-Find media files attached to invoices and bills.
-Get recurring transactions due in the next 7 days.
+Vendor Contact List: List all contacts of type 'Vendor' for a specific company, including their email and phone number.
+Unpaid Invoices: Retrieve all invoices with a status of 'Unpaid' or 'Partial' that have passed their `due_at` date.
+Account Balances: List all bank accounts for a specific company along with their `opening_balance` and `currency_code`.
+Item Catalog: Show all enabled items, their SKU, and the difference between their `sale_price` and `purchase_price`.
+Recent Activity Log: List the last 50 entries from `firewall_logs` including the URL visited and the user's ID.
+Revenue by Category: Calculate the total amount of all invoices grouped by their category name.
+Tax Summary: Show the total tax amount collected per tax type (from `invoice_item_taxes`) for the current year.
+Customer Statement: for all the contacts in the `contacts` table, sum the total amount of all invoices versus the total amount of transactions (payments) linked to that contact.
+Departmental Spending: Join `bills` with `categories` to see which expense categories have the highest spending in the last 6 months.
+User Access Map: List all users and the specific roles and permissions assigned to them through the `user_roles` and `role_permissions` tables.
+Monthly Cash Flow: Use a CTE to generate a list of the last 12 months, then join it with `transactions` to show total Income vs. total Expense per month.
+Duplicate SKU Detection: Find any items across different companies that share the same SKU but have different names.
+Invoice Aging Report: Use a `CASE` statement to bucket unpaid invoices into '0-30 days', '31-60 days', and '60+ days' overdue.
+Top 5 Customers by Volume: Use a CTE to rank customers by the total value of `invoices` they received in the last fiscal year.
+Recursive Parent Search: If the `parent_id` in `invoices` is used for revisions, write a query to find the "original" invoice for any given revision ID.
+Running Bank Balance: calculate the running balance of an account after every transaction, starting from the `opening_balance`.
+Top Selling Item per Category: find the most frequently sold item in every category.
+Payment Velocity: Calculate the average number of days it takes for a customer to pay an invoice (difference between `invoiced_at` and the first linked `transactions.paid_at`)
+Year-Over-Year Growth: compare total monthly revenue from the current month to the same month in the previous year.
+Audit Trail Gap Analysis: find instances where the status of an invoice stayed in 'Pending' for more than 7 days before moving to 'Approved'.

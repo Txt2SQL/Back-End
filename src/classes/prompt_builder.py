@@ -127,7 +127,8 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - Do NOT use SELECT *
 - Do NOT add WHERE clauses or conditions unless explicitly requested.
 - Do NOT join tables unless necessary for the request.
-- If using aggregates, include GROUP BY  
+- If using aggregates, include GROUP BY
+- The sql query must be executable on a MySQL database.
 """
     
         if previous_fail:
@@ -306,7 +307,7 @@ Answer only with "A" or "B".
         """
         if self.logger.isEnabledFor(LOGGER_LEVEL):
             self.logger.debug(
-                "\n\n===== GENERATED PROMPT: %s =====\n%s\n===== END PROMPT =====\n",
+                "\n\n/////// GENERATED PROMPT: %s ///////\n%s\n/////// END PROMPT ///////\n",
                 name,
                 prompt
             )

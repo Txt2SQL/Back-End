@@ -15,7 +15,12 @@ DDL_DIR = INPUT_DIR / 'existing_ddl'
 DEFAULT_ROWS_PER_TABLE = 100  # How many fake rows to generate per table
 
 fake = Faker()
+
+# Initialize the project logger once at startup
 LoggerManager.setup_project_logger()
+
+# Get a logger for this module - this will be a child of the project logger
+# since we're not providing a log_file parameter
 logger = LoggerManager.get_logger(__name__)
 
 
@@ -196,31 +201,67 @@ def generate_fake_value(col_type, col_name):
     col_type = col_type.lower()
     col_name = col_name.lower()
 
-    # Heuristics based on column name
-    if 'email' in col_name:
+    # -------- TYPE CATEGORIES --------
+    is_string = any(t in col_type for t in ["varchar", "text", "char"])
+    is_int = "int" in col_type
+    is_datetime = any(t in col_type for t in ["datetime", "timestamp"])
+    is_date = col_type.startswith("date")
+    is_time = col_type.startswith("time")
+    is_decimal = any(t in col_type for t in ["decimal", "float", "double"])
+    is_bool = any(t in col_type for t in ["bool", "boolean", "tinyint(1)"])
+
+    # -------- NAME HEURISTICS (ONLY IF TYPE COMPATIBLE) --------
+    if "email" in col_name and is_string:
+        # logger.info("Generating email: %s", col_name)
         return fake.email()
-    if 'name' in col_name:
+
+    if "name" in col_name and is_string:
+        # logger.info("Generating name: %s", col_name)
         return fake.name()
-    if 'phone' in col_name:
+
+    if "phone" in col_name and is_string:
+        # logger.info("Generating phone: %s", col_name)
         return fake.phone_number()
-    if 'address' in col_name:
+
+    if "address" in col_name and is_string:
+        # logger.info("Generating address: %s", col_name)
         return fake.address()
 
-    # Heuristics based on data type
-    if 'int' in col_type or 'tinyint' in col_type:
+    # -------- TYPE-BASED GENERATION --------
+    if is_int:
+        # logger.info("Generating integer: %s", col_type)
         return random.randint(1, 100)
-    if 'varchar' in col_type or 'text' in col_type or 'char' in col_type:
-        return fake.word() if 'varchar(10)' in col_type else fake.sentence()
-    if 'datetime' in col_type or 'timestamp' in col_type:
-        return fake.date_time_between(start_date='-2y', end_date='now').strftime('%Y-%m-%d %H:%M:%S')
-    if col_type.startswith('date'):
-        return fake.date_between(start_date='-2y', end_date='today').strftime('%Y-%m-%d')
-    if col_type.startswith('time'):
-        return fake.time(pattern='%H:%M:%S')
-    if 'decimal' in col_type or 'float' in col_type or 'double' in col_type:
+
+    if is_string:
+        # logger.info("Generating string: %s", col_type)
+        return fake.word() if "varchar(10)" in col_type else fake.sentence()
+
+    if is_datetime:
+        # logger.info("Generating datetime: %s", col_type)
+        return fake.date_time_between(start_date="-2y", end_date="now").strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    if is_date:
+        # logger.info("Generating date: %s", col_type)
+        return fake.date_between(start_date="-2y", end_date="today").strftime(
+            "%Y-%m-%d"
+        )
+
+    if is_time:
+        # logger.info("Generating time: %s", col_type)
+        return fake.time(pattern="%H:%M:%S")
+
+    if is_decimal:
+        # logger.info("Generating decimal: %s", col_type)
         return round(random.uniform(10.0, 500.0), 2)
 
-    # Fallback
+    if is_bool:
+        # logger.info("Generating boolean: %s", col_type)
+        return random.choice([True, False])
+
+    # -------- FALLBACK --------
+    logger.info("Generating default value: %s", col_type)
     return "test"
 
 
@@ -228,9 +269,11 @@ def generate_primary_key_value(col_type, pk_counters):
     """Generate a PK-safe value based on column type."""
     col_type = col_type.lower()
     if 'int' in col_type or 'tinyint' in col_type:
+        logger.info("Incrementing primary key counter: %s", pk_counters['next'])
         pk_counters['next'] += 1
         return pk_counters['next']
     if 'char' in col_type or 'text' in col_type or 'varchar' in col_type:
+        logger.info("Generating UUID: %s", col_type)
         max_len = None
         length_match = re.search(r"\((\d+)\)", col_type)
         if length_match:
@@ -256,7 +299,7 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache, pk_cache,
         col_type = next(c['type'] for c in columns if c['name'] == col)
         if 'int' in col_type.lower() or 'tinyint' in col_type.lower():
             existing_values = get_existing_values(cursor, table_name, col, pk_cache)
-            pk_counters[col] = {'next': max(existing_values, default=0)}
+            pk_counters[col] = {'next': max(existing_values, default=0) + 1}  # Start from max+1
 
     # Filter out auto_increment columns (database handles them)
     insert_cols = [c for c in columns if not c['is_auto_increment']]
@@ -324,9 +367,9 @@ def populate_table(cursor, table_name, rows_per_table, fk_value_cache, pk_cache,
                 pk_index = col_names.index(pk_col)
                 pk_values.append(row_data[pk_index])
             pk_tuple = tuple(pk_values)
-            if pk_tuple in existing_pk_tuples: # pyright: ignore[reportOperatorIssue]
+            if pk_tuple in existing_pk_tuples:  # pyright: ignore[reportOperatorIssue]
                 continue
-            existing_pk_tuples.add(pk_tuple) # pyright: ignore[reportOptionalMemberAccess]
+            existing_pk_tuples.add(pk_tuple)  # pyright: ignore[reportOptionalMemberAccess]
         data_batch.append(tuple(row_data))
 
     if not data_batch:
@@ -375,25 +418,46 @@ def select_tables(tables, action_label):
         return tables
 
     print("\nAvailable tables:")
-    for idx, table_name in enumerate(sorted(tables), start=1):
+    sorted_tables = sorted(tables)
+    for idx, table_name in enumerate(sorted_tables, start=1):
         print(f"{idx}) {table_name}")
 
-    selected_table = None
-    sorted_tables = sorted(tables)
-    while selected_table is None:
-        choice = input("Select a table (by number or name): ").strip()
-        if choice.isdigit():
-            index = int(choice) - 1
-            if 0 <= index < len(sorted_tables):
-                selected_table = sorted_tables[index]
-                break
-        if choice in tables:
-            selected_table = choice
+    selected_tables = []
+    while not selected_tables:
+        choice = input("Select table(s) (numbers or names, comma-separated): ").strip()
+        if not choice:
+            print("Invalid choice. Please select at least one table.")
+            continue
 
-        if selected_table is None:
-            print("Invalid choice. Please select a valid table.")
+        tokens = [token.strip() for token in choice.split(",") if token.strip()]
+        picked = []
+        invalid = []
+        for token in tokens:
+            if token.isdigit():
+                index = int(token) - 1
+                if 0 <= index < len(sorted_tables):
+                    picked.append(sorted_tables[index])
+                else:
+                    invalid.append(token)
+            else:
+                if token in tables:
+                    picked.append(token)
+                else:
+                    invalid.append(token)
 
-    return [selected_table]
+        if invalid:
+            print(f"Invalid choice(s): {', '.join(invalid)}. Please select valid table numbers or names.")
+            continue
+
+        # De-duplicate while preserving order
+        seen = set()
+        for table_name in picked:
+            if table_name not in seen:
+                seen.add(table_name)
+                selected_tables.append(table_name)
+
+    return selected_tables
+
 
 def truncate_tables(cursor, tables):
     """Truncate selected tables."""
@@ -451,7 +515,6 @@ def main():
         logger.warning("Invalid options: --truncate cannot be used with --create.")
         return
 
-
     db_client = None
     conn = None
     cursor = None
@@ -500,7 +563,7 @@ def main():
                 return
 
             create_database(cursor, db_name)
-            cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+            cursor.execute(f"USE {quote_identifier(db_name)}")  # pyright: ignore[reportOptionalMemberAccess]
             execute_sql_file(cursor, file_path)
             db_client.connection.commit()
             logger.info("DDL executed and committed for %s.", db_name)
@@ -526,10 +589,28 @@ def main():
 
             print(f"\n--- Processing {db_name} ---")
             logger.info("Processing existing database: %s", db_name)
-            cursor.execute(f"USE {quote_identifier(db_name)}") # pyright: ignore[reportOptionalMemberAccess]
+            cursor.execute(f"USE {quote_identifier(db_name)}")  # pyright: ignore[reportOptionalMemberAccess]
 
-        cursor.execute("SHOW TABLES") # pyright: ignore[reportOptionalMemberAccess]
-        tables = [table[0] for table in cursor.fetchall()] # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
+        cursor.execute("SHOW TABLES")  # pyright: ignore[reportOptionalMemberAccess]
+        tables = [table[0] for table in cursor.fetchall()]  # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
+
+        if not tables:
+            print("No tables found in the selected database.")
+            logger.warning("No tables found in selected database: %s", db_name)
+            return
+
+        print("\nAvailable tables with current row counts:")
+        for idx, table_name in enumerate(sorted(tables), start=1):  # pyright: ignore[reportArgumentType]
+            cursor.execute(
+                f"SELECT COUNT(*) FROM {quote_identifier(table_name)}"
+            )
+            row_count_result = cursor.fetchone()
+            row_count = row_count_result[0] if row_count_result else 0  # pyright: ignore[reportArgumentType]
+            print(f"{idx}) {table_name} - {row_count} rows")
+
+        selected_tables = select_tables(tables, "insert records")
+        if not selected_tables:
+            return
 
         rows_per_table = None
         while rows_per_table is None:
@@ -544,11 +625,7 @@ def main():
                 break
             print("Invalid input. Please enter a positive integer.")
 
-        selected_tables = select_tables(tables, "insert records")
-        if not selected_tables:
-            return
-
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0") # pyright: ignore[reportOptionalMemberAccess]
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")  # pyright: ignore[reportOptionalMemberAccess]
         if truncate:
             print("\nTruncating selected tables before insert...")
             logger.info("Truncating selected tables before insert: %s", ", ".join(str(t) for t in selected_tables))
@@ -560,8 +637,21 @@ def main():
         ordered_tables = order_tables_by_dependency(cursor, selected_tables)
         for table in ordered_tables:
             populate_table(cursor, table, rows_per_table, fk_value_cache, pk_value_cache, pk_tuple_cache)
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1") # pyright: ignore[reportOptionalMemberAccess]
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")  # pyright: ignore[reportOptionalMemberAccess]
         db_client.connection.commit()
+
+        print("\nUpdated record counts for selected tables:")
+        for idx, table_name in enumerate(sorted(selected_tables), start=1):  # pyright: ignore[reportArgumentType]
+            cursor.execute(
+                f"SELECT COUNT(*) FROM {quote_identifier(table_name)}"
+            )
+            row_count_result = cursor.fetchone()
+            row_count = row_count_result[0] if row_count_result else 0  # pyright: ignore[reportArgumentType]
+            print(f"{idx}) {table_name} - {row_count} rows")
+        logger.info(
+            "Displayed updated row counts for selected tables: %s",
+            ", ".join(str(t) for t in selected_tables)
+        )
 
     except Error as e:
         print(f"Error connecting to MySQL: {e}")
@@ -577,6 +667,5 @@ def main():
     logger.info("Done.")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
     main()
-

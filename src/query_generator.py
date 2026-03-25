@@ -136,7 +136,6 @@ def main():
             
             # Select model
             model_name = select_model()
-            llm = LLMFactory(QUERY_MODELS[model_name])
 
             # Select database from schema files
             database_name = select_database_name()
@@ -150,7 +149,6 @@ def main():
 
             path = DATA_DIR / "schema" / f"{database_name}_schema.json"
             schema = Schema.from_json_file(path)
-            schema_store.add_schema(schema)
             
             if schema.source is SchemaSource.MYSQL:
                 db_client = MySQLClient()
@@ -162,7 +160,7 @@ def main():
             orchestrator = QueryOrchestrator(
                 database_name=database_name,
                 schema_store=schema_store,
-                llm=llm,
+                model_name=model_name,
                 database_client=db_client,
                 query_store=qs,
             )

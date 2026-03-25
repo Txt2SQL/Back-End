@@ -1,6 +1,5 @@
 venv/
 .vscode/
-data/vector_store/schema/*
 data/schema/
 **/__pycache__/
 *.log

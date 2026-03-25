@@ -38,32 +38,37 @@ QUERY_MODELS = {
     "codestral:22b": {
         "provider": "openwebui",
         "id": "ollama@isarco02.codestral:22b",
-        "api_type": "chat",      # 🔥 key addition
-        "api_key": "CHAT_API_KEY",
-        "api_base": "CHAT_ADDRESS",
+        "api_type": "chat",
         "api_endpoint": "/api/chat/completions",
         "log_file": "codestral",
     },
     "codellama:34b": {
         "provider": "openwebui",
         "id": "ollama@isarco02.codellama:34b",
-        "api_type": "chat",      # 🔥 key addition
+        "api_type": "chat",
         "api_endpoint": "/api/chat/completions",
         "log_file": "codellama",
     },
     "sqlcoder:34b": {
         "provider": "openwebui",
         "id": "sqlcoder-34b-alpha",
-        "api_type": "completion",      # 🔥 key addition
+        "api_type": "completion",
         "api_endpoint": "/completions",
         "log_file": "sqlcoder",
     },
-    "Qwen3-Coder-Next": {
+    # "omnisql:7b": {
+    #     "provider": "openwebui",
+    #     "id": "omnisql-7b",
+    #     "api_type": "completion",
+    #     "api_endpoint": "/completions",
+    #     "log_file": "omnisql",
+    # },
+    "Qwen3.5:35b": {
         "provider": "openwebui",
-        "id": "qwen3-coder-next",
-        "api_type": "chat",      # 🔥 key addition
+        "id": "qwen3.5-35b-a3b",
+        "api_type": "chat",
         "api_endpoint": "/api/chat/completions",
-        "log_file": "Qwen3-Coder-Next",
+        "log_file": "Qwen3.5",
     },
 }
 
