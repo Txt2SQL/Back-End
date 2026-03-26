@@ -14,44 +14,167 @@ import argparse
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config import QUERY_MODELS, SPIDER_DATA, TESTS_DIR, TIMEOUT_PER_REQUEST, SPIDER_REPO
+from config import QUERY_MODELS, SPIDER_DATA, TESTS_DIR, TIMEOUT_PER_REQUEST, SPIDER_REPO, INPUT_DIR
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource
 from src.classes.logger import LoggerManager
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from tests.output_object import RequestResult
-from tests.test_sql_generation import empty_tmp_dir, printer_thread, create_output_dir
+from tests.test_sql_generation import empty_tmp_dir, printer_thread, create_output_dir, ThreadSafeQueryStore
 
 
 TMP_DIR = TESTS_DIR / "tmp"
 SPIDER_DEV_PATH = SPIDER_DATA / "dev.json"
 SPIDER_TABLES_PATH = SPIDER_DATA / "tables.json"
 SPIDER_DB_DIR = SPIDER_DATA / "database"
-EVAL_FILE = SPIDER_REPO / "evaluation.py"
+EVAL_FILE = INPUT_DIR / "evaluation_scripts" / "evaluation.py"
+NLTK_DATA_DIR = TMP_DIR / "nltk_data"
+_nltk_setup_lock = threading.Lock()
+_nltk_setup_done = False
 
 LoggerManager.setup_project_logger()
 main_logger = LoggerManager.get_logger("spider_test")
 
 
-class ThreadSafeQueryStore(QueryStore):
-    def __init__(self, path: Path, lock: threading.Lock):
-        super().__init__(path)
-        self._lock = lock
+@dataclass
+class SpiderEvaluationReport:
+    exec_result: subprocess.CompletedProcess[str]
+    execution_accuracy: Optional[float]
+    eval_dir: Path
 
-    def store_query(self, query: QuerySession) -> None:
-        with self._lock:
-            super().store_query(query)
+
+def _extract_metric(output: str, metric_name: str) -> Optional[float]:
+    for line in output.splitlines():
+        if line.strip().startswith(metric_name):
+            numbers = re.findall(r"[0-9]*\.?[0-9]+", line)
+            if numbers:
+                return float(numbers[-1])
+    return None
+
+
+def _write_eval_artifacts(
+    base_path: Path,
+    result: subprocess.CompletedProcess[str],
+    eval_type: str,
+) -> None:
+    stdout_file = base_path.parent / f"{base_path.name}_{eval_type}.stdout.log"
+    stderr_file = base_path.parent / f"{base_path.name}_{eval_type}.stderr.log"
+
+    stdout_file.write_text(
+        result.stdout or "",
+        encoding="utf-8",
+    )
+    stderr_file.write_text(
+        result.stderr or "",
+        encoding="utf-8",
+    )
+
+
+def _build_eval_summary(report: SpiderEvaluationReport) -> str:
+    parts = [
+        (
+            "Spider evaluation summary: "
+            f"execution_accuracy={report.execution_accuracy if report.execution_accuracy is not None else 'N/A'}, "
+        )
+    ]
+
+    if report.exec_result.stdout.strip():
+        parts.append("=== Spider exec stdout ===")
+        parts.append(report.exec_result.stdout.strip())
+    if report.exec_result.stderr.strip():
+        parts.append("=== Spider exec stderr ===")
+        parts.append(report.exec_result.stderr.strip())
+
+    return "\n".join(parts)
+
+
+def _build_nltk_env() -> dict[str, str]:
+    env = os.environ.copy()
+    existing = env.get("NLTK_DATA", "").strip()
+    search_paths = [str(NLTK_DATA_DIR)]
+    if existing:
+        search_paths.append(existing)
+    env["NLTK_DATA"] = os.pathsep.join(search_paths)
+    return env
+
+
+def _ensure_nltk_tokenizers(logger) -> None:
+    global _nltk_setup_done
+
+    if _nltk_setup_done:
+        return
+
+    with _nltk_setup_lock:
+        if _nltk_setup_done:
+            return
+
+        NLTK_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        env = _build_nltk_env()
+
+        check_result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import nltk; "
+                    "nltk.data.find('tokenizers/punkt_tab/english'); "
+                    "nltk.data.find('tokenizers/punkt')"
+                ),
+            ],
+            cwd=SPIDER_REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+
+        if check_result.returncode != 0:
+            logger.info("Downloading NLTK tokenizer data into %s", NLTK_DATA_DIR)
+            download_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import nltk; "
+                        f"download_dir = r'{NLTK_DATA_DIR}'; "
+                        "ok = True; "
+                        "ok = nltk.download('punkt_tab', download_dir=download_dir, quiet=True) and ok; "
+                        "ok = nltk.download('punkt', download_dir=download_dir, quiet=True) and ok; "
+                        "raise SystemExit(0 if ok else 1)"
+                    ),
+                ],
+                cwd=SPIDER_REPO,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+
+            if download_result.returncode != 0:
+                logger.warning(
+                    "Failed to provision NLTK tokenizer data. stdout=%s stderr=%s",
+                    download_result.stdout.strip(),
+                    download_result.stderr.strip(),
+                )
+            else:
+                logger.info("NLTK tokenizer data ready in %s", NLTK_DATA_DIR)
+        else:
+            logger.info("NLTK tokenizer data already available")
+
+        _nltk_setup_done = True
 
 
 def spider_schema_to_internal(spider_schema: dict) -> dict:
@@ -175,36 +298,50 @@ def evaluate_with_spider(
     gold_sql: str,
     predicted_sql: str,
     logs_dir: Path,
-) -> subprocess.CompletedProcess[str]:
+) -> SpiderEvaluationReport:
     eval_dir = logs_dir / "spider_eval"
     eval_dir.mkdir(parents=True, exist_ok=True)
+    eval_env = _build_nltk_env()
 
     model_slug = QUERY_MODELS[model_key]["log_file"]
     gold_file = eval_dir / f"{request_index:04d}_{model_slug}_gold.sql"
     pred_file = eval_dir / f"{request_index:04d}_{model_slug}_pred.sql"
+    eval_output_base = eval_dir / f"{request_index:04d}_{model_slug}"
 
     gold_file.write_text(f"{gold_sql}\t{database_name}\n", encoding="utf-8")
     pred_file.write_text(f"{predicted_sql}\n", encoding="utf-8")
 
-    return subprocess.run(
-        [
-            "python3",
-            str(EVAL_FILE),
-            "--gold",
-            str(gold_file),
-            "--pred",
-            str(pred_file),
-            "--etype",
-            "exec",
-            "--db",
-            str(SPIDER_DB_DIR),
-            "--table",
-            str(SPIDER_TABLES_PATH),
-        ],
-        cwd=SPIDER_REPO,
-        capture_output=True,
-        text=True,
-        check=False,
+    def run_evaluation(eval_type: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(EVAL_FILE),
+                "--gold",
+                str(gold_file),
+                "--pred",
+                str(pred_file),
+                "--etype",
+                eval_type,
+                "--db",
+                str(SPIDER_DB_DIR),
+                "--table",
+                str(SPIDER_TABLES_PATH),
+            ],
+            cwd=SPIDER_REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=eval_env,
+        )
+        _write_eval_artifacts(eval_output_base, result, eval_type)
+        return result
+
+    exec_result = run_evaluation("exec")
+
+    return SpiderEvaluationReport(
+        exec_result=exec_result,
+        execution_accuracy=_extract_metric(exec_result.stdout, "execution"),
+        eval_dir=eval_dir,
     )
 
 
@@ -225,6 +362,7 @@ def text_generator_thread(
     LoggerManager.set_thread_logger(logger)
 
     try:
+        _ensure_nltk_tokenizers(logger)
         logger.info(
             "Started Spider generator thread for model=%s schema_source=%s schema_path=%s",
             model_key,
@@ -263,25 +401,27 @@ def text_generator_thread(
                     predicted_sql=predicted_sql,
                     logs_dir=logs_dir,
                 )
+                eval_summary = _build_eval_summary(eval_result)
 
-                if eval_result.returncode == 0:
+                logger.info("Spider gold SQL:\n%s", gold_sql)
+                logger.info("Spider predicted SQL:\n%s", predicted_sql)
+                logger.info("%s", eval_summary)
+
+                if eval_result.exec_result.returncode != 0:
+                    result_session.status = QueryStatus.RUNTIME_ERROR
+                    result_session.execution_status = QueryStatus.RUNTIME_ERROR
+                    result_session.execution_result = eval_summary
+                    success = False
+                elif eval_result.execution_accuracy == 1.0:
                     result_session.status = QueryStatus.SUCCESS
                     result_session.execution_status = QueryStatus.SUCCESS
-                    result_session.execution_result = "Spider execution evaluation passed."
-                    success = True
-                elif eval_result.returncode == 1:
-                    result_session.status = QueryStatus.INCORRECT
-                    result_session.execution_status = QueryStatus.INCORRECT
-                    stderr = eval_result.stderr.strip()
-                    stdout = eval_result.stdout.strip()
-                    result_session.execution_result = stderr or stdout or "Spider execution evaluation failed."
+                    result_session.execution_result = eval_summary
                     success = True
                 else:
-                    result_session.status = QueryStatus.RUNTIME_ERROR
-                    stderr = eval_result.stderr.strip()
-                    stdout = eval_result.stdout.strip()
-                    result_session.execution_result = stderr or stdout or "Spider evaluator subprocess failed."
-                    success = False
+                    result_session.status = QueryStatus.INCORRECT
+                    result_session.execution_status = QueryStatus.INCORRECT
+                    result_session.execution_result = eval_summary
+                    success = True
 
                 elapsed = time.time() - start_time
                 res = RequestResult(
