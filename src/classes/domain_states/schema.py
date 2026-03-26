@@ -166,9 +166,6 @@ class Schema:
                 if not all(k in column for k in ["name", "type", "constraints"]):
                     return False
 
-        if "semantic_notes" not in data:
-            data["semantic_notes"] = []
-
         return True
 
     def _save_schema(self):

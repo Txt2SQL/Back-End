@@ -187,8 +187,7 @@ Required JSON format:
         {{"name": "column_name", "type": "SQL_TYPE", "constraints": ["PRIMARY KEY", "NOT NULL", ...]}}
     ]
     }}
-],
-"semantic_notes": []
+]
 }}
 
 Rules:

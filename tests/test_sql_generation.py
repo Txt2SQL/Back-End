@@ -20,7 +20,6 @@ from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
-from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 from tests.output_object import RequestResult
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST
@@ -62,7 +61,6 @@ def generator_thread(
     Process all requests for a single model.
     Each model uses its own isolated logger writing to its own log file.
     """
-    llm = LLMFactory(QUERY_MODELS[model_key])
 
     # Create dedicated log file for this model
     log_name = QUERY_MODELS[model_key]["log_file"]

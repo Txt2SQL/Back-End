@@ -28,6 +28,7 @@ class MySQLClient:
                 "port": int(self.config["DB_PORT"]),
                 "user": self.config["DB_USER"],
                 "password": self.config["DB_PASSWORD"],
+                "use_pure": True,
                 "connection_timeout": 10,   # seconds to establish connection
                 "read_timeout": 30,         # seconds waiting for server response
                 "write_timeout": 30,        # seconds sending query
@@ -40,7 +41,7 @@ class MySQLClient:
             self.logger.debug("✅ Database connection established successfully")
         except mysql.connector.Error as err:
             self.logger.error(f"Error connecting to the database: {err}")
-            raise ValueError(err)
+            raise
     
     def execute_query(self, query: QuerySession):
         self.logger.info(f"📌 Received SQL query:\n{query.sql_code}")

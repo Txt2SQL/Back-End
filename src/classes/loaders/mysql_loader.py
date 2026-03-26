@@ -5,8 +5,6 @@ from src.classes.loaders.exceptions import ConnectionTestError
 from pathlib import Path
 
 
-
-
 class MySQLLoader(BaseLoader):
 
     def __init__(self):
@@ -26,6 +24,7 @@ class MySQLLoader(BaseLoader):
                 port=self.config["DB_PORT"],
                 user=self.config["DB_USER"],
                 password=self.config["DB_PASSWORD"],
+                use_pure=True,
             )
 
             if not conn.is_connected():
