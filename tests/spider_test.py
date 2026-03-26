@@ -31,7 +31,7 @@ from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaS
 from src.classes.logger import LoggerManager
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from tests.output_object import RequestResult
-from tests.test_sql_generation import empty_tmp_dir, printer_thread
+from tests.test_sql_generation import empty_tmp_dir, printer_thread, create_output_dir
 
 
 TMP_DIR = TESTS_DIR / "tmp"
@@ -110,17 +110,6 @@ def spider_schema_to_internal(spider_schema: dict) -> dict:
             for table_name, cols in db.items()
         ]
     }
-
-def create_output_dir(db_name: str, output_name: str | None = None) -> tuple[Path, Path, Path]:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = output_name if output_name else f"results_{timestamp}"
-    output_dir = TESTS_DIR / "output" / "generations" / f"{db_name}_results" / run_name
-    queries_dir = output_dir / "queries"
-    logs_dir = output_dir / "logs"
-    queries_dir.mkdir(parents=True, exist_ok=True)
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Output will be written to: {output_dir}")
-    return output_dir, queries_dir, logs_dir
 
 
 def load_spider_dataset() -> tuple[List[dict], List[dict]]:
@@ -352,14 +341,20 @@ def run_spider_test(database_name: str | None, output_name: str | None = None) -
     main_logger.info("Starting Spider test")
 
     spider_data, spider_tables = load_spider_dataset()
-    tables_by_db = {entry["db_id"]: entry for entry in spider_tables}
+    spider_db_ids = {example["db_id"] for example in spider_data}
+    filtered_spider_tables = [
+        entry for entry in spider_tables if entry["db_id"] in spider_db_ids
+    ]
+    tables_by_db = {entry["db_id"]: entry for entry in filtered_spider_tables}
 
-    db_name = select_database(spider_tables, database_name)
+    db_name = select_database(filtered_spider_tables, database_name)
     requests = [example for example in spider_data if example["db_id"] == db_name]
     request_texts = [example["question"] for example in requests]
 
     if not requests:
         raise ValueError(f"No Spider dev requests found for database: {db_name}")
+    if db_name not in tables_by_db:
+        raise ValueError(f"No Spider schema metadata found in tables.json for database: {db_name}")
 
     main_logger.info("Loaded %s Spider requests for db=%s", len(requests), db_name)
 
