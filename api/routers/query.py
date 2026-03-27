@@ -12,6 +12,18 @@ from src.classes.domain_states import QueryStatus
 
 router = APIRouter(prefix="/queries", tags=["Queries"])
 
+def _serialize_execution_result(query_session) -> tuple[list[dict] | None, str | None]:
+    results = None
+    error = None
+
+    if query_session.execution_result and query_session.status == QueryStatus.SUCCESS:
+        if isinstance(query_session.execution_result, Records):
+            results = query_session.execution_result.to_dict()
+    elif isinstance(query_session.execution_result, str):
+        error = query_session.execution_result
+
+    return results, error
+
 
 @router.get("/mysql/databases", response_model=DatabaseListResponse)
 def list_mysql_databases():
@@ -45,16 +57,7 @@ def generate_query_mysql(payload: QueryGenerationRequest):
         query_session = orchestrator.generation(payload.question)
 
         # 4. Format Response
-        # Convert Records object to list of dicts if success
-        results = None
-        error = None
-        if query_session.execution_result and query_session.status == QueryStatus.SUCCESS:
-             # Assuming Records class has .to_dict() or is iterable
-            if isinstance(query_session.execution_result, Records):
-                results = query_session.execution_result     
-        elif isinstance(query_session.execution_result, str):
-             # Handing error strings stored in execution_result
-            error = query_session.execution_result
+        results, error = _serialize_execution_result(query_session)
 
         return QueryResponse(
             sql=query_session.sql_code,
@@ -118,19 +121,10 @@ def evaluate_query(payload: QueryEvaluationRequest):
         )
 
         # 3. Run Evaluation
-        query_session = orchestrator.evaluation(payload.query, 0)
+        query_session = orchestrator.evaluation(payload.query.to_query_session(), 0)
 
         # 4. Format Response
-        # Convert Records object to list of dicts if success
-        results = None
-        error = None
-        if query_session.execution_result and query_session.status == QueryStatus.SUCCESS:
-             # Assuming Records class has .to_dict() or is iterable
-            if isinstance(query_session.execution_result, Records):
-                results = query_session.execution_result     
-        elif isinstance(query_session.execution_result, str):
-             # Handing error strings stored in execution_result
-            error = query_session.execution_result
+        results, error = _serialize_execution_result(query_session)
 
         return QueryResponse(
             sql=query_session.sql_code,
