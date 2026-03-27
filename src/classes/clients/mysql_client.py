@@ -28,6 +28,7 @@ class MySQLClient:
                 "port": int(self.config["DB_PORT"]),
                 "user": self.config["DB_USER"],
                 "password": self.config["DB_PASSWORD"],
+                "use_pure": True,
                 "connection_timeout": 10,   # seconds to establish connection
                 "read_timeout": 30,         # seconds waiting for server response
                 "write_timeout": 30,        # seconds sending query
@@ -188,8 +189,12 @@ class MySQLClient:
 
             cursor.close()
             self.connection.close()
+            databases = [
+                database
+                for database in databases
+                if database not in {"sys", "information_schema", "mysql", "performance_schema"}
+            ]
             self.logger.info("📚 Loaded %s database(s) from MySQL", len(databases))
-
             return databases # pyright: ignore[reportReturnType]
 
         except Exception:

@@ -63,12 +63,12 @@ QUERY_MODELS = {
     #     "api_endpoint": "/completions",
     #     "log_file": "omnisql",
     # },
-    "Qwen3.5:35bt": {
+    "Qwen3-coder-next": {
         "provider": "openwebui",
-        "id": "qwen3.5-35b-a3b",
+        "id": "qwen3-coder-next",
         "api_type": "chat",
         "api_endpoint": "/api/chat/completions",
-        "log_file": "Qwen3.5",
+        "log_file": "Qwen-coder",
     },
 }
 

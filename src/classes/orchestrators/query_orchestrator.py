@@ -126,7 +126,9 @@ class QueryOrchestrator(BaseOrchestrator):
                         )
                         break
                 else:
-                    break
+                    self.current_query.evaluate()
+                    if self.current_query.status is QueryStatus.SUCCESS:
+                        break
                 
             self.current_query.attempt += 1
             

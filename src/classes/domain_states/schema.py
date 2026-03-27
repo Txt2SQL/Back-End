@@ -145,6 +145,7 @@ class Schema:
             return json.loads(widest)
         except Exception:
             return None
+    # -----------------------------------------------------
 
     # =====================================================
     # SAVING
@@ -164,9 +165,6 @@ class Schema:
             for column in table["columns"]:
                 if not all(k in column for k in ["name", "type", "constraints"]):
                     return False
-
-        if "semantic_notes" not in data:
-            data["semantic_notes"] = []
 
         return True
 

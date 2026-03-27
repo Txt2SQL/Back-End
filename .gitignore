@@ -6,5 +6,4 @@ data/schema/
 *.env
 codex.patch
 tests/tmp
-tests/output/*/*/
-data/vector_stores/schema_store/*
+tests/output/generations/*/*/

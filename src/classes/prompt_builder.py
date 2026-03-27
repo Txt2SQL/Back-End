@@ -128,7 +128,7 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - Do NOT add WHERE clauses or conditions unless explicitly requested.
 - Do NOT join tables unless necessary for the request.
 - If using aggregates, include GROUP BY
-- The sql query must be executable on a MySQL database.
+- The sql query must be executable on a SQLite database.
 """
     
         if previous_fail:
@@ -187,8 +187,7 @@ Required JSON format:
         {{"name": "column_name", "type": "SQL_TYPE", "constraints": ["PRIMARY KEY", "NOT NULL", ...]}}
     ]
     }}
-],
-"semantic_notes": []
+]
 }}
 
 Rules:

@@ -20,7 +20,6 @@ from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
-from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 from tests.output_object import RequestResult
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST
@@ -62,7 +61,6 @@ def generator_thread(
     Process all requests for a single model.
     Each model uses its own isolated logger writing to its own log file.
     """
-    llm = LLMFactory(QUERY_MODELS[model_key])
 
     # Create dedicated log file for this model
     log_name = QUERY_MODELS[model_key]["log_file"]
@@ -414,7 +412,7 @@ def _write_statistics(
                     runtime_errors += 1
                     model_stats[model]["runtime"] += 1
                     runtime_category = (
-                        query_session.error_type.value
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
                         if query_session and getattr(query_session, "error_type", None)
                         else QueryStatus.RUNTIME_ERROR.value
                     )
@@ -425,7 +423,7 @@ def _write_statistics(
                     syntax_errors += 1
                     model_stats[model]["syntax"] += 1
                     syntax_category = (
-                        query_session.error_type.value
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
                         if query_session and getattr(query_session, "error_type", None)
                         else QueryStatus.SYNTAX_ERROR.value
                     )
@@ -435,7 +433,7 @@ def _write_statistics(
                 elif status == QueryStatus.TIMEOUT_ERROR:
                     other_errors += 1
                     timeout_category = (
-                        query_session.error_type.value
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
                         if query_session and getattr(query_session, "error_type", None)
                         else QueryStatus.TIMEOUT_ERROR.value
                     )
@@ -775,8 +773,7 @@ def _write_statistics(
     
 def select_database():
     client = MySQLClient()  # connects without specific database
-    system_dbs = {"information_schema", "mysql", "performance_schema", "sys"}
-    dbs = [db for db in client.list_databases() if db.lower() not in system_dbs]
+    dbs = client.list_databases()
     client.close_connection()
     if not dbs:
         print("No user databases available.")

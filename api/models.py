@@ -52,7 +52,7 @@ class QueryEvaluationRequest(BaseModel):
 # --- Responses ---
 
 class QueryResponse(BaseModel):
-    sql: Optional[str]
+    sql: str | None
     status: QueryStatus
     results: Optional[List[Dict[str, Any]]] = None
     error: Optional[str] = None
@@ -60,4 +60,8 @@ class QueryResponse(BaseModel):
 
 
 class DatabaseListResponse(BaseModel):
-    databases: List[str]
+    databases: list[str]
+
+
+class QueryModelListResponse(BaseModel):
+    models: list[str]
