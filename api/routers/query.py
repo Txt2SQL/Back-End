@@ -7,7 +7,7 @@ from api.models import (
     QueryGenerationRequest,
     QueryEvaluationRequest,
     QueryResponse,
-    QueryModelListResponse,
+    DatabaseListResponse,
 )
 from api.dependencies import get_schema_store, get_query_store, get_mysql_client
 from src.classes.domain_states import QueryStatus

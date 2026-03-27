@@ -7,3 +7,4 @@ data/schema/
 codex.patch
 tests/tmp
 tests/output/generations/*/*/
+tests/output/runs/*/
