@@ -10,16 +10,7 @@ subprocess that exits with:
 - 1 when execution does not match
 """
 
-import argparse
-import json
-import os
-import queue
-import re
-import sqlite3
-import subprocess
-import sys
-import threading
-import time
+import argparse, json, os, queue, re, sqlite3, subprocess, sys, threading, time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -28,7 +19,6 @@ from enum import Enum
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from config import QUERY_MODELS, SPIDER_DATA, TESTS_DIR, TIMEOUT_PER_REQUEST, SPIDER_REPO, INPUT_DIR
-from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource
 from src.classes.logger import LoggerManager
@@ -246,8 +236,8 @@ def _build_llm_verdict_summary(llm_judge_report: Optional[LLMJudgeReport]) -> st
 
 
 def _normalize_sql_for_spider(sql: str) -> str:
-    return " ".join(sql.split())
-
+    sql = sql.strip().rstrip(";")
+    return re.sub(r"\s+", " ", sql)
 
 def _execute_sqlite_query(sqlite_file: Path, sql: str) -> SQLiteExecutionReport:
     normalized_sql = _normalize_sql_for_spider(sql)
@@ -576,6 +566,7 @@ def evaluate_with_spider(
             text=True,
             check=False,
             env=eval_env,
+            timeout=60
         )
         _write_eval_artifacts(report_file, normalized_gold_sql, normalized_predicted_sql, result)
         gold_file.unlink(missing_ok=True)
