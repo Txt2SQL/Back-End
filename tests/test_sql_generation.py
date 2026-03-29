@@ -768,8 +768,6 @@ def _write_statistics(
 
     with open(stats_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(lines))
-
-    print("\n" + "\n".join(lines))
     
 def select_database():
     client = MySQLClient()  # connects without specific database

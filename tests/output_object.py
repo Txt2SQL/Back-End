@@ -115,7 +115,7 @@ class RequestResult:
             )
         elif feedback and feedback.feedback_status is FeedbackStatus.CORRECT:
             lines.append("LLM Feedback: 👍CORRECT\n")
-        else:
+        elif feedback is not None:
             lines.append("LLM Feedback: ⚠️UNKNOWN\n")
 
         # ----------------------------

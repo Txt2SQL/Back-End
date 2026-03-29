@@ -15,14 +15,15 @@ import json
 import os
 import queue
 import re
+import sqlite3
 import subprocess
 import sys
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from enum import Enum
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -31,6 +32,7 @@ from src.classes.RAG_service.query_store import QueryStore
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource
 from src.classes.logger import LoggerManager
+from src.classes.llm_factory import LLMFactory
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from tests.output_object import RequestResult
 from tests.test_sql_generation import empty_tmp_dir, printer_thread, create_output_dir, ThreadSafeQueryStore
@@ -50,16 +52,35 @@ LoggerManager.setup_project_logger()
 main_logger = LoggerManager.get_logger("spider_test")
 
 
+class ComparisonResult(Enum):
+    EXACT_MATCH = "exact_match"
+    SUPERSET_COLUMNS_MATCH = "superset_columns_match"
+    SET_MATCH = "set_match"
+    PARTIAL_MATCH = "partial_match"
+    ROW_COUNT_MISMATCH = "row_count_mismatch"
+    NO_MATCH = "no_match"
+
 @dataclass
 class SpiderEvaluationReport:
     exec_result: subprocess.CompletedProcess[str]
     execution_accuracy: Optional[float]
-    eval_dir: Path
+    report_file: Path
 
 def fix_sql(sql: str) -> str:
     if "GROUP BY" in sql.upper() and "ORDER BY" not in sql.upper():
         sql = sql.rstrip(";") + " ORDER BY 1;"
     return " ".join(sql.strip().split())
+@dataclass
+class SQLiteExecutionReport:
+    sql: str
+    rows: Optional[list[tuple]]
+    error: Optional[str]
+
+@dataclass
+class LLMJudgeReport:
+    verdict: str
+    reason: str
+    raw_response: str
 
 def _extract_metric(output: str, metric_name: str) -> Optional[float]:
     for line in output.splitlines():
@@ -70,22 +91,87 @@ def _extract_metric(output: str, metric_name: str) -> Optional[float]:
     return None
 
 
-def _write_eval_artifacts(
-    base_path: Path,
-    result: subprocess.CompletedProcess[str],
-    eval_type: str,
-) -> None:
-    stdout_file = base_path.parent / f"{base_path.name}_{eval_type}.stdout.log"
-    stderr_file = base_path.parent / f"{base_path.name}_{eval_type}.stderr.log"
+def custom_execution_compare(gold_result, pred_result):
 
-    stdout_file.write_text(
-        result.stdout or "",
-        encoding="utf-8",
-    )
-    stderr_file.write_text(
-        result.stderr or "",
-        encoding="utf-8",
-    )
+    def normalize_value(v):
+        if v is None:
+            return None
+        if isinstance(v, float):
+            return round(v, 6)
+        return str(v).strip()
+
+    def normalize_row(row):
+        return tuple(normalize_value(v) for v in row)
+
+    gold_norm = [normalize_row(r) for r in gold_result]
+    pred_norm = [normalize_row(r) for r in pred_result]
+
+    # 1. exact match (order-insensitive)
+    if sorted(pred_norm) == sorted(gold_norm):
+        return ComparisonResult.EXACT_MATCH
+
+    # 2. row count mismatch
+    if len(pred_norm) != len(gold_norm):
+        return ComparisonResult.ROW_COUNT_MISMATCH
+
+    # 3. superset columns
+    gold_width = len(gold_norm[0])
+    pred_projected = [row[:gold_width] for row in pred_norm]
+
+    if sorted(pred_projected) == sorted(gold_norm):
+        return ComparisonResult.SUPERSET_COLUMNS_MATCH
+
+    # 4. set match
+    if set(pred_norm) == set(gold_norm):
+        return ComparisonResult.SET_MATCH
+
+    # 5. partial match
+    intersection = set(pred_norm) & set(gold_norm)
+    ratio = len(intersection) / max(len(gold_norm), 1)
+
+    if ratio > 0.8:
+        return ComparisonResult.PARTIAL_MATCH
+
+    return ComparisonResult.NO_MATCH
+
+
+def _is_custom_match(result: ComparisonResult) -> bool:
+    return result in {
+        ComparisonResult.EXACT_MATCH,
+        ComparisonResult.SUPERSET_COLUMNS_MATCH,
+        ComparisonResult.SET_MATCH,
+    }
+
+def _write_eval_artifacts(
+    report_file: Path,
+    gold_sql: str,
+    predicted_sql: str,
+    result: subprocess.CompletedProcess[str],
+) -> None:
+    sections = [
+        "=== Gold SQL ===",
+        gold_sql.strip(),
+        "",
+        "=== Predicted SQL ===",
+        predicted_sql.strip(),
+        "",
+        "=== Spider exec stdout ===",
+        (result.stdout or "").strip(),
+        "",
+        "=== Spider exec stderr ===",
+        (result.stderr or "").strip(),
+        "",
+    ]
+    report_file.write_text("\n".join(sections), encoding="utf-8")
+
+
+def _write_combined_report(report_file: Path, sections: list[tuple[str, str]]) -> None:
+    rendered_sections: list[str] = []
+    for title, content in sections:
+        rendered_sections.append(f"=== {title} ===")
+        rendered_sections.append(content.strip() if content.strip() else "(empty)")
+        rendered_sections.append("")
+    report_file.write_text("\n".join(rendered_sections), encoding="utf-8")
 
 
 def _build_eval_summary(report: SpiderEvaluationReport) -> str:
@@ -93,6 +179,7 @@ def _build_eval_summary(report: SpiderEvaluationReport) -> str:
         (
             "Spider evaluation summary: "
             f"execution_accuracy={report.execution_accuracy if report.execution_accuracy is not None else 'N/A'}, "
+            f"report_file={report.report_file}"
         )
     ]
 
@@ -104,6 +191,155 @@ def _build_eval_summary(report: SpiderEvaluationReport) -> str:
         parts.append(report.exec_result.stderr.strip())
 
     return "\n".join(parts)
+
+
+def _build_spider_summary(report: SpiderEvaluationReport) -> str:
+    parts = [
+        f"execution_accuracy={report.execution_accuracy if report.execution_accuracy is not None else 'N/A'}",
+    ]
+    if report.exec_result.stdout.strip():
+        parts.append("stdout:")
+        parts.append(report.exec_result.stdout.strip())
+    if report.exec_result.stderr.strip():
+        parts.append("stderr:")
+        parts.append(report.exec_result.stderr.strip())
+    return "\n".join(parts)
+
+
+def _build_custom_compare_summary(
+    sqlite_file: Path,
+    gold_exec: Optional[SQLiteExecutionReport],
+    pred_exec: Optional[SQLiteExecutionReport],
+    custom_result: Optional[ComparisonResult],
+) -> str:
+    parts = [f"sqlite_file={sqlite_file}"]
+
+    if gold_exec is None:
+        parts.append("gold_execution=not_run")
+    else:
+        parts.append("gold_execution:")
+        parts.append(_format_sqlite_execution(gold_exec))
+
+    if pred_exec is None:
+        parts.append("predicted_execution=not_run")
+    else:
+        parts.append("predicted_execution:")
+        parts.append(_format_sqlite_execution(pred_exec))
+
+    parts.append(
+        f"comparison_result={custom_result.value if custom_result is not None else 'not_run'}"
+    )
+    return "\n".join(parts)
+
+
+def _build_llm_verdict_summary(llm_judge_report: Optional[LLMJudgeReport]) -> str:
+    if llm_judge_report is None:
+        return "not_run"
+    return "\n".join(
+        [
+            f"verdict={llm_judge_report.verdict}",
+            f"reason={llm_judge_report.reason}",
+            "raw_response:",
+            llm_judge_report.raw_response.strip() if llm_judge_report.raw_response.strip() else "(empty)",
+        ]
+    )
+
+
+def _normalize_sql_for_spider(sql: str) -> str:
+    return " ".join(sql.split())
+
+
+def _execute_sqlite_query(sqlite_file: Path, sql: str) -> SQLiteExecutionReport:
+    normalized_sql = _normalize_sql_for_spider(sql)
+    conn = sqlite3.connect(sqlite_file)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(normalized_sql)
+        rows = cursor.fetchall()
+        return SQLiteExecutionReport(sql=normalized_sql, rows=rows, error=None)
+    except Exception as exc:
+        return SQLiteExecutionReport(sql=normalized_sql, rows=None, error=str(exc))
+    finally:
+        conn.close()
+
+
+def _format_sqlite_execution(report: SQLiteExecutionReport, row_limit: int = 20) -> str:
+    parts = [f"SQL: {report.sql}"]
+    if report.error is not None:
+        parts.append(f"Error: {report.error}")
+        return "\n".join(parts)
+
+    rows = report.rows or []
+    parts.append(f"Row count: {len(rows)}")
+    preview = rows[:row_limit]
+    parts.append(f"Rows preview ({len(preview)} shown): {preview}")
+    if len(rows) > row_limit:
+        parts.append(f"Additional rows omitted: {len(rows) - row_limit}")
+    return "\n".join(parts)
+
+
+def _build_llm_judge_prompt(
+    question: str,
+    database_name: str,
+    gold_report: SQLiteExecutionReport,
+    pred_report: SQLiteExecutionReport,
+) -> str:
+    return f"""
+You are judging whether a predicted SQL query should be considered correct for a Spider-style text-to-SQL example.
+
+Database id: {database_name}
+Question: {question}
+
+Gold query:
+{gold_report.sql}
+
+Gold query result:
+{gold_report.rows if gold_report.error is None else f"ERROR: {gold_report.error}"}
+
+Predicted query:
+{pred_report.sql}
+
+Predicted query result:
+{pred_report.rows if pred_report.error is None else f"ERROR: {pred_report.error}"}
+
+Decide whether the predicted query is semantically correct relative to the gold query and the observed execution results.
+
+Return JSON only in this format:
+{{"verdict":"correct"|"incorrect","reason":"short explanation"}}
+""".strip()
+
+
+def _run_llm_judge(
+    question: str,
+    database_name: str,
+    gold_report: SQLiteExecutionReport,
+    pred_report: SQLiteExecutionReport,
+) -> LLMJudgeReport:
+    judge = LLMFactory.create(QUERY_MODELS["Qwen3-coder-next"])
+    response = judge.generate(
+        _build_llm_judge_prompt(
+            question=question,
+            database_name=database_name,
+            gold_report=gold_report,
+            pred_report=pred_report,
+        )
+    )
+
+    verdict = "incorrect"
+    reason = response.strip()
+
+    try:
+        parsed = json.loads(response)
+        verdict = str(parsed.get("verdict", "incorrect")).strip().lower()
+        reason = str(parsed.get("reason", response)).strip()
+    except Exception:
+        lowered = response.lower()
+        if '"verdict":"correct"' in lowered or '"verdict": "correct"' in lowered:
+            verdict = "correct"
+        elif re.search(r"\bcorrect\b", lowered) and not re.search(r"\bincorrect\b", lowered):
+            verdict = "correct"
+
+    return LLMJudgeReport(verdict=verdict, reason=reason, raw_response=response)
 
 
 def _build_nltk_env() -> dict[str, str]:
@@ -309,14 +545,17 @@ def evaluate_with_spider(
     eval_env = _build_nltk_env()
 
     model_slug = QUERY_MODELS[model_key]["log_file"]
-    gold_file = eval_dir / f"{request_index:04d}_{model_slug}_gold.sql"
-    pred_file = eval_dir / f"{request_index:04d}_{model_slug}_pred.sql"
-    eval_output_base = eval_dir / f"{request_index:04d}_{model_slug}"
-
-    gold_file.write_text(f"{gold_sql}\t{database_name}\n", encoding="utf-8")
-    pred_file.write_text(f"{predicted_sql}\n", encoding="utf-8")
+    report_file = eval_dir / f"{request_index:02d}_{model_slug}_evaluation.log"
+    tmp_eval_dir = TMP_DIR / "spider_eval_inputs"
+    tmp_eval_dir.mkdir(parents=True, exist_ok=True)
+    gold_file = tmp_eval_dir / f"{request_index:02d}_{model_slug}_gold.sql"
+    pred_file = tmp_eval_dir / f"{request_index:02d}_{model_slug}_pred.sql"
+    normalized_gold_sql = _normalize_sql_for_spider(gold_sql)
+    normalized_predicted_sql = _normalize_sql_for_spider(predicted_sql)
 
     def run_evaluation(eval_type: str) -> subprocess.CompletedProcess[str]:
+        gold_file.write_text(f"{normalized_gold_sql}\t{database_name}\n", encoding="utf-8")
+        pred_file.write_text(f"{normalized_predicted_sql}\n", encoding="utf-8")
         result = subprocess.run(
             [
                 sys.executable,
@@ -338,7 +577,9 @@ def evaluate_with_spider(
             check=False,
             env=eval_env,
         )
-        _write_eval_artifacts(eval_output_base, result, eval_type)
+        _write_eval_artifacts(report_file, normalized_gold_sql, normalized_predicted_sql, result)
+        gold_file.unlink(missing_ok=True)
+        pred_file.unlink(missing_ok=True)
         return result
 
     exec_result = run_evaluation("exec")
@@ -346,7 +587,7 @@ def evaluate_with_spider(
     return SpiderEvaluationReport(
         exec_result=exec_result,
         execution_accuracy=_extract_metric(exec_result.stdout, "execution"),
-        eval_dir=eval_dir,
+        report_file=report_file,
     )
 
 
@@ -360,6 +601,10 @@ def text_generator_thread(
     logs_dir: Path,
     schema: Schema,
 ) -> None:
+    """
+    Runs a single Spider model on all given requests concurrently,
+    writes per-request result files, and produces a summary statistics file.
+    """
     log_name = QUERY_MODELS[model_key]["log_file"]
     log_file = logs_dir / f"{log_name}.log"
 
@@ -397,6 +642,9 @@ def text_generator_thread(
 
                 result_session = orch.generation(question)
 
+                elapsed = time.time() - start_time
+
+                predicted_sql = result_session.sql_code or ""
                 eval_result = evaluate_with_spider(
                     database_name=database_name,
                     request_index=idx,
@@ -406,6 +654,14 @@ def text_generator_thread(
                     logs_dir=logs_dir,
                 )
                 eval_summary = _build_eval_summary(eval_result)
+                normalized_gold_sql = _normalize_sql_for_spider(gold_sql)
+                normalized_predicted_sql = _normalize_sql_for_spider(predicted_sql)
+                spider_summary = _build_spider_summary(eval_result)
+                sqlite_file = SPIDER_DB_DIR / database_name / f"{database_name}.sqlite"
+                gold_exec: Optional[SQLiteExecutionReport] = None
+                pred_exec: Optional[SQLiteExecutionReport] = None
+                custom_result: Optional[ComparisonResult] = None
+                llm_judge_report: Optional[LLMJudgeReport] = None
 
                 logger.info("Spider gold SQL:\n%s", gold_sql)
                 logger.info("Spider predicted SQL:\n%s", result_session.sql_code)
@@ -422,12 +678,70 @@ def text_generator_thread(
                     result_session.execution_result = eval_summary
                     success = True
                 else:
-                    result_session.status = QueryStatus.INCORRECT
-                    result_session.execution_status = QueryStatus.INCORRECT
-                    result_session.execution_result = eval_summary
-                    success = False
+                    gold_exec = _execute_sqlite_query(sqlite_file, gold_sql)
+                    pred_exec = _execute_sqlite_query(sqlite_file, predicted_sql)
+                    
+                    ge_formatted = _format_sqlite_execution(gold_exec)
+                    pe_formatted = _format_sqlite_execution(pred_exec)
 
-                elapsed = time.time() - start_time
+                    logger.info("Running custom SQLite comparison using %s", sqlite_file)
+                    logger.info("Gold SQLite execution:\n%s", ge_formatted)
+                    logger.info("Pred SQLite execution:\n%s", pe_formatted)
+
+                    if gold_exec.error is None and pred_exec.error is None:
+                        custom_result = custom_execution_compare(gold_exec.rows or [], pred_exec.rows or [])
+                        logger.info("Custom execution comparison result: %s", custom_result.value)
+
+                    if custom_result is not None and _is_custom_match(custom_result):
+                        result_session.status = QueryStatus.SUCCESS
+                        result_session.execution_status = QueryStatus.SUCCESS
+                        result_session.execution_result = (
+                            f"{eval_summary}\nCustom comparison result: {custom_result.value}"
+                        )
+                    else:
+                        llm_judge_report = _run_llm_judge(
+                            question=question,
+                            database_name=database_name,
+                            gold_report=gold_exec,
+                            pred_report=pred_exec,
+                        )
+                        logger.info("LLM judge verdict=%s reason=%s", llm_judge_report.verdict, llm_judge_report.reason)
+                        logger.info("LLM judge raw response:\n%s", llm_judge_report.raw_response)
+
+                        if llm_judge_report.verdict == "correct":
+                            result_session.status = QueryStatus.SUCCESS
+                            result_session.execution_status = QueryStatus.SUCCESS
+                        else:
+                            result_session.status = QueryStatus.INCORRECT
+                            result_session.execution_status = QueryStatus.INCORRECT
+
+                        custom_value = custom_result.value if custom_result is not None else "not_available"
+                        result_session.execution_result = (
+                            f"{eval_summary}\n"
+                            f"Custom comparison result: {custom_value}\n"
+                            f"LLM judge verdict: {llm_judge_report.verdict}\n"
+                            f"LLM judge reason: {llm_judge_report.reason}"
+                        )
+
+                    success = True
+
+                report_sections = [
+                    ("Gold SQL", normalized_gold_sql),
+                    ("Predicted SQL", normalized_predicted_sql),
+                    ("Spider Summary", spider_summary),
+                    (
+                        "Custom compare summary",
+                        _build_custom_compare_summary(
+                            sqlite_file=sqlite_file,
+                            gold_exec=gold_exec,
+                            pred_exec=pred_exec,
+                            custom_result=custom_result,
+                        ),
+                    ),
+                    ("LLM verdict", _build_llm_verdict_summary(llm_judge_report)),
+                ]
+                _write_combined_report(eval_result.report_file, report_sections)
+
                 res = RequestResult(
                     request_index=idx,
                     model_name=model_key,
