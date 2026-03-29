@@ -42,6 +42,7 @@ SPIDER_TABLES_PATH = SPIDER_DATA / "tables.json"
 SPIDER_DB_DIR = SPIDER_DATA / "database"
 EVAL_FILE = INPUT_DIR / "evaluation_scripts" / "evaluation.py"
 NLTK_DATA_DIR = TMP_DIR / "nltk_data"
+
 _nltk_setup_lock = threading.Lock()
 _nltk_setup_done = False
 
@@ -55,6 +56,10 @@ class SpiderEvaluationReport:
     execution_accuracy: Optional[float]
     eval_dir: Path
 
+def fix_sql(sql: str) -> str:
+    if "GROUP BY" in sql.upper() and "ORDER BY" not in sql.upper():
+        sql = sql.rstrip(";") + " ORDER BY 1;"
+    return " ".join(sql.strip().split())
 
 def _extract_metric(output: str, metric_name: str) -> Optional[float]:
     for line in output.splitlines():
@@ -392,19 +397,18 @@ def text_generator_thread(
 
                 result_session = orch.generation(question)
 
-                predicted_sql = result_session.sql_code or ""
                 eval_result = evaluate_with_spider(
                     database_name=database_name,
                     request_index=idx,
                     model_key=model_key,
-                    gold_sql=gold_sql,
-                    predicted_sql=predicted_sql,
+                    gold_sql=fix_sql(gold_sql),
+                    predicted_sql=fix_sql(result_session.sql_code or ""),
                     logs_dir=logs_dir,
                 )
                 eval_summary = _build_eval_summary(eval_result)
 
                 logger.info("Spider gold SQL:\n%s", gold_sql)
-                logger.info("Spider predicted SQL:\n%s", predicted_sql)
+                logger.info("Spider predicted SQL:\n%s", result_session.sql_code)
                 logger.info("%s", eval_summary)
 
                 if eval_result.exec_result.returncode != 0:
@@ -421,7 +425,7 @@ def text_generator_thread(
                     result_session.status = QueryStatus.INCORRECT
                     result_session.execution_status = QueryStatus.INCORRECT
                     result_session.execution_result = eval_summary
-                    success = True
+                    success = False
 
                 elapsed = time.time() - start_time
                 res = RequestResult(
