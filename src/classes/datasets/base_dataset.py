@@ -1,4 +1,8 @@
-import sqlite3, json, re
+import sqlite3, json, re, os, sys
+
+from src.classes.logger import LoggerManager
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -6,10 +10,11 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
-from classes.llm_factory import LLMFactory
-from classes.prompt_builder import PromptBuilder
-from config import DATASET_DIR
-from config.settings import QUERY_MODELS
+from src.classes.llm_factory import LLMFactory
+from src.classes.prompt_builder import PromptBuilder
+from src.classes.clients import SQLiteExecutionReport
+from config import DATASET_DIR, QUERY_MODELS
+from config.paths import BIRD_DATA, SPIDER_DATA
 
 class ComparisonResult(Enum):
     EXACT_MATCH = "exact_match"
@@ -18,26 +23,6 @@ class ComparisonResult(Enum):
     PARTIAL_MATCH = "partial_match"
     ROW_COUNT_MISMATCH = "row_count_mismatch"
     NO_MATCH = "no_match"
-
-@dataclass
-class SQLiteExecutionReport:
-    sql: str
-    rows: Optional[list[tuple]]
-    error: Optional[str]
-    
-    def format_execution_result(self, row_limit: int = 20) -> str:
-        parts = [f"SQL: {self.sql}"]
-        if self.error is not None:
-            parts.append(f"Error: {self.error}")
-            return "\n".join(parts)
-
-        rows = self.rows or []
-        parts.append(f"Row count: {len(rows)}")
-        preview = rows[:row_limit]
-        parts.append(f"Rows preview ({len(preview)} shown): {preview}")
-        if len(rows) > row_limit:
-            parts.append(f"Additional rows omitted: {len(rows) - row_limit}")
-        return "\n".join(parts)
 
 @dataclass
 class EvaluationResult:
@@ -99,7 +84,15 @@ class BaseDataset(ABC):
         with open(tables_file, "r", encoding="utf-8") as f:
             self.tables = json.load(f)
         self.eval_file = self.path / "evaluation.py"
-    
+        
+        if self.name == "spider":
+            self.db_dir = SPIDER_DATA / "databases"
+        else:
+            self.db_dir = BIRD_DATA / "databases"
+
+    @property
+    def logger(self):
+        return LoggerManager.get_logger(__name__)
     
     @abstractmethod
     def get_requests(self, db_name: str) -> list[str]:
@@ -126,9 +119,15 @@ class BaseDataset(ABC):
         db_id: str,
         question: Optional[str] = None,
     ) -> EvaluationResult:
-
+        self.logger.info(
+            "Starting dataset evaluation for db_id=%s question=%r",
+            db_id,
+            question,
+        )
         example = self._find_example(db_id=db_id, question=question)
         gold_sql = example["query"]
+        self.logger.debug("Gold SQL: %s", gold_sql)
+        self.logger.debug("Predicted SQL: %s", predicted_sql)
         
         official_report = self.dataset_evaluation(
             predicted_sql=predicted_sql,
@@ -138,9 +137,14 @@ class BaseDataset(ABC):
         )
 
         execution_accuracy = getattr(official_report, "execution_accuracy", None)
+        self.logger.info(
+            "Dataset evaluation finished with execution_accuracy=%s",
+            execution_accuracy,
+        )
 
         # dataset evaluation enough
         if execution_accuracy == 1.0:
+            self.logger.info("Dataset evaluation returned an exact execution match")
             return EvaluationResult(
                 status="success",
                 method="dataset_eval",
@@ -149,11 +153,17 @@ class BaseDataset(ABC):
             )
 
         sqlite_file = self.db_dir / db_id / f"{db_id}.sqlite"
+        self.logger.info("Falling back to local SQLite comparison using %s", sqlite_file)
         gold_exec = self._execute_sqlite_query(sqlite_file, gold_sql)
         pred_exec = self._execute_sqlite_query(sqlite_file, predicted_sql)
 
         # ❌ Caso 2: errore esecuzione
         if gold_exec.error or pred_exec.error:
+            self.logger.warning(
+                "SQLite execution failed. gold_error=%r pred_error=%r",
+                gold_exec.error,
+                pred_exec.error,
+            )
             return EvaluationResult(
                 status="error",
                 method="sqlite_execution",
@@ -167,6 +177,7 @@ class BaseDataset(ABC):
             gold_exec.rows or [],
             pred_exec.rows or [],
         )
+        self.logger.info("Custom execution comparison result: %s", cmp_result.value)
 
         # acceptable match, no need for LLM judge
         if cmp_result in {
@@ -174,6 +185,7 @@ class BaseDataset(ABC):
             ComparisonResult.SUPERSET_COLUMNS_MATCH,
             ComparisonResult.SET_MATCH,
         }:
+            self.logger.info("Skipping LLM judge because execution comparison is acceptable")
             return EvaluationResult(
                 status="success",
                 method="custom_compare",
@@ -186,6 +198,7 @@ class BaseDataset(ABC):
 
         # LLM judge
         if question is not None:
+            self.logger.info("Invoking LLM judge for semantic comparison")
             judge = self._run_llm_judge(
                 question=question,
                 database_name=db_id,
@@ -266,13 +279,17 @@ class BaseDataset(ABC):
 
     def _execute_sqlite_query(self, sqlite_file: Path, sql: str) -> SQLiteExecutionReport:
         normalized_sql = self._normalize_sql(sql)
+        self.logger.debug("Opening SQLite database: %s", sqlite_file)
+        self.logger.debug("Executing normalized SQL: %s", normalized_sql)
         conn = sqlite3.connect(sqlite_file)
         try:
             cursor = conn.cursor()
             cursor.execute(normalized_sql)
             rows = cursor.fetchall()
+            self.logger.debug("SQLite query succeeded with %d rows", len(rows))
             return SQLiteExecutionReport(sql=normalized_sql, rows=rows, error=None)
         except Exception as exc:
+            self.logger.exception("SQLite query failed: %s", exc)
             return SQLiteExecutionReport(sql=normalized_sql, rows=None, error=str(exc))
         finally:
             conn.close()
@@ -286,6 +303,7 @@ class BaseDataset(ABC):
         gold_report: SQLiteExecutionReport,
         pred_report: SQLiteExecutionReport,
     ) -> dict:
+        self.logger.debug("Creating LLM judge for db_id=%s question=%r", database_name, question)
         judge = LLMFactory.create(QUERY_MODELS["Qwen3-coder-next"])
         prompt = PromptBuilder().build_llm_judge_prompt(
             question=question,
@@ -294,6 +312,7 @@ class BaseDataset(ABC):
             pred_report=pred_report,
         )
         response = judge.generate(prompt)
+        self.logger.debug("LLM judge raw response: %s", response)
 
         verdict = "incorrect"
         reason = response.strip()

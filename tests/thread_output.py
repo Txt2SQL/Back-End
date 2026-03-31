@@ -13,6 +13,7 @@ class RequestResult:
     time_taken: float  # seconds
     success: bool  # whether completed without exception
     complexity: int = 0
+    evaluation_method: Optional[str] = None
     
     def compute_query_complexity(self):
         sql = self.query_session.sql_code if self.query_session else None

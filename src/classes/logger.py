@@ -23,6 +23,10 @@ class RequestContextFilter(logging.Filter):
         """Clear the request index for this thread."""
         if hasattr(self._thread_local, 'request_index'):
             delattr(self._thread_local, 'request_index')
+
+    def get_request_index(self) -> Optional[str]:
+        """Get the current request index for this thread."""
+        return getattr(self._thread_local, 'request_index', None)
     
     def filter(self, record):
         # Add request index to log record if available
@@ -189,6 +193,13 @@ class LoggerManager:
         Clear the current request index for this thread.
         """
         cls._request_filter.clear_request_index()
+
+    @classmethod
+    def get_request_index(cls) -> Optional[str]:
+        """
+        Get the current request index for this thread.
+        """
+        return cls._request_filter.get_request_index()
 
     # ==========================================================
     # LOGGER ACCESS

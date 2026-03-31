@@ -37,14 +37,14 @@ QUERY_MODELS = {
     },
     "codestral:22b": {
         "provider": "openwebui",
-        "id": "ollama@isarco02.codestral:22b",
+        "id": "codestral-22b-v0.1-lmstudio",
         "api_type": "chat",
         "api_endpoint": "/api/chat/completions",
         "log_file": "codestral",
     },
     "codellama:34b": {
         "provider": "openwebui",
-        "id": "ollama@isarco02.codellama:34b",
+        "id": "codellama-34b-lmstudio",
         "api_type": "chat",
         "api_endpoint": "/api/chat/completions",
         "log_file": "codellama",

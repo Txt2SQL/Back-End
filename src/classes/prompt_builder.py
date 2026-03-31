@@ -1,9 +1,14 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from datetime import datetime
 from langchain_core.documents import Document
-from src.classes.domain_states.query import QuerySession
+from src.classes.domain_states import QuerySession
 from src.classes.logger import LoggerManager
+from src.classes.clients import SQLiteExecutionReport
 from config import LOGGER_LEVEL
-from src.classes.datasets.base_dataset import SQLiteExecutionReport
 
 class PromptBuilder:
     """
