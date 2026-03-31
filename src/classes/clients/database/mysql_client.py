@@ -1,6 +1,6 @@
-from getpass import getpass
-
 import mysql.connector
+
+from .base_client import BaseClient
 from collections import defaultdict
 from src.classes.domain_states import QuerySession
 from src.classes.domain_states import QueryStatus
@@ -8,19 +8,19 @@ from src.classes.domain_states import Records
 from src.classes.loaders.mysql_loader import MySQLLoader
 from src.classes.logger import LoggerManager
 
-class MySQLClient:
+class MySQLClient(BaseClient):
     
     def __init__(self, database: str | None = None):
         self.config = MySQLLoader().config
         self.database = database
         
-        self.set_connection()
+        self.open_connection()
             
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)
     
-    def set_connection(self):
+    def open_connection(self):
         try:
             self.logger.info("🔌 Establishing database connection with config: %s", {k: v for k, v in self.config.items() if k != "password"})
             connection_params = {
@@ -47,7 +47,7 @@ class MySQLClient:
         self.logger.info(f"📌 Received SQL query:\n{query.sql_code}")
 
         try:
-            self.set_connection()
+            self.open_connection()
 
             if not self.connection.is_connected():
                 raise ConnectionError("Failed to establish a connection to the database")
@@ -178,7 +178,7 @@ class MySQLClient:
     def list_databases(self) -> list[str]:
         """Return all databases visible to the current MySQL connection."""
         try:
-            self.set_connection()
+            self.open_connection()
 
             if not self.connection.is_connected():
                 raise ConnectionError("Failed to establish a connection to the database")

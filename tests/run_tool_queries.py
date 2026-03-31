@@ -24,7 +24,7 @@ from typing import List, Tuple, Optional, Dict
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from config import TESTS_DIR
-from src.classes.clients.mysql_client import MySQLClient
+from classes.clients.database.mysql_client import MySQLClient
 from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore

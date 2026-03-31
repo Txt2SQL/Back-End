@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from faker import Faker
 from config import INPUT_DIR
 from mysql.connector import Error
-from src.classes.clients.mysql_client import MySQLClient
+from classes.clients.database.mysql_client import MySQLClient
 from src.classes.logger import LoggerManager
 
 

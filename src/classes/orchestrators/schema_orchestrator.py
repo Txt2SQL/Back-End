@@ -7,7 +7,7 @@ from src.classes.clients import BaseLLM, OpenWebUILLM, AzureLLM
 from src.classes.orchestrators.base_orchestrator import BaseOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states.schema import Schema
-from src.classes.clients.mysql_client import MySQLClient
+from classes.clients.database.mysql_client import MySQLClient
 from src.classes.domain_states import SchemaSource
 from src.classes.logger import LoggerManager
 from config import SCHEMA_MODELS, DATA_DIR

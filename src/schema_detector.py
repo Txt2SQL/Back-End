@@ -5,7 +5,7 @@ from config import VECTOR_STORE_DIR, SCHEMA_MODELS
 from src.classes.orchestrators.schema_orchestrator import SchemaOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import SchemaSource
-from src.classes.clients.mysql_client import MySQLClient
+from classes.clients.database.mysql_client import MySQLClient
 from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 

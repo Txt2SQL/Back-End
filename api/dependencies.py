@@ -1,7 +1,7 @@
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
 from src.classes.llm_factory import LLMFactory
-from src.classes.clients.mysql_client import MySQLClient
+from classes.clients.database.mysql_client import MySQLClient
 from config import DATA_DIR, SCHEMA_MODELS, QUERY_MODELS
 
 # Singleton-like behavior for Stores if they are thread-safe, 

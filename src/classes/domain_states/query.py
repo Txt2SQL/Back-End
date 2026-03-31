@@ -348,3 +348,8 @@ Status: {self.status.value}
 
     {details}
     """
+    
+    def normalize_sql(self) -> str:
+        if not self.sql_code:
+            return ""
+        return " ".join(self.sql_code.split())

@@ -20,7 +20,7 @@ from typing import List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, TMP_DIR
-from src.classes.clients.mysql_client import MySQLClient
+from classes.clients.database.mysql_client import MySQLClient
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource, FeedbackStatus
 from src.classes.logger import LoggerManager

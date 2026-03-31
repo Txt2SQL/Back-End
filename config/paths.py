@@ -19,8 +19,6 @@ INPUT_DIR = TESTS_DIR / "input"
 OUTPUT_DIR = TESTS_DIR / "output"
 DATASET_DIR = INPUT_DIR / "datasets"
 TMP_DIR = TESTS_DIR / "tmp"
-
-SPIDER_DATA = PROJECT_ROOT / "spider_data"
-BIRD_DATA = PROJECT_ROOT / "bird_data"
+DATASET_DATA = PROJECT_ROOT / "dataset"
 
 ENV_DIR = BASE_DIR / "config"

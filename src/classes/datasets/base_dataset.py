@@ -432,9 +432,6 @@ class BaseDataset(ABC):
             return SQLiteExecutionReport(sql=normalized_sql, rows=None, error=str(exc))
         finally:
             conn.close()
-            
-    def _normalize_sql(self, sql: str) -> str:
-        return " ".join(sql.split())
     
     def _run_llm_judge(self,
         question: str,

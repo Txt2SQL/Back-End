@@ -1,6 +1,6 @@
 from typing import Dict, Any, Union
 from src.classes.clients import AzureLLM, OpenWebUILLM
-from src.classes.clients.base_llm import BaseLLM
+from classes.clients.llm.base_llm import BaseLLM
 
 class LLMFactory:
     """

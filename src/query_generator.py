@@ -6,7 +6,7 @@ from src.classes.domain_states import Schema, Records, SchemaSource
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.RAG_service import QueryStore
 from src.classes.RAG_service import SchemaStore
-from src.classes.clients.mysql_client import MySQLClient
+from classes.clients.database.mysql_client import MySQLClient
 from src.classes.llm_factory import LLMFactory
 from src.classes.logger import LoggerManager
 

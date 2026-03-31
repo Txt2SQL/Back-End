@@ -14,7 +14,7 @@ from scipy.stats import pearsonr, spearmanr
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
-from src.classes.clients.mysql_client import MySQLClient
+from classes.clients.database.mysql_client import MySQLClient
 from src.classes.RAG_service.schema_store import Schema
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.RAG_service.query_store import QueryStore
