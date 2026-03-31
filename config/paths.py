@@ -17,6 +17,7 @@ SCHEMA_DIR = DATA_DIR / "schema"
 
 INPUT_DIR = TESTS_DIR / "input"
 OUTPUT_DIR = TESTS_DIR / "output"
+DATASET_DIR = TESTS_DIR / "dataset"
 TMP_DIR = TESTS_DIR / "tmp"
 
 SPIDER_DATA = PROJECT_ROOT / "spider_data"

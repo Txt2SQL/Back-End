@@ -3,6 +3,7 @@ from langchain_core.documents import Document
 from src.classes.domain_states.query import QuerySession
 from src.classes.logger import LoggerManager
 from config import LOGGER_LEVEL
+from src.classes.datasets.base_dataset import SQLiteExecutionReport
 
 class PromptBuilder:
     """
@@ -257,6 +258,36 @@ Answer only with "A" or "B".
     """
         self._log_prompt("update_classification_prompt", template)
         return template
+    
+    def build_llm_judge_prompt(self,
+        question: str,
+        database_name: str,
+        gold_report: SQLiteExecutionReport,
+        pred_report: SQLiteExecutionReport,
+    ) -> str:
+        return f"""
+    You are judging whether a predicted SQL query should be considered correct for a Spider-style text-to-SQL example.
+
+    Database id: {database_name}
+    Question: {question}
+
+    Gold query:
+    {gold_report.sql}
+
+    Gold query result:
+    {gold_report.rows if gold_report.error is None else f"ERROR: {gold_report.error}"}
+
+    Predicted query:
+    {pred_report.sql}
+
+    Predicted query result:
+    {pred_report.rows if pred_report.error is None else f"ERROR: {pred_report.error}"}
+
+    Decide whether the predicted query is semantically correct relative to the gold query and the observed execution results.
+
+    Return JSON only in this format:
+    {{"verdict":"correct"|"incorrect","reason":"short explanation"}}
+    """.strip()
     
     def _build_penalty_section(self, failed_queries: list[Document]) -> str:
         if not failed_queries or len(failed_queries) == 0:

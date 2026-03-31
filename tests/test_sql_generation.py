@@ -21,7 +21,7 @@ from src.classes.RAG_service.query_store import QueryStore
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import SchemaSource, QueryStatus, FeedbackStatus
 from src.classes.logger import LoggerManager
-from tests.output_object import RequestResult
+from tests.thread_output import RequestResult
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST
 
 TMP_DIR = TESTS_DIR / "tmp"

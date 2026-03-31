@@ -29,7 +29,7 @@ from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaS
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.logger import LoggerManager
-from tests.output_object import RequestResult
+from tests.thread_output import RequestResult
 
 
 INPUT_DIR = TESTS_DIR / "input" / "queries" / "tools"
