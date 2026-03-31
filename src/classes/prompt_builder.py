@@ -270,7 +270,7 @@ Answer only with "A" or "B".
         gold_report: SQLiteExecutionReport,
         pred_report: SQLiteExecutionReport,
     ) -> str:
-        return f"""
+        template = f"""
     You are judging whether a predicted SQL query should be considered correct for a Spider-style text-to-SQL example.
 
     Database id: {database_name}
@@ -293,6 +293,8 @@ Answer only with "A" or "B".
     Return JSON only in this format:
     {{"verdict":"correct"|"incorrect","reason":"short explanation"}}
     """.strip()
+        self._log_prompt("llm_judge_prompt", template)
+        return template
     
     def _build_penalty_section(self, failed_queries: list[Document]) -> str:
         if not failed_queries or len(failed_queries) == 0:

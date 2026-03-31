@@ -1,9 +1,7 @@
-import os, re, subprocess, sys, threading
-from datetime import datetime
+import os, re, subprocess, sys, tempfile, threading
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
 
@@ -12,12 +10,8 @@ from config import TMP_DIR
 from .base_dataset import BaseDataset
 
 NLTK_DATA_DIR = TMP_DIR / "nltk_data"
+SPIDER_EVAL_TMP_DIR = TMP_DIR / "spider_eval"
 
-@dataclass
-class SpiderEvaluationReport:
-    exec_result: subprocess.CompletedProcess[str]
-    execution_accuracy: Optional[float]
-    report_file: Path
 
 class SpiderDataset(BaseDataset):
     _nltk_setup_lock = threading.Lock()
@@ -174,12 +168,40 @@ class SpiderDataset(BaseDataset):
             self.__class__._nltk_resources_ready = True
             self.logger.info("NLTK resources ready for Spider evaluation")
 
+    def _build_spider_command(self, gold_file: Path, pred_file: Path) -> list[str]:
+        return [
+            sys.executable,
+            str(self.eval_file),
+            "--gold",
+            str(gold_file),
+            "--pred",
+            str(pred_file),
+            "--etype",
+            "exec",
+            "--db",
+            str(self.db_dir),
+            "--table",
+            str(self.path / "tables.json"),
+        ]
+
     def _extract_metric(self, output: str, metric_name: str) -> Optional[float]:
+        metric_name_normalized = metric_name.strip().lower()
+
         for line in output.splitlines():
-            if line.strip().startswith(metric_name):
+            normalized_line = line.strip().lower()
+            if normalized_line.startswith(metric_name_normalized):
                 numbers = re.findall(r"[0-9]*\.?[0-9]+", line)
                 if numbers:
                     return float(numbers[-1])
+
+            if (
+                metric_name_normalized == "execution accuracy"
+                and normalized_line.startswith("execution")
+            ):
+                numbers = re.findall(r"[0-9]*\.?[0-9]+", line)
+                if numbers:
+                    return float(numbers[-1])
+
         return None
 
     def _get_spider_evaluations_dir(self) -> Path:
@@ -216,7 +238,7 @@ class SpiderDataset(BaseDataset):
         sanitized = re.sub(r"[^A-Za-z0-9_-]+", "_", request_index).strip("_")
         return sanitized or "request_unknown"
 
-    def _build_execution_stem(self, db_id: str) -> str:
+    def _build_execution_stem(self) -> str:
         request_prefix = self._get_request_prefix_for_report()
         model_name = self._get_model_name_for_report()
         return f"{request_prefix}_{model_name}"
@@ -228,16 +250,14 @@ class SpiderDataset(BaseDataset):
         db_id: str, 
         question: Optional[str] = None
     ) -> dict:
-        eval_dir = TMP_DIR / "spider_eval"
-        eval_dir.mkdir(parents=True, exist_ok=True)
+        SPIDER_EVAL_TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-        execution_stem = self._build_execution_stem(db_id)
+        execution_stem = self._build_execution_stem()
         report_file = self._get_spider_evaluations_dir() / f"{execution_stem}.log"
-        gold_file = eval_dir / f"{execution_stem}_gold.sql"
-        pred_file = eval_dir / f"{execution_stem}_pred.sql"
 
         normalized_gold_sql = self._normalize_sql(gold_sql)
         normalized_predicted_sql = self._normalize_sql(predicted_sql)
+        nltk_env = self._build_nltk_env()
 
         self.logger.info(
             "Running Spider dataset evaluation for db_id=%s question=%r",
@@ -245,86 +265,99 @@ class SpiderDataset(BaseDataset):
             question,
         )
         self._ensure_nltk_resources()
+        self.logger.debug("Spider evaluation NLTK_DATA=%s", nltk_env.get("NLTK_DATA"))
         self.logger.debug("Spider evaluation gold SQL: %s", normalized_gold_sql)
         self.logger.debug("Spider evaluation predicted SQL: %s", normalized_predicted_sql)
         self.logger.debug("Spider evaluation report file: %s", report_file)
 
-        gold_file.write_text(
-            f"{normalized_gold_sql}\t{db_id}\n",
-            encoding="utf-8",
-        )
-        pred_file.write_text(
-            f"{normalized_predicted_sql}\n",
-            encoding="utf-8",
-        )
+        temp_dir_cleaned = False
+        with tempfile.TemporaryDirectory(
+            dir=SPIDER_EVAL_TMP_DIR,
+            prefix=f"{execution_stem}_",
+        ) as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            gold_file = temp_dir / "gold.sql"
+            pred_file = temp_dir / "pred.sql"
 
-        exec_result = subprocess.run(
-            [
-                sys.executable,
-                str(self.eval_file),
-                "--gold",
-                str(gold_file),
-                "--pred",
-                str(pred_file),
-                "--etype",
-                "exec",
-                "--db",
-                str(self.db_dir),
-                "--table",
-                str(self.path / "tables.json"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=self._build_nltk_env(),
-        )
+            gold_file.write_text(
+                f"{normalized_gold_sql}\t{db_id}\n",
+                encoding="utf-8",
+            )
+            pred_file.write_text(
+                f"{normalized_predicted_sql}\n",
+                encoding="utf-8",
+            )
 
-        execution_accuracy = self._extract_metric(exec_result.stdout, "Execution Accuracy")
+            command = self._build_spider_command(gold_file, pred_file)
+            self.logger.debug("Spider evaluation command: %s", " ".join(command))
+            self.logger.debug("Spider evaluation temp dir: %s", temp_dir)
+
+            exec_result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=nltk_env,
+            )
+
+            execution_accuracy = self._extract_metric(exec_result.stdout, "Execution Accuracy")
+            official_match = execution_accuracy == 1.0
+            self.logger.info(
+                "Spider evaluator finished with returncode=%s execution_accuracy=%s official_match=%s",
+                exec_result.returncode,
+                execution_accuracy,
+                official_match,
+            )
+            if exec_result.stdout:
+                self.logger.debug("Spider evaluator stdout:\n%s", exec_result.stdout.strip())
+            if exec_result.stderr:
+                self.logger.debug("Spider evaluator stderr:\n%s", exec_result.stderr.strip())
+
+            report_file.write_text(
+                "\n".join(
+                    [
+                        "=== Metadata ===",
+                        f"Database: {db_id}",
+                        f"Question: {question}",
+                        f"Official match: {official_match}",
+                        f"Return code: {exec_result.returncode}",
+                        f"Execution accuracy: {execution_accuracy}",
+                        f"Command: {' '.join(command)}",
+                        "",
+                        "=== Gold SQL ===",
+                        normalized_gold_sql,
+                        "",
+                        "=== Predicted SQL ===",
+                        normalized_predicted_sql,
+                        "",
+                        "=== Spider exec stdout ===",
+                        (exec_result.stdout or "").strip(),
+                        "",
+                        "=== Spider exec stderr ===",
+                        (exec_result.stderr or "").strip(),
+                        "",
+                        "=== Temp Files ===",
+                        f"Gold file: {gold_file}",
+                        f"Pred file: {pred_file}",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            temp_dir_cleaned = True
+
         self.logger.info(
-            "Spider evaluator finished with returncode=%s execution_accuracy=%s",
-            exec_result.returncode,
-            execution_accuracy,
+            "Spider evaluation report written to %s (temp_dir_cleaned=%s)",
+            report_file,
+            temp_dir_cleaned,
         )
-        if exec_result.stdout:
-            self.logger.debug("Spider evaluator stdout:\n%s", exec_result.stdout.strip())
-        if exec_result.stderr:
-            self.logger.debug("Spider evaluator stderr:\n%s", exec_result.stderr.strip())
-
-        report_file.write_text(
-            "\n".join(
-                [
-                    "=== Metadata ===",
-                    f"Database: {db_id}",
-                    f"Question: {question}",
-                    f"Return code: {exec_result.returncode}",
-                    f"Execution accuracy: {execution_accuracy}",
-                    f"Gold file: {gold_file}",
-                    f"Pred file: {pred_file}",
-                    "",
-                    "=== Gold SQL ===",
-                    normalized_gold_sql,
-                    "",
-                    "=== Predicted SQL ===",
-                    normalized_predicted_sql,
-                    "",
-                    "=== Spider exec stdout ===",
-                    (exec_result.stdout or "").strip(),
-                    "",
-                    "=== Spider exec stderr ===",
-                    (exec_result.stderr or "").strip(),
-                    "",
-                ]
-            ),
-            encoding="utf-8",
-        )
-
-        gold_file.unlink(missing_ok=True)
-        pred_file.unlink(missing_ok=True)
-
-        self.logger.info("Spider evaluation report written to %s", report_file)
 
         return {
             "exec_result": exec_result,
             "execution_accuracy": execution_accuracy,
+            "official_match": official_match,
             "report_file": report_file,
+            "returncode": exec_result.returncode,
+            "stdout": exec_result.stdout,
+            "stderr": exec_result.stderr,
         }

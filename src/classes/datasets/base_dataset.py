@@ -136,14 +136,18 @@ class BaseDataset(ABC):
             question=question,
         )
 
-        execution_accuracy = getattr(official_report, "execution_accuracy", None)
+        execution_accuracy = official_report.get("execution_accuracy")
+        official_match = bool(official_report.get("official_match"))
         self.logger.info(
-            "Dataset evaluation finished with execution_accuracy=%s",
+            "Dataset evaluation finished with execution_accuracy=%s official_match=%s returncode=%s report_file=%s",
             execution_accuracy,
+            official_match,
+            official_report.get("returncode"),
+            official_report.get("report_file"),
         )
 
         # dataset evaluation enough
-        if execution_accuracy == 1.0:
+        if official_match or execution_accuracy == 1.0:
             self.logger.info("Dataset evaluation returned an exact execution match")
             return EvaluationResult(
                 status="success",
