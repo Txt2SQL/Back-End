@@ -1,9 +1,8 @@
-import json, subprocess, os, re
-import multiprocessing as mp
+import json, subprocess, re
 from pathlib import Path
 from typing import Optional
 
-from config.paths import DATASET_DIR, INPUT_DIR, TMP_DIR
+from config.paths import BIRD_DATA, TMP_DIR
 
 from .base_dataset import BaseDataset
 
@@ -14,6 +13,7 @@ class BirdDataset(BaseDataset):
 
     def __init__(self) -> None:
         super().__init__("bird")
+        self.db_dir = BIRD_DATA / "databases"
 
     def get_requests(self, db_name: str) -> list[str]:
         return [item["question"] for item in self.dev if item["db_id"] == db_name]

@@ -98,7 +98,6 @@ class BaseDataset(ABC):
         tables_file = self.path / "tables.json"
         with open(tables_file, "r", encoding="utf-8") as f:
             self.tables = json.load(f)
-        self.db_dir = self.path / "databases"
         self.eval_file = self.path / "evaluation.py"
     
     

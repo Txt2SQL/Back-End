@@ -34,7 +34,7 @@ from .paths import (
     OUTPUT_DIR,
     DATASET_DIR,
     SPIDER_DATA,
-    SPIDER_REPO,
+    BIRD_DATA,
     ENV_DIR,
 )
 
@@ -66,6 +66,6 @@ __all__ = [
     "OUTPUT_DIR",
     "DATASET_DIR",
     "SPIDER_DATA",
-    "SPIDER_REPO",
+    "BIRD_DATA",
     "ENV_DIR",
 ]

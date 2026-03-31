@@ -6,8 +6,7 @@ from pathlib import Path
 
 
 from config.paths import SPIDER_REPO
-from config.settings import QUERY_MODELS
-from tests.dataset_test import TMP_DIR
+from tests.dataset_test import TMP_DIR, SPIDER_DATA
 from .base_dataset import BaseDataset
 
 NLTK_DATA_DIR = TMP_DIR / "nltk_data"
@@ -22,6 +21,7 @@ class SpiderDataset(BaseDataset):
     
     def __init__(self) -> None:
         super().__init__("spider")
+        self.db_dir = SPIDER_DATA / "databases"
               
     def get_requests(self, db_name: str) -> list[str]:
         return [item["question"] for item in self.dev if item["db_id"] == db_name]

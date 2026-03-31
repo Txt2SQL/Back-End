@@ -21,6 +21,6 @@ DATASET_DIR = TESTS_DIR / "dataset"
 TMP_DIR = TESTS_DIR / "tmp"
 
 SPIDER_DATA = PROJECT_ROOT / "spider_data"
-SPIDER_REPO = PROJECT_ROOT / "spider_repo"
+BIRD_DATA = PROJECT_ROOT / "bird_data"
 
 ENV_DIR = BASE_DIR / "config"
