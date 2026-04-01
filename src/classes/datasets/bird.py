@@ -1,16 +1,18 @@
-import json
-import subprocess
-import re
-import os
-import sys
-import tempfile
-from pathlib import Path
-from typing import Optional
+import json, subprocess, re, os, sys, hashlib
+
+from tests.test_sql_generation import TMP_DIR
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.classes.logger import LoggerManager
 from .base_dataset import BaseDataset, OfficialEvalReport
+from src.classes.domain_states import QuerySession
+
+# ---------------------------------------------------------
+# SHARED DIRECTORY CONFIGURATION
+# ---------------------------------------------------------
+
+BIRD_EVAL_DIR = TMP_DIR / "bird_eval"
 
 class BirdDataset(BaseDataset):
     BIRD_DELIMITER = "\t----- bird -----\t"
@@ -22,6 +24,138 @@ class BirdDataset(BaseDataset):
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)
+
+    def get_dbs(self) -> list[tuple[str, int]]:
+            """Get a list of unique databases and their table counts, preserving order."""
+            table_counts = {
+                schema["db_id"]: len(schema["table_names_original"])
+                for schema in self.tables
+            }
+            seen = set()
+            dbs = []
+
+            for item in self.dev:
+                db_name = item["db_id"]
+                if db_name not in seen:
+                    seen.add(db_name)
+                    dbs.append((db_name, table_counts.get(db_name, 0)))
+
+            return dbs
+
+    def get_schema(self, db_name: str) -> dict:
+        """Parse and return the schema for a given database."""
+        schema_data = next(
+            (schema for schema in self.tables if schema["db_id"] == db_name), 
+            None
+        )
+        if schema_data is None:
+            raise ValueError(f"Schema not found for db: {db_name}")
+
+        table_names = schema_data["table_names_original"]
+        column_names = schema_data["column_names_original"]
+        column_types = schema_data["column_types"]
+        primary_keys = schema_data.get("primary_keys", [])
+        foreign_keys = schema_data.get("foreign_keys", [])
+
+        # BIRD type mapping
+        type_map = {
+            "text": "TEXT",
+            "integer": "INTEGER",
+            "number": "NUMERIC", 
+            "real": "REAL",
+            "date": "DATE",
+            "datetime": "DATETIME",
+            "time": "TIME",
+            "boolean": "BOOLEAN",
+        }
+
+        tables = {table_name: [] for table_name in table_names}
+
+        # BIRD mixes flat primary keys (int) and composite primary keys (list[int])
+        flat_primary_keys: set[int] = set()
+        composite_primary_keys: list[list[int]] = []
+        
+        for pk in primary_keys:
+            if isinstance(pk, list):
+                composite_primary_keys.append(pk)
+            else:
+                flat_primary_keys.add(pk)
+
+        # 1. Process all columns and assign flat primary keys
+        for idx, ((table_id, col_name), col_type) in enumerate(zip(column_names, column_types)):
+            if table_id == -1: # -1 indicates the generic '*' column, skip it
+                continue
+
+            constraints: list[str] = []
+            if idx in flat_primary_keys:
+                constraints.append("PRIMARY KEY")
+
+            # Resolve type: use map, fallback to UPPERCASE of original, or default to TEXT
+            resolved_type = type_map.get(
+                col_type.lower(), 
+                col_type.upper() if col_type else "TEXT"
+            )
+
+            tables[table_names[table_id]].append({
+                "name": col_name,
+                "type": resolved_type,
+                "constraints": constraints,
+            })
+
+        # 2. Append composite primary key constraints
+        for composite_key in composite_primary_keys:
+            for column_idx in composite_key:
+                table_id, column_name = column_names[column_idx]
+                if table_id == -1:
+                    continue
+
+                # Find the column in the table and append the constraint
+                for column in tables[table_names[table_id]]:
+                    if column["name"] == column_name:
+                        if "PRIMARY KEY" not in column["constraints"]:
+                            column["constraints"].append("PRIMARY KEY")
+                        break
+
+        # 3. Append foreign key constraints
+        for source_idx, target_idx in foreign_keys:
+            source_table_id, source_column_name = column_names[source_idx]
+            target_table_id, target_column_name = column_names[target_idx]
+
+            if source_table_id == -1 or target_table_id == -1:
+                continue
+
+            reference = (
+                f"FOREIGN KEY REFERENCES "
+                f"{table_names[target_table_id]}({target_column_name})"
+            )
+
+            # Find the source column and append the reference constraint
+            for column in tables[table_names[source_table_id]]:
+                if column["name"] == source_column_name:
+                    column["constraints"].append(reference)
+                    break
+
+        return {
+            "tables": [
+                {
+                    "name": table_name,
+                    "columns": columns,
+                }
+                for table_name, columns in tables.items()
+            ]
+        }
+        
+    def _get_question_index(self, db_id: str, question: str) -> int:
+            """
+            Locates the question in the dev dataset and returns its unique index.
+            Prefers BIRD's native 'question_id' field, falling back to the list index.
+            """
+            for idx, item in enumerate(self.dev):
+                if item["db_id"] == db_id and item["question"] == question:
+                    # BIRD JSON has a "question_id" key
+                    return item.get("question_id", idx)
+                    
+            raise ValueError(f"Question not found for db_id: '{db_id}' and question: '{question}'")        
 
     def _extract_accuracy(self, output: str) -> float:
         """
@@ -35,7 +169,7 @@ class BirdDataset(BaseDataset):
                 if numbers:
                     return float(numbers[-1]) / 100.0
         return 0.0
-
+    
     def dataset_evaluation(
         self, 
         predicted_query: QuerySession, 
@@ -45,53 +179,53 @@ class BirdDataset(BaseDataset):
         model_name: str,
     ) -> OfficialEvalReport:
         
-        # 1. Prepare inputs
-        example = self._get_example_by_index(question_index)
-        difficulty = example.get("difficulty", "simple") if example else "simple"
-
-        normalized_pred = self._normalize_sql(predicted_sql)
-        normalized_gold = self._normalize_sql(gold_sql)
-
-        execution_stem = self._build_execution_stem()
-        report_file = self._get_bird_evaluations_dir() / f"{execution_stem}.json"
+        normalized_pred = predicted_query.normalize_sql()
+        normalized_gold = gold_query.normalize_sql()
 
         self.logger.info(f"Running BIRD eval for db_id={db_id} question_index={question_index}")
 
-        # 2. Use Temporary context manager
-        with tempfile.TemporaryDirectory(prefix=f"{execution_stem}_") as tmpdir:
-            tmp_path = Path(tmpdir)
+        # 1. Generate unique hash ID for safe parallel execution
+        hash_input = f"{model_name}_{db_id}_{question_index}"
+        hash_id = hashlib.md5(hash_input.encode("utf-8")).hexdigest()[:12]
 
-            pred_dir = tmp_path / "pred"
-            gold_dir = tmp_path / "gold"
-            pred_dir.mkdir()
-            gold_dir.mkdir()
+        # 2. Create unique folder structure required by BIRD
+        eval_folder = BIRD_EVAL_DIR / hash_id
+        pred_dir = eval_folder / "pred"
+        gold_dir = eval_folder / "gold"
+        
+        pred_dir.mkdir(parents=True, exist_ok=True)
+        gold_dir.mkdir(parents=True, exist_ok=True)
 
-            # 📄 A. predict_dev.json (FORMATO BIRD)
-            pred_file = pred_dir / "predict_dev.json"
-            pred_content = {
-                "0": f"{normalized_pred}{self.BIRD_DELIMITER}{db_id}"
-            }
+        pred_file = pred_dir / "predict_dev.json"
+        gold_file = gold_dir / "dev_gold.sql"
+        mock_dev_file = eval_folder / "mock_dev.json"
+
+        try:
+            # Attempt to fetch difficulty from the dataset to satisfy BIRD's diff_json
+            difficulty = "simple"
+            if 0 <= question_index < len(self.dev):
+                difficulty = self.dev[question_index].get("difficulty", "simple")
+
+            # 3. Write BIRD-specific files
+            # A. predict_dev.json (Requires specific BIRD delimiter)
             with open(pred_file, "w", encoding="utf-8") as f:
-                json.dump(pred_content, f)
+                json.dump({"0": f"{normalized_pred}{self.BIRD_DELIMITER}{db_id}"}, f)
 
-            # 📄 B. dev_gold.sql
-            gold_file = gold_dir / "dev_gold.sql"
+            # B. dev_gold.sql (Requires standard tab delimiter)
             with open(gold_file, "w", encoding="utf-8") as f:
                 f.write(f"{normalized_gold}\t{db_id}\n")
 
-            # 📄 C. MOCK dev.json
-            # BIRD's compute_acc_by_diff iterates over the JSON provided by diff_json_path synchronously.
-            # Passing the full dev.json would cause an IndexError because we are evaluating 1 item.
-            mock_dev_file = tmp_path / "mock_dev.json"
-            mock_dev_content = [{"difficulty": difficulty}]
+            # C. mock_dev.json (Prevents IndexError in BIRD's eval loop)
             with open(mock_dev_file, "w", encoding="utf-8") as f:
-                json.dump(mock_dev_content, f)
+                json.dump([{"difficulty": difficulty}], f)
 
-            # ⚙️ 3. Subprocess call to BIRD evaluation.py
+            # 4. Build and run command
+            # Note: trailing slashes "/" are strictly required because BIRD's
+            # evaluation script builds paths using raw string concatenation!
             cmd = [
                 sys.executable,
                 str(self.eval_file),
-                "--predicted_sql_path", f"{pred_dir}/", # trailing slash required by evaluation.py string concat
+                "--predicted_sql_path", f"{pred_dir}/", 
                 "--ground_truth_path", f"{gold_dir}/",
                 "--data_mode", "dev",
                 "--db_root_path", f"{self.db_dir}/",
@@ -102,43 +236,29 @@ class BirdDataset(BaseDataset):
                 "--diff_json_path", str(mock_dev_file),
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            exec_result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
-            # 🔍 4. Parsing accuracy
-            accuracy_normalized = self._extract_accuracy(result.stdout)
-            official_match = accuracy_normalized == 1.0
+            # Extract metric (divides by 100 inside the helper method)
+            execution_accuracy = self._extract_accuracy(exec_result.stdout)
+            official_match = execution_accuracy == 1.0
 
-            # 📝 5. Structured JSON Logging
-            report_data = {
-                "metadata": {
-                    "database": db_id,
-                    "question_index": question_index,
-                    "difficulty": difficulty,
-                    "official_match": official_match,
-                    "returncode": result.returncode,
-                    "execution_accuracy": accuracy_normalized,
-                    "command": " ".join(cmd)
-                },
-                "sql": {
-                    "gold": normalized_gold,
-                    "predicted": normalized_pred
-                },
-                "output": {
-                    "stdout": result.stdout.strip() if result.stdout else "",
-                    "stderr": result.stderr.strip() if result.stderr else ""
-                }
-            }
-            
-            report_file.write_text(json.dumps(report_data, indent=4), encoding="utf-8")
+        finally:
+            # 5. Clean up files and folders to keep disk usage near zero
+            # Files must be deleted before directories
+            pred_file.unlink(missing_ok=True)
+            gold_file.unlink(missing_ok=True)
+            mock_dev_file.unlink(missing_ok=True)
+            try:
+                pred_dir.rmdir()
+                gold_dir.rmdir()
+                eval_folder.rmdir()
+            except OSError:
+                pass # Folder lock / not empty
 
-        self.logger.info(f"BIRD evaluation report written to {report_file}")
-
-        # 6. Return OfficialEvalReport
         return OfficialEvalReport(
-            execution_accuracy=accuracy_normalized,
+            execution_accuracy=execution_accuracy,
             official_match=official_match,
-            returncode=result.returncode,
-            stdout=result.stdout,
-            stderr=result.stderr,
-            report_file=str(report_file)
+            returncode=exec_result.returncode,
+            stdout=exec_result.stdout,
+            stderr=exec_result.stderr,
         )
