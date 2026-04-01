@@ -1,20 +1,21 @@
-import sqlite3, json, re, os, sys
-
-from src.classes.logger import LoggerManager
+import json, re, os, sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from abc import ABC, abstractmethod
+from types import SimpleNamespace
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from dataclasses import dataclass, asdict
 
+from src.classes.domain_states import QuerySession
 from src.classes.llm_factory import LLMFactory
 from src.classes.prompt_builder import PromptBuilder
-from src.classes.clients import SQLiteExecutionReport
+from src.classes.clients import SQLiteClient
 from config import DATASET_DIR, QUERY_MODELS
-from config.paths import BIRD_DATA, SPIDER_DATA
+from config.paths import DATASET_DATA
+from src.classes.logger import LoggerManager
 
 class ComparisonResult(Enum):
     EXACT_MATCH = "exact_match"
@@ -34,9 +35,8 @@ class OfficialEvalReport:
     returncode: int
     stdout: str
     stderr: str
-    report_file: str
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         """Allows fallback for base_dataset.py if it expects a dict"""
         return asdict(self)
 
@@ -44,14 +44,15 @@ class OfficialEvalReport:
 class EvaluationResult:
     status: str  # "success", "incorrect", "error"
     method: str  # "dataset_eval", "sqlite_execution", "custom_compare", "llm_judge", "fallback"
+    execution_accuracy: Optional[float] = None
 
     # dataset-level info (Spider/BIRD)
-    execution_accuracy: Optional[float] = None
-    official_details: Optional[object] = None
+    official_eval: Optional[OfficialEvalReport] = None
+    official_details: Optional[dict[str, Any]] = None
 
     # execution reports
-    gold: Optional[SQLiteExecutionReport] = None
-    pred: Optional[SQLiteExecutionReport] = None
+    gold: Optional[QuerySession] = None
+    pred: Optional[QuerySession] = None
 
     # comparison info
     comparison: Optional[str] = None
@@ -101,10 +102,7 @@ class BaseDataset(ABC):
             self.tables = json.load(f)
         self.eval_file = self.path / "evaluation.py"
         
-        if self.name == "spider":
-            self.db_dir = SPIDER_DATA / "databases"
-        else:
-            self.db_dir = BIRD_DATA / "databases"
+        self.db_dir = DATASET_DATA / "databases"
 
     @property
     def logger(self):
@@ -114,163 +112,63 @@ class BaseDataset(ABC):
         """Fetch all requests (questions) for a given database."""
         return [item["question"] for item in self.dev if item["db_id"] == db_name]
 
+    @abstractmethod
     def get_dbs(self) -> list[tuple[str, int]]:
         """Get a list of unique databases and their table counts, preserving order."""
-        table_counts = {
-            schema["db_id"]: len(schema["table_names_original"])
-            for schema in self.tables
-        }
-        seen = set()
-        dbs = []
+        pass
 
-        for item in self.dev:
-            db_name = item["db_id"]
-            if db_name not in seen:
-                seen.add(db_name)
-                dbs.append((db_name, table_counts.get(db_name, 0)))
-
-        return dbs
-
+    @abstractmethod
     def get_schema(self, db_name: str) -> dict:
-        """Parse and return the schema for a given database."""
-        schema_data = next(
-            (schema for schema in self.tables if schema["db_id"] == db_name), 
-            None
-        )
-        if schema_data is None:
-            raise ValueError(f"Schema not found for db: {db_name}")
-
-        table_names = schema_data["table_names_original"]
-        column_names = schema_data["column_names_original"]
-        column_types = schema_data["column_types"]
-        primary_keys = schema_data.get("primary_keys", [])
-        foreign_keys = schema_data.get("foreign_keys", [])
-
-        # Unified type map (handles both Spider and BIRD types)
-        type_map = {
-            "text": "TEXT",
-            "integer": "INTEGER",
-            "number": "NUMERIC", # Covers both Spider's 'number' and BIRD's 'number'
-            "real": "REAL",
-            "date": "DATE",
-            "datetime": "DATETIME",
-            "time": "TIME",
-            "boolean": "BOOLEAN",
-        }
-
-        tables = {table_name: [] for table_name in table_names}
-
-        # Separate flat vs composite primary keys (BIRD uses composite, Spider uses flat)
-        flat_primary_keys: set[int] = set()
-        composite_primary_keys: list[tuple[int, ...]] = []
-        
-        for pk in primary_keys:
-            if isinstance(pk, (list, tuple)):
-                composite_primary_keys.append(tuple(pk))
-            else:
-                flat_primary_keys.add(pk)
-
-        # 1. Process all columns
-        for idx, ((table_id, col_name), col_type) in enumerate(zip(column_names, column_types)):
-            if table_id == -1: # -1 indicates the generic '*' column
-                continue
-
-            constraints: list[str] = []
-            if idx in flat_primary_keys:
-                constraints.append("PRIMARY KEY")
-
-            # Resolve type: use map, fallback to UPPERCASE of original, or default to TEXT
-            resolved_type = type_map.get(
-                col_type.lower(), 
-                col_type.upper() if col_type else "TEXT"
-            )
-
-            tables[table_names[table_id]].append({
-                "name": col_name,
-                "type": resolved_type,
-                "constraints": constraints,
-            })
-
-        # 2. Append composite primary key constraints (Mostly for BIRD)
-        for composite_key in composite_primary_keys:
-            for column_idx in composite_key:
-                table_id, column_name = column_names[column_idx]
-                if table_id == -1:
-                    continue
-
-                for column in tables[table_names[table_id]]:
-                    if column["name"] == column_name:
-                        if "PRIMARY KEY" not in column["constraints"]:
-                            column["constraints"].append("PRIMARY KEY")
-                        break
-
-        # 3. Append foreign key constraints
-        for source_idx, target_idx in foreign_keys:
-            source_table_id, source_column_name = column_names[source_idx]
-            target_table_id, target_column_name = column_names[target_idx]
-
-            if source_table_id == -1 or target_table_id == -1:
-                continue
-
-            reference = (
-                f"FOREIGN KEY REFERENCES "
-                f"{table_names[target_table_id]}({target_column_name})"
-            )
-
-            for column in tables[table_names[source_table_id]]:
-                if column["name"] == source_column_name:
-                    column["constraints"].append(reference)
-                    break
-
-        return {
-            "tables": [
-                {
-                    "name": table_name,
-                    "columns": columns,
-                }
-                for table_name, columns in tables.items()
-            ]
-        }
+        """Return the schema for a given database in a consistent format."""
+        pass
     
-    def _find_example(self, db_id: str, question: Optional[str] = None) -> dict:
-        for example in self.dev:
-            if example["db_id"] == db_id:
-                if question is None or example["question"] == question:
-                    return example
-        raise ValueError(f"Example not found for db_id: {db_id} and question: {question}")
+    @abstractmethod
+    def _get_gold_sql(self, db_id: str, question: Optional[str] = None) -> str:
+        """Find the gold SQL query for a given db_id and question."""
+        pass
+
+    @abstractmethod
+    def _get_question_index(self, db_id: str, question: str) -> int:
+        """Find the index of the question in the dev set for evaluation purposes."""
+        pass
     
     def evaluation(
         self,
-        predicted_sql: str,
+        predicted_query: QuerySession,
         db_id: str,
-        question: Optional[str] = None,
+        question: str,
+        model_name: str,
+        output_dir: Path,
+        db_client: SQLiteClient,
     ) -> EvaluationResult:
         self.logger.info(
             "Starting dataset evaluation for db_id=%s question=%r",
             db_id,
             question,
         )
-        example = self._find_example(db_id=db_id, question=question)
-        gold_sql = example["query"]
+        question_index = self._get_question_index(db_id=db_id, question=question)
+        gold_sql = self._get_gold_sql(db_id=db_id, question=question)
         self.logger.debug("Gold SQL: %s", gold_sql)
-        self.logger.debug("Predicted SQL: %s", predicted_sql)
+        self.logger.debug("Predicted SQL: %s", predicted_query.sql_code)
+        self.logger.debug("Resolved question index: %s", question_index)
+        
+        gold_query = QuerySession(sql_query=gold_sql)
         
         # Call the evaluation
         official_report = self.dataset_evaluation(
-            predicted_sql=predicted_sql,
-            gold_sql=gold_sql,
+            predicted_query=predicted_query,
+            gold_query=gold_query,
             db_id=db_id,
-            question=question,
+            question_index=question_index,
+            model_name=model_name,
         )
 
         # Accommodate both standard dicts (BIRD) and Dataclasses (Spider)
         if hasattr(official_report, "execution_accuracy"):
-            # It's a Dataclass (Spider)
             execution_accuracy = official_report.execution_accuracy
             official_match = official_report.official_match
             report_info = official_report.to_dict()
         else:
-            # It's a dict (BIRD - fallback)
             execution_accuracy = official_report.get("execution_accuracy")
             official_match = bool(official_report.get("official_match"))
             report_info = official_report
@@ -288,33 +186,36 @@ class BaseDataset(ABC):
                 status="success",
                 method="dataset_eval",
                 execution_accuracy=execution_accuracy,
-                official_details=report_info, # Save the generic dict representation
+                official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
+                official_details=report_info,
             )
 
-        sqlite_file = self.db_dir / db_id / f"{db_id}.sqlite"
-        self.logger.info("Falling back to local SQLite comparison using %s", sqlite_file)
-        gold_exec = self._execute_sqlite_query(sqlite_file, gold_sql)
-        pred_exec = self._execute_sqlite_query(sqlite_file, predicted_sql)
+        self.logger.info("Falling back to local SQLite comparison")
+        gold_exec = db_client.execute_query(gold_query)
+        pred_exec = db_client.execute_query(predicted_query)
 
-        # ❌ Caso 2: errore esecuzione
-        if gold_exec.error or pred_exec.error:
+        gold_error = gold_exec.execution_result if isinstance(gold_exec.execution_result, str) else None
+        pred_error = pred_exec.execution_result if isinstance(pred_exec.execution_result, str) else None
+
+        if gold_error or pred_error:
             self.logger.warning(
                 "SQLite execution failed. gold_error=%r pred_error=%r",
-                gold_exec.error,
-                pred_exec.error,
+                gold_error,
+                pred_error,
             )
             return EvaluationResult(
                 status="error",
                 method="sqlite_execution",
                 execution_accuracy=execution_accuracy,
-                official_details=official_report,
+                official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
+                official_details=report_info,
                 gold=gold_exec,
                 pred=pred_exec,
             )
 
         cmp_result = self.custom_execution_compare(
-            gold_exec.rows or [],
-            pred_exec.rows or [],
+            self._extract_rows(gold_exec),
+            self._extract_rows(pred_exec),
         )
         self.logger.info("Custom execution comparison result: %s", cmp_result.value)
 
@@ -329,7 +230,8 @@ class BaseDataset(ABC):
                 status="success",
                 method="custom_compare",
                 execution_accuracy=execution_accuracy,
-                official_details=official_report,
+                official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
+                official_details=report_info,
                 comparison=cmp_result.value,
                 gold=gold_exec,
                 pred=pred_exec,
@@ -349,7 +251,8 @@ class BaseDataset(ABC):
                 status="success" if judge["verdict"] == "correct" else "incorrect",
                 method="llm_judge",
                 execution_accuracy=execution_accuracy,
-                official_details=official_report,
+                official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
+                official_details=report_info,
                 comparison=cmp_result.value,
                 gold=gold_exec,
                 pred=pred_exec,
@@ -363,17 +266,25 @@ class BaseDataset(ABC):
             status="incorrect",
             method="fallback",
             execution_accuracy=execution_accuracy,
-            official_details=official_report,
+            official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
+            official_details=report_info,
             comparison=cmp_result.value,
             gold=gold_exec,
             pred=pred_exec,
         )
     
     @abstractmethod
-    def dataset_evaluation(self, predicted_sql: str, gold_sql: str, db_id: str, question: Optional[str] = None) -> OfficialEvalReport:
+    def dataset_evaluation(
+        self, 
+        predicted_query: QuerySession, 
+        gold_query: QuerySession, 
+        db_id: str, 
+        question_index: int,
+        model_name: str,
+    ) -> OfficialEvalReport:
         pass
     
-    def custom_execution_compare(self,gold_result, pred_result):
+    def custom_execution_compare(self, gold_result: list[Any], pred_result: list[Any]) -> ComparisonResult:
 
         def normalize_value(v):
             if v is None:
@@ -397,6 +308,9 @@ class BaseDataset(ABC):
             return ComparisonResult.ROW_COUNT_MISMATCH
 
         # 3. superset columns
+        if not gold_norm:
+            return ComparisonResult.EXACT_MATCH if not pred_norm else ComparisonResult.ROW_COUNT_MISMATCH
+
         gold_width = len(gold_norm[0])
         pred_projected = [row[:gold_width] for row in pred_norm]
 
@@ -415,37 +329,39 @@ class BaseDataset(ABC):
             return ComparisonResult.PARTIAL_MATCH
 
         return ComparisonResult.NO_MATCH
-
-    def _execute_sqlite_query(self, sqlite_file: Path, sql: str) -> SQLiteExecutionReport:
-        normalized_sql = self._normalize_sql(sql)
-        self.logger.debug("Opening SQLite database: %s", sqlite_file)
-        self.logger.debug("Executing normalized SQL: %s", normalized_sql)
-        conn = sqlite3.connect(sqlite_file)
-        try:
-            cursor = conn.cursor()
-            cursor.execute(normalized_sql)
-            rows = cursor.fetchall()
-            self.logger.debug("SQLite query succeeded with %d rows", len(rows))
-            return SQLiteExecutionReport(sql=normalized_sql, rows=rows, error=None)
-        except Exception as exc:
-            self.logger.exception("SQLite query failed: %s", exc)
-            return SQLiteExecutionReport(sql=normalized_sql, rows=None, error=str(exc))
-        finally:
-            conn.close()
     
-    def _run_llm_judge(self,
+    def _extract_rows(self, query_session: QuerySession) -> list[Any]:
+        execution_result = query_session.execution_result
+        if execution_result is None or isinstance(execution_result, str):
+            return []
+        return list(getattr(execution_result, "rows", []) or [])
+
+    def _build_judge_report(self, query_session: QuerySession) -> SimpleNamespace:
+        execution_result = query_session.execution_result
+        error = execution_result if isinstance(execution_result, str) else None
+        rows = [] if error else self._extract_rows(query_session)
+        return SimpleNamespace(
+            sql=query_session.sql_code or "",
+            rows=rows,
+            error=error,
+        )
+
+    def _run_llm_judge(
+        self,
         question: str,
         database_name: str,
-        gold_report: SQLiteExecutionReport,
-        pred_report: SQLiteExecutionReport,
-    ) -> dict:
+        gold_report: QuerySession,
+        pred_report: QuerySession,
+    ) -> dict[str, str]:
         self.logger.debug("Creating LLM judge for db_id=%s question=%r", database_name, question)
         judge = LLMFactory.create(QUERY_MODELS["Qwen3-coder-next"])
+        gold_judge_report = self._build_judge_report(gold_report)
+        pred_judge_report = self._build_judge_report(pred_report)
         prompt = PromptBuilder().build_llm_judge_prompt(
             question=question,
             database_name=database_name,
-            gold_report=gold_report,
-            pred_report=pred_report,
+            gold_report=gold_judge_report,
+            pred_report=pred_judge_report,
         )
         response = judge.generate(prompt)
         self.logger.debug("LLM judge raw response: %s", response)

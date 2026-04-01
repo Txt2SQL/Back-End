@@ -9,7 +9,6 @@ from typing import Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config.paths import BIRD_DATA, TMP_DIR
 from src.classes.logger import LoggerManager
 from .base_dataset import BaseDataset, OfficialEvalReport
 
@@ -19,7 +18,6 @@ class BirdDataset(BaseDataset):
 
     def __init__(self) -> None:
         super().__init__("bird")
-        self.db_dir = BIRD_DATA / "databases"
 
     @property
     def logger(self):
@@ -38,36 +36,17 @@ class BirdDataset(BaseDataset):
                     return float(numbers[-1]) / 100.0
         return 0.0
 
-    def _get_bird_evaluations_dir(self) -> Path:
-        for handler in self.logger.handlers:
-            if base_filename := getattr(handler, "baseFilename", None):
-                bird_eval_dir = Path(base_filename).resolve().parent / "bird_evaluations"
-                bird_eval_dir.mkdir(parents=True, exist_ok=True)
-                return bird_eval_dir
-        
-        fallback_dir = TMP_DIR / "bird_eval"
-        fallback_dir.mkdir(parents=True, exist_ok=True)
-        return fallback_dir
-
-    def _build_execution_stem(self) -> str:
-        request_index = LoggerManager.get_request_index() or "unknown"
-        match = re.search(r"(\d+)", request_index)
-        req_prefix = f"request_{match.group(1)}" if match else f"request_{re.sub(r'[^A-Za-z0-9_-]+', '_', request_index).strip('_')}"
-        
-        model_name = next((Path(getattr(h, "baseFilename")).stem for h in self.logger.handlers if getattr(h, "baseFilename", None)), "unknown_model")
-        
-        return f"{req_prefix}_{model_name}"
-
     def dataset_evaluation(
-        self,
-        predicted_sql: str,
-        gold_sql: str,
-        db_id: str,
-        question: Optional[str] = None,
+        self, 
+        predicted_query: QuerySession, 
+        gold_query: QuerySession, 
+        db_id: str, 
+        question_index: int,
+        model_name: str,
     ) -> OfficialEvalReport:
         
         # 1. Prepare inputs
-        example = self._find_example(db_id=db_id, question=question)
+        example = self._get_example_by_index(question_index)
         difficulty = example.get("difficulty", "simple") if example else "simple"
 
         normalized_pred = self._normalize_sql(predicted_sql)
@@ -76,7 +55,7 @@ class BirdDataset(BaseDataset):
         execution_stem = self._build_execution_stem()
         report_file = self._get_bird_evaluations_dir() / f"{execution_stem}.json"
 
-        self.logger.info(f"Running BIRD eval for db_id={db_id} question={question!r}")
+        self.logger.info(f"Running BIRD eval for db_id={db_id} question_index={question_index}")
 
         # 2. Use Temporary context manager
         with tempfile.TemporaryDirectory(prefix=f"{execution_stem}_") as tmpdir:
@@ -133,7 +112,7 @@ class BirdDataset(BaseDataset):
             report_data = {
                 "metadata": {
                     "database": db_id,
-                    "question": question,
+                    "question_index": question_index,
                     "difficulty": difficulty,
                     "official_match": official_match,
                     "returncode": result.returncode,
