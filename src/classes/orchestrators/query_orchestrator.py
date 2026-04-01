@@ -2,6 +2,8 @@ import copy
 import os
 import sys
 
+from classes.clients.database.base_client import BaseClient
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from pathlib import Path
@@ -29,7 +31,7 @@ class QueryOrchestrator(BaseOrchestrator):
         database_name: str,
         schema_store: SchemaStore,
         model_name: str,
-        database_client: Optional[MySQLClient] = None,
+        database_client: Optional[BaseClient] = None,
         query_store: Optional[QueryStore] = None, # query_store should not be created if source = "text"
         max_attempts: int = 4,
         instance_path: Path = DATA_DIR,

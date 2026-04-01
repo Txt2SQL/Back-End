@@ -155,7 +155,18 @@ class BirdDataset(BaseDataset):
                     # BIRD JSON has a "question_id" key
                     return item.get("question_id", idx)
                     
-            raise ValueError(f"Question not found for db_id: '{db_id}' and question: '{question}'")        
+            raise ValueError(f"Question not found for db_id: '{db_id}' and question: '{question}'")
+    
+    def _get_gold_sql(self, db_id: str, question: str) -> str:
+        """
+        Retrieves the gold SQL query for a given database and question.
+        If question is None, returns the first matching SQL for the db_id.
+        """
+        for item in self.dev:
+            if item["db_id"] == db_id and (question is None or item["question"] == question):
+                return item["SQL"]
+        
+        raise ValueError(f"Gold SQL not found for db_id: '{db_id}' and question: '{question}'")
 
     def _extract_accuracy(self, output: str) -> float:
         """

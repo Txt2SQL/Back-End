@@ -48,7 +48,6 @@ class EvaluationResult:
 
     # dataset-level info (Spider/BIRD)
     official_eval: Optional[OfficialEvalReport] = None
-    official_details: Optional[dict[str, Any]] = None
 
     # execution reports
     gold: Optional[QuerySession] = None
@@ -123,7 +122,7 @@ class BaseDataset(ABC):
         pass
     
     @abstractmethod
-    def _get_gold_sql(self, db_id: str, question: Optional[str] = None) -> str:
+    def _get_gold_sql(self, db_id: str, question: str) -> str:
         """Find the gold SQL query for a given db_id and question."""
         pass
 
@@ -138,7 +137,7 @@ class BaseDataset(ABC):
         db_id: str,
         question: str,
         model_name: str,
-        output_dir: Path,
+        log_dir: Path,
         db_client: SQLiteClient,
     ) -> EvaluationResult:
         self.logger.info(
@@ -162,16 +161,9 @@ class BaseDataset(ABC):
             question_index=question_index,
             model_name=model_name,
         )
-
-        # Accommodate both standard dicts (BIRD) and Dataclasses (Spider)
-        if hasattr(official_report, "execution_accuracy"):
-            execution_accuracy = official_report.execution_accuracy
-            official_match = official_report.official_match
-            report_info = official_report.to_dict()
-        else:
-            execution_accuracy = official_report.get("execution_accuracy")
-            official_match = bool(official_report.get("official_match"))
-            report_info = official_report
+        execution_accuracy = official_report.execution_accuracy
+        official_match = official_report.official_match
+        report_info = official_report.to_dict()
 
         self.logger.info(
             "Dataset evaluation finished with execution_accuracy=%s official_match=%s",
@@ -182,13 +174,19 @@ class BaseDataset(ABC):
         # dataset evaluation enough
         if official_match or execution_accuracy == 1.0:
             self.logger.info("Dataset evaluation returned an exact execution match")
-            return EvaluationResult(
+            result = EvaluationResult(
                 status="success",
                 method="dataset_eval",
                 execution_accuracy=execution_accuracy,
-                official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
-                official_details=report_info,
+                official_eval=official_report,
             )
+            self._write_evaluation_log(
+                result=result,
+                output_dir=log_dir,
+                question_index=question_index,
+                model_name=model_name,
+            )
+            return result
 
         self.logger.info("Falling back to local SQLite comparison")
         gold_exec = db_client.execute_query(gold_query)
@@ -203,15 +201,21 @@ class BaseDataset(ABC):
                 gold_error,
                 pred_error,
             )
-            return EvaluationResult(
+            result = EvaluationResult(
                 status="error",
                 method="sqlite_execution",
                 execution_accuracy=execution_accuracy,
-                official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
-                official_details=report_info,
+                official_eval=official_report,
                 gold=gold_exec,
                 pred=pred_exec,
             )
+            self._write_evaluation_log(
+                result=result,
+                output_dir=log_dir,
+                question_index=question_index,
+                model_name=model_name,
+            )
+            return result
 
         cmp_result = self.custom_execution_compare(
             self._extract_rows(gold_exec),
@@ -226,16 +230,22 @@ class BaseDataset(ABC):
             ComparisonResult.SET_MATCH,
         }:
             self.logger.info("Skipping LLM judge because execution comparison is acceptable")
-            return EvaluationResult(
+            result = EvaluationResult(
                 status="success",
                 method="custom_compare",
                 execution_accuracy=execution_accuracy,
-                official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
-                official_details=report_info,
+                official_eval=official_report,
                 comparison=cmp_result.value,
                 gold=gold_exec,
                 pred=pred_exec,
             )
+            self._write_evaluation_log(
+                result=result,
+                output_dir=log_dir,
+                question_index=question_index,
+                model_name=model_name,
+            )
+            return result
 
         # LLM judge
         if question is not None:
@@ -247,12 +257,11 @@ class BaseDataset(ABC):
                 pred_report=pred_exec,
             )
 
-            return EvaluationResult(
+            result = EvaluationResult(
                 status="success" if judge["verdict"] == "correct" else "incorrect",
                 method="llm_judge",
                 execution_accuracy=execution_accuracy,
-                official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
-                official_details=report_info,
+                official_eval=official_report,
                 comparison=cmp_result.value,
                 gold=gold_exec,
                 pred=pred_exec,
@@ -260,18 +269,32 @@ class BaseDataset(ABC):
                 reason=judge["reason"],
                 raw_response=judge["raw_response"],
             )
+            self._write_evaluation_log(
+                result=result,
+                output_dir=log_dir,
+                question_index=question_index,
+                model_name=model_name,
+            )
+            return result
 
         # fallback
-        return EvaluationResult(
+        result = EvaluationResult(
             status="incorrect",
             method="fallback",
             execution_accuracy=execution_accuracy,
-            official_eval=official_report if isinstance(official_report, OfficialEvalReport) else None,
+            official_eval=official_report,
             official_details=report_info,
             comparison=cmp_result.value,
             gold=gold_exec,
             pred=pred_exec,
         )
+        self._write_evaluation_log(
+            result=result,
+            output_dir=output_dir,
+            question_index=question_index,
+            model_name=model_name,
+        )
+        return result
     
     @abstractmethod
     def dataset_evaluation(
@@ -335,6 +358,61 @@ class BaseDataset(ABC):
         if execution_result is None or isinstance(execution_result, str):
             return []
         return list(getattr(execution_result, "rows", []) or [])
+
+    def _serialize_query_session(self, query_session: Optional[QuerySession]) -> Optional[dict[str, Any]]:
+        if query_session is None:
+            return None
+
+        execution_result = query_session.execution_result
+        error = execution_result if isinstance(execution_result, str) else None
+        rows = [] if error else self._extract_rows(query_session)
+
+        return {
+            "sql": query_session.sql_code,
+            "valid_syntax": query_session.valid_syntax,
+            "rows_fetched": query_session.rows_fetched,
+            "error": error,
+            "rows": rows,
+        }
+
+    def _sanitize_filename_part(self, value: str) -> str:
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("_") or "unknown"
+
+    def _write_evaluation_log(
+        self,
+        result: EvaluationResult,
+        output_dir: Path,
+        question_index: int,
+        model_name: str,
+    ) -> None:
+        log_dir = output_dir / "eval_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_model_name = self._sanitize_filename_part(model_name)
+        log_file = log_dir / f"{question_index}_{safe_model_name}.log"
+
+        payload = {
+            "dataset": self.name,
+            "question_index": question_index,
+            "model_name": model_name,
+            "result": {
+                "status": result.status,
+                "method": result.method,
+                "execution_accuracy": result.execution_accuracy,
+                "comparison": result.comparison,
+                "verdict": result.verdict,
+                "reason": result.reason,
+                "raw_response": result.raw_response,
+            },
+            "gold": self._serialize_query_session(result.gold),
+            "pred": self._serialize_query_session(result.pred),
+            "summary": result.summary(),
+        }
+
+        log_file.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=True),
+            encoding="utf-8",
+        )
 
     def _build_judge_report(self, query_session: QuerySession) -> SimpleNamespace:
         execution_result = query_session.execution_result

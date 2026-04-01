@@ -19,6 +19,7 @@ from typing import List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from classes.clients.database.sqlite_client import SQLiteClient
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, TMP_DIR
 from classes.clients.database.mysql_client import MySQLClient
 from src.classes.RAG_service.schema_store import SchemaStore
@@ -70,7 +71,7 @@ def printer_thread(
     num_models: int,
     num_requests: int,
     queries_dir: Path,
-    logs_dir: Path,
+    output_dir: Path,
     requests: List[str],
 ) -> None:
     """
@@ -85,7 +86,7 @@ def printer_thread(
     model_progress = {model: 0 for model in QUERY_MODELS.keys()}
 
     # Use LoggerManager for printer thread
-    logger = LoggerManager.get_logger("printer", log_file=logs_dir / "printer.log")
+    logger = LoggerManager.get_logger("printer", log_file=output_dir / "logs" / "printer.log")
     logger.info(f"Printer started. Expecting {total_expected} results.")
     _print_model_progress(model_progress, num_requests, received, total_expected)
 
@@ -713,11 +714,10 @@ def generator_thread(
         logger.info(f"Started generator thread for model: {model_key}, mode: {schema.source.value}")
         logger.info(f"Log file: {log_file}")
 
+        db_client = SQLiteClient(database_name)
         if schema.source == SchemaSource.MYSQL:
-            db_client = MySQLClient(database_name)
             qs = query_store
         else:
-            db_client = None
             qs = None
 
         for idx, request in enumerate(requests, start=1):
@@ -737,7 +737,7 @@ def generator_thread(
                     database_name=database_name,
                     schema_store=schema_store,
                     model_name=model_key,
-                    database_client=db_client,
+                    database_client=db_client if schema.source == SchemaSource.MYSQL else None,
                     query_store=qs,
                     max_attempts=3,
                     instance_path=TMP_DIR,
@@ -748,9 +748,12 @@ def generator_thread(
                 result_session = orch.generation(request)
                 
                 eval_result = dataset.evaluation(
-                    predicted_sql=result_session.sql_code or "",
+                    predicted_query=result_session,
                     db_id=database_name,
-                    question=request
+                    question=request,
+                    model_name=model_key,
+                    log_dir=logs_dir,
+                    db_client=db_client,
                 )
 
                 elapsed = time.time() - start_time
@@ -850,7 +853,7 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
     if database_name is None:
         database_name = select_database(dataset.get_dbs())
 
-    output_dir, queries_dir, logs_dir = create_output_dir(database_name, output_name)
+    output_dir = create_output_dir(database_name, output_name)
     empty_tmp_dir()
 
     schema, schema_store = build_schema(database_name, dataset.get_schema(database_name))
@@ -863,7 +866,7 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
 
     printer = threading.Thread(
         target=printer_thread,
-        args=(result_queue, num_models, len(requests), queries_dir, logs_dir, requests),
+        args=(result_queue, num_models, len(requests), output_dir, requests),
     )
     printer.start()
     main_logger.info("Printer thread started")
@@ -879,7 +882,7 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
                 result_queue,
                 schema_store,
                 thread_safe_query_store,
-                logs_dir,
+                output_dir / "logs",
                 schema,
                 dataset,
             ),

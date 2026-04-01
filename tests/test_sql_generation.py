@@ -799,16 +799,11 @@ def load_requests(db_name: str) -> List[str]:
     print(f"Loaded {len(requests)} requests.")
     return requests
 
-def create_output_dir(db_name: str, output_name: str | None = None) -> tuple[Path, Path, Path]:
+def create_output_dir(db_name: str, output_name: str | None = None) -> Path:
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     run_name = output_name if output_name else f"results_{timestamp}"
     output_dir = TESTS_DIR / 'output' / 'generations' / f"{db_name}_results" / run_name
-    queries_dir = output_dir / 'queries'
-    logs_dir = output_dir / 'logs'
-    queries_dir.mkdir(parents=True, exist_ok=True)
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Output will be written to: {output_dir}")
-    return output_dir, queries_dir, logs_dir
+    return output_dir
 
 def empty_tmp_dir() -> None:
     """Clear and recreate the tests tmp directory used by stress tests."""
