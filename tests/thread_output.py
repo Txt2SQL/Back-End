@@ -110,29 +110,23 @@ class RequestResult:
             error_msg = execution_result if isinstance(execution_result, str) else "Unknown error"
             lines.append(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n")
         # ----------------------------
-        # LLM Feedback formatting
+        # Evaluation verdict formatting
         # ----------------------------
-        feedback = query_session.llm_feedback if query_session else None
+        evaluation_parts = []
+        if self.evaluation_method:
+            evaluation_parts.append(f"method={self.evaluation_method}")
         if self.evaluation_verdict:
-            reason = self.evaluation_reason or ""
-            lines.append(f"LLM Feedback: {'👍CORRECT' if self.evaluation_verdict == 'correct' else '👎INCORRECT'}")
-            if reason:
-                lines.append(f"({reason})\n")
-            else:
-                lines.append("\n")
-        elif status_label == "RUNTIME_ERROR":
-            explanation = feedback.explanation if feedback else ""
-            lines.append(f"LLM Feedback: {explanation}\n")
-        elif feedback and feedback.feedback_status is FeedbackStatus.INCORRECT:
-            explanation = feedback.explanation or ""
-            category = feedback.error_category.value if feedback.error_category else "UNKNOWN_ERROR"
-            lines.append(
-                f"LLM Feedback: 👎INCORRECT ({category} - {explanation})\n"
-            )
-        elif feedback and feedback.feedback_status is FeedbackStatus.CORRECT:
-            lines.append("LLM Feedback: 👍CORRECT\n")
-        elif feedback is not None:
-            lines.append("LLM Feedback: ⚠️UNKNOWN\n")
+            evaluation_parts.append(f"verdict={self.evaluation_verdict}")
+        if self.evaluation_status and not self.evaluation_verdict:
+            evaluation_parts.append(f"result={self.evaluation_status}")
+
+        if evaluation_parts:
+            lines.append(f"evaluation: {', '.join(evaluation_parts)}")
+
+        if self.evaluation_reason:
+            lines.append(f"reason: {self.evaluation_reason}\n")
+        elif evaluation_parts:
+            lines.append("")
 
         # ----------------------------
         # Attempts + Time

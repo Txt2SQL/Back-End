@@ -72,9 +72,21 @@ class OpenWebUILLM(BaseLLM):
     
     def _dynamic_response(self, response: Response) -> str:
         data = response.json()
+        error = data.get("error")
+        if error is not None:
+            message = str(error.get("message") or error)
+            lowered = message.lower()
+            if any(token in lowered for token in ("n_ctx", "n_keep", "token limit", "context length", "prompt is too long", "truncate prompt")):
+                raise ValueError(f"LLM prompt exceeded the model context window: {message}")
+            raise ValueError(f"LLM API returned an error response: {message}")
+
         if self.api_type == "completion":
+            if "choices" not in data:
+                raise ValueError(f"Malformed completion response from LLM API: {data}")
             return data["choices"][0]["text"]
         elif self.api_type == "chat":
+            if "choices" not in data:
+                raise ValueError(f"Malformed chat response from LLM API: {data}")
             return data["choices"][0]["message"]["content"]
         else:
             raise ValueError(f"Unsupported api_type: {self.api_type}")
