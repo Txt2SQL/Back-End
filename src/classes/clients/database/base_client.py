@@ -1,6 +1,6 @@
 
 from abc import ABC, abstractmethod
-from classes.domain_states.query import QuerySession
+from src.classes.domain_states.query import QuerySession
 
 
 

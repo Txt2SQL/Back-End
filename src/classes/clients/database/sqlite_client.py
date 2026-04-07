@@ -61,8 +61,9 @@ class SQLiteClient(BaseClient):
             cursor.execute(query.sql_code)
 
             rows = cursor.fetchall()
+            columns = [description[0] for description in (cursor.description or [])]
 
-            query.execution_result = Records(rows)
+            query.execution_result = Records(rows, columns=columns)
             query.rows_fetched = len(rows)
             query.valid_syntax = True
 

@@ -353,3 +353,18 @@ Status: {self.status.value}
         if not self.sql_code:
             return ""
         return " ".join(self.sql_code.split())
+
+    def _format_query_session_result(self) -> str:
+        execution_result = self.execution_result
+
+        if isinstance(execution_result, str):
+            return f"ERROR: {execution_result}"
+
+        if isinstance(execution_result, Records):
+            return execution_result.get_preview(limit=20)
+
+        rows = getattr(execution_result, "rows", None)
+        if rows is not None:
+            return str(list(rows)[:20])
+
+        return "No execution result available."

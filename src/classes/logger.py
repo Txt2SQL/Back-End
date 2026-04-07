@@ -254,6 +254,7 @@ class LoggerManager:
         # ======================================================
 
         log_file_str = str(log_file.resolve())
+        Path(log_file_str).parent.mkdir(parents=True, exist_ok=True)
 
         logger_key = f"{name}|{log_file_str}"
 

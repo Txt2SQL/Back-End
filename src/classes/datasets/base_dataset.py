@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass, asdict
 
-from src.classes.domain_states import QuerySession
+from src.classes.domain_states import QuerySession, Records
 from src.classes.llm_factory import LLMFactory
 from src.classes.prompt_builder import PromptBuilder
 from src.classes.clients import SQLiteClient
@@ -101,7 +101,7 @@ class BaseDataset(ABC):
             self.tables = json.load(f)
         self.eval_file = self.path / "evaluation.py"
         
-        self.db_dir = DATASET_DATA / "databases"
+        self.db_dir = DATASET_DATA
 
     @property
     def logger(self):
@@ -253,8 +253,8 @@ class BaseDataset(ABC):
             judge = self._run_llm_judge(
                 question=question,
                 database_name=db_id,
-                gold_report=gold_exec,
-                pred_report=pred_exec,
+                gold_query=gold_exec,
+                pred_query=pred_exec,
             )
 
             result = EvaluationResult(
@@ -357,26 +357,32 @@ class BaseDataset(ABC):
         execution_result = query_session.execution_result
         if execution_result is None or isinstance(execution_result, str):
             return []
+        if isinstance(execution_result, Records):
+            return list(execution_result.rows)
         return list(getattr(execution_result, "rows", []) or [])
-
-    def _serialize_query_session(self, query_session: Optional[QuerySession]) -> Optional[dict[str, Any]]:
-        if query_session is None:
-            return None
-
-        execution_result = query_session.execution_result
-        error = execution_result if isinstance(execution_result, str) else None
-        rows = [] if error else self._extract_rows(query_session)
-
-        return {
-            "sql": query_session.sql_code,
-            "valid_syntax": query_session.valid_syntax,
-            "rows_fetched": query_session.rows_fetched,
-            "error": error,
-            "rows": rows,
-        }
 
     def _sanitize_filename_part(self, value: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("_") or "unknown"
+
+    def _format_question_index(self, question_index: int) -> str:
+        return f"{question_index % 100:02d}"
+
+    def _format_query_session_block(self, title: str, query_session: Optional[QuerySession]) -> str:
+        if query_session is None:
+            return f"{title}\nN/A"
+        
+        lines = [
+            title,
+            f"SQL: {query_session.sql_code or 'N/A'}",
+            f"Rows fetched: {query_session.rows_fetched or 0}",
+        ]
+
+        if isinstance(query_session.execution_result, str):
+            lines.append(f"Error: {query_session.execution_result}")
+        elif isinstance(query_session.execution_result, Records):
+            lines.append(f"Rows: {query_session.execution_result.get_preview()}")
+
+        return "\n".join(lines)
 
     def _write_evaluation_log(
         self,
@@ -389,57 +395,69 @@ class BaseDataset(ABC):
         log_dir.mkdir(parents=True, exist_ok=True)
 
         safe_model_name = self._sanitize_filename_part(model_name)
-        log_file = log_dir / f"{question_index}_{safe_model_name}.log"
+        formatted_question_index = self._format_question_index(question_index)
+        log_file = log_dir / f"{formatted_question_index}_{safe_model_name}.log"
 
-        payload = {
-            "dataset": self.name,
-            "question_index": question_index,
-            "model_name": model_name,
-            "result": {
-                "status": result.status,
-                "method": result.method,
-                "execution_accuracy": result.execution_accuracy,
-                "comparison": result.comparison,
-                "verdict": result.verdict,
-                "reason": result.reason,
-                "raw_response": result.raw_response,
-            },
-            "gold": self._serialize_query_session(result.gold),
-            "pred": self._serialize_query_session(result.pred),
-            "summary": result.summary(),
-        }
+        header_lines = [
+            f"Dataset: {self.name}",
+            f"Question index: {question_index}",
+            f"Model name: {model_name}",
+            f"Status: {result.status}",
+            f"Method: {result.method}",
+        ]
 
-        log_file.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=True),
-            encoding="utf-8",
-        )
+        official_lines = [
+            f"Execution accuracy: {result.execution_accuracy}",
+            f"Official match: {result.official_eval.official_match if result.official_eval else 'N/A'}",
+            f"Return code: {result.official_eval.returncode if result.official_eval else 'N/A'}",
+        ]
 
-    def _build_judge_report(self, query_session: QuerySession) -> SimpleNamespace:
-        execution_result = query_session.execution_result
-        error = execution_result if isinstance(execution_result, str) else None
-        rows = [] if error else self._extract_rows(query_session)
-        return SimpleNamespace(
-            sql=query_session.sql_code or "",
-            rows=rows,
-            error=error,
-        )
+        if result.official_eval and result.official_eval.stdout:
+            official_lines.append(f"Stdout:\n{result.official_eval.stdout.strip()}")
+        if result.official_eval and result.official_eval.stderr:
+            official_lines.append(f"Stderr:\n{result.official_eval.stderr.strip()}")
+
+        custom_lines = [
+            f"Comparison: {result.comparison or 'N/A'}",
+            self._format_query_session_block("Gold query", result.gold),
+            self._format_query_session_block("Predicted query", result.pred),
+        ]
+
+        llm_lines = [
+            f"Verdict: {result.verdict or 'N/A'}",
+            f"Reason: {result.reason or 'N/A'}",
+            f"Raw response: {result.raw_response or 'N/A'}",
+        ]
+
+        sections = [
+            "\n".join(header_lines),
+            "",
+            "======== official evaluation ========",
+            "\n".join(official_lines),
+            "",
+            "======== custom evaluation ========",
+            "\n".join(custom_lines),
+            "",
+            "======== llm verdict ========",
+            "\n".join(llm_lines),
+        ]
+
+        log_file.write_text("\n".join(sections) + "\n", encoding="utf-8")
 
     def _run_llm_judge(
         self,
         question: str,
         database_name: str,
-        gold_report: QuerySession,
-        pred_report: QuerySession,
+        gold_query: QuerySession,
+        pred_query: QuerySession,
     ) -> dict[str, str]:
         self.logger.debug("Creating LLM judge for db_id=%s question=%r", database_name, question)
         judge = LLMFactory.create(QUERY_MODELS["Qwen3-coder-next"])
-        gold_judge_report = self._build_judge_report(gold_report)
-        pred_judge_report = self._build_judge_report(pred_report)
         prompt = PromptBuilder().build_llm_judge_prompt(
             question=question,
             database_name=database_name,
-            gold_report=gold_judge_report,
-            pred_report=pred_judge_report,
+            gold_report=gold_query,
+            pred_report=pred_query,
         )
         response = judge.generate(prompt)
         self.logger.debug("LLM judge raw response: %s", response)

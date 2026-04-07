@@ -1,8 +1,9 @@
-from typing import List, Any
+from typing import List, Any, Optional
 
 class Records:
-    def __init__(self, rows: List[Any]):
+    def __init__(self, rows: List[Any], columns: Optional[List[str]] = None):
         self.rows = rows or []
+        self.columns = columns or []
         self.count = len(self.rows)
 
     def get_preview(self, limit: int = 10, max_col_width: int = 40) -> str:
@@ -15,8 +16,16 @@ class Records:
         headers = []
         normalized = []
 
+        # Check if explicit column names are available first.
+        if self.columns:
+            headers = list(self.columns)
+            normalized = [
+                list(row) if isinstance(row, tuple) else ([row] if not isinstance(row, list) else row)
+                for row in sample
+            ]
+            num_cols = len(headers)
         # Check if the first row is a Dictionary (common with MySQL dictionary=True)
-        if isinstance(sample[0], dict):
+        elif isinstance(sample[0], dict):
             # Use keys as headers
             headers = list(sample[0].keys())
             # Ensure values correspond to headers order
@@ -94,12 +103,13 @@ class Records:
 
         if isinstance(first, tuple):
             num_cols = len(first)
-            headers = [f"col_{idx + 1}" for idx in range(num_cols)]
+            headers = self.columns or [f"col_{idx + 1}" for idx in range(num_cols)]
             return [dict(zip(headers, row)) for row in self.rows]
 
         if isinstance(first, list):
             num_cols = len(first)
-            headers = [f"col_{idx + 1}" for idx in range(num_cols)]
+            headers = self.columns or [f"col_{idx + 1}" for idx in range(num_cols)]
             return [dict(zip(headers, row)) for row in self.rows]
 
-        return [{"col_1": row} for row in self.rows]
+        header = self.columns[0] if self.columns else "col_1"
+        return [{header: row} for row in self.rows]

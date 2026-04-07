@@ -17,6 +17,7 @@ BIRD_EVAL_DIR = TMP_DIR / "bird_eval"
 class BirdDataset(BaseDataset):
     BIRD_DELIMITER = "\t----- bird -----\t"
     DEFAULT_TIMEOUT_SECONDS = 30.0
+    REQUIRED_DIFFICULTIES = ("simple", "moderate", "challenging")
 
     def __init__(self) -> None:
         super().__init__("bird")
@@ -180,6 +181,32 @@ class BirdDataset(BaseDataset):
                 if numbers:
                     return float(numbers[-1]) / 100.0
         return 0.0
+
+    def _build_eval_payloads(
+        self,
+        normalized_pred: str,
+        normalized_gold: str,
+        db_id: str,
+    ) -> tuple[dict[str, str], list[str], list[dict[str, str]]]:
+        """
+        BIRD's official evaluator assumes every difficulty bucket is present and
+        crashes on singleton inputs. Replicating the same query across the three
+        required difficulty labels preserves total accuracy while satisfying the
+        script's internal expectations.
+        """
+        pred_payload = {
+            str(idx): f"{normalized_pred}{self.BIRD_DELIMITER}{db_id}"
+            for idx, _ in enumerate(self.REQUIRED_DIFFICULTIES)
+        }
+        gold_payload = [
+            f"{normalized_gold}\t{db_id}\n"
+            for _ in self.REQUIRED_DIFFICULTIES
+        ]
+        diff_payload = [
+            {"difficulty": difficulty}
+            for difficulty in self.REQUIRED_DIFFICULTIES
+        ]
+        return pred_payload, gold_payload, diff_payload
     
     def dataset_evaluation(
         self, 
@@ -212,23 +239,25 @@ class BirdDataset(BaseDataset):
         mock_dev_file = eval_folder / "mock_dev.json"
 
         try:
-            # Attempt to fetch difficulty from the dataset to satisfy BIRD's diff_json
-            difficulty = "simple"
-            if 0 <= question_index < len(self.dev):
-                difficulty = self.dev[question_index].get("difficulty", "simple")
-
             # 3. Write BIRD-specific files
+            pred_payload, gold_payload, diff_payload = self._build_eval_payloads(
+                normalized_pred=normalized_pred,
+                normalized_gold=normalized_gold,
+                db_id=db_id,
+            )
+
             # A. predict_dev.json (Requires specific BIRD delimiter)
             with open(pred_file, "w", encoding="utf-8") as f:
-                json.dump({"0": f"{normalized_pred}{self.BIRD_DELIMITER}{db_id}"}, f)
+                json.dump(pred_payload, f)
 
             # B. dev_gold.sql (Requires standard tab delimiter)
             with open(gold_file, "w", encoding="utf-8") as f:
-                f.write(f"{normalized_gold}\t{db_id}\n")
+                f.writelines(gold_payload)
 
-            # C. mock_dev.json (Prevents IndexError in BIRD's eval loop)
+            # C. mock_dev.json must include all difficulty buckets to prevent
+            #    ZeroDivisionError inside the official evaluator.
             with open(mock_dev_file, "w", encoding="utf-8") as f:
-                json.dump([{"difficulty": difficulty}], f)
+                json.dump(diff_payload, f)
 
             # 4. Build and run command
             # Note: trailing slashes "/" are strictly required because BIRD's

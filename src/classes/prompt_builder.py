@@ -1,13 +1,14 @@
 import os
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from datetime import datetime
 from langchain_core.documents import Document
 from src.classes.domain_states import QuerySession
+from src.classes.domain_states.records import Records
 from src.classes.logger import LoggerManager
-from src.classes.clients import SQLiteExecutionReport
 from config import LOGGER_LEVEL
 
 class PromptBuilder:
@@ -267,8 +268,8 @@ Answer only with "A" or "B".
     def build_llm_judge_prompt(self,
         question: str,
         database_name: str,
-        gold_report: SQLiteExecutionReport,
-        pred_report: SQLiteExecutionReport,
+        gold_report: QuerySession,
+        pred_report: QuerySession,
     ) -> str:
         template = f"""
     You are judging whether a predicted SQL query should be considered correct for a Spider-style text-to-SQL example.
@@ -277,16 +278,16 @@ Answer only with "A" or "B".
     Question: {question}
 
     Gold query:
-    {gold_report.sql}
+    {gold_report.sql_code}
 
     Gold query result:
-    {gold_report.rows if gold_report.error is None else f"ERROR: {gold_report.error}"}
+    {gold_report._format_query_session_result()}
 
     Predicted query:
-    {pred_report.sql}
+    {pred_report.sql_code}
 
     Predicted query result:
-    {pred_report.rows if pred_report.error is None else f"ERROR: {pred_report.error}"}
+    {pred_report._format_query_session_result()}
 
     Decide whether the predicted query is semantically correct relative to the gold query and the observed execution results.
 
@@ -327,6 +328,8 @@ Answer only with "A" or "B".
 
         self.logger.info(f"📋 Penalty section built for {len(failed_queries)} failures.")
         return "\n".join(lines)
+
+
     
     def _build_relation_section(self, relations: list[str]) -> str:
         if not relations:

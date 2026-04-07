@@ -71,8 +71,9 @@ class MySQLClient(BaseClient):
                 self.logger.info("📥 Attempting to fetch results...")
                 raw_rows = cursor.fetchall()
                 if raw_rows is not None:
+                    columns = list(raw_rows[0].keys()) if raw_rows else []
                     # WRAP THE ROWS HERE
-                    query.execution_result = Records(list(raw_rows)) 
+                    query.execution_result = Records(list(raw_rows), columns=columns) 
                     self.logger.info(f"📥 Rows fetched: {len(query.execution_result)}")
             except Exception as fetch_err:
                 query.execution_result = None

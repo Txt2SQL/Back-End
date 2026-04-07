@@ -195,7 +195,7 @@ class SpiderDataset(BaseDataset):
     def _get_gold_sql(self, db_id: str, question: str) -> str:
         for example in self.dev:
             if example["db_id"] == db_id and example["question"] == question:
-                return example["SQL"]
+                return example["query"]
         raise ValueError(f"Gold SQL not found for db_id={db_id!r} question={question!r}")
 
     def _build_spider_command(self, gold_file: Path, pred_file: Path) -> list[str]:

@@ -19,9 +19,8 @@ from typing import List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from classes.clients.database.sqlite_client import SQLiteClient
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, TMP_DIR
-from classes.clients.database.mysql_client import MySQLClient
+from src.classes.clients.database.sqlite_client import SQLiteClient
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource, FeedbackStatus
 from src.classes.logger import LoggerManager
@@ -854,6 +853,10 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
         database_name = select_database(dataset.get_dbs())
 
     output_dir = create_output_dir(database_name, output_name)
+    logs_dir = output_dir / "logs"
+    queries_dir = output_dir / "queries"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    queries_dir.mkdir(parents=True, exist_ok=True)
     empty_tmp_dir()
 
     schema, schema_store = build_schema(database_name, dataset.get_schema(database_name))
@@ -866,7 +869,7 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
 
     printer = threading.Thread(
         target=printer_thread,
-        args=(result_queue, num_models, len(requests), output_dir, requests),
+        args=(result_queue, num_models, len(requests), queries_dir, output_dir, requests),
     )
     printer.start()
     main_logger.info("Printer thread started")
@@ -882,7 +885,7 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
                 result_queue,
                 schema_store,
                 thread_safe_query_store,
-                output_dir / "logs",
+                logs_dir,
                 schema,
                 dataset,
             ),
