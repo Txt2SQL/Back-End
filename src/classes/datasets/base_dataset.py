@@ -3,7 +3,6 @@ import json, re, os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from abc import ABC, abstractmethod
-from types import SimpleNamespace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
@@ -13,8 +12,7 @@ from src.classes.domain_states import QuerySession, Records
 from src.classes.llm_factory import LLMFactory
 from src.classes.prompt_builder import PromptBuilder
 from src.classes.clients import SQLiteClient
-from config import DATASET_DIR, QUERY_MODELS
-from config.paths import DATASET_DATA
+from config import DATASET_DIR, QUERY_MODELS, DATASET_DATA
 from src.classes.logger import LoggerManager
 
 class ComparisonResult(Enum):
