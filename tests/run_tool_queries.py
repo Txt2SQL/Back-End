@@ -115,7 +115,7 @@ def _build_schema_store(tmp_dir: Path) -> SchemaStore:
 
     schema = Schema(
         database_name=DATABASE_NAME,
-        schema_source=SchemaSource.MYSQL,
+        schema_source=SchemaSource.DB_CONNECTION,
         path=schema_dir,
     )
 

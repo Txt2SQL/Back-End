@@ -2,7 +2,7 @@ from enum import Enum
 
 class SchemaSource(str, Enum):
     TEXT = "text"
-    MYSQL = "mysql"
+    DB_CONNECTION = "database_connection"
 
 class QueryStatus(str, Enum):
     PENDING = "PENDING"

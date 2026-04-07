@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, TMP_DIR
 from src.classes.clients.database.sqlite_client import SQLiteClient
 from src.classes.RAG_service.schema_store import SchemaStore
-from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource, FeedbackStatus
+from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource
 from src.classes.logger import LoggerManager
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.datasets import BaseDataset, BirdDataset, SpiderDataset
@@ -48,11 +48,12 @@ def select_database(tables: list[tuple[str, int]]) -> str:
 def build_schema(
     database_name: str,
     converted_schema: dict,
+    schema_source: SchemaSource
 ) -> tuple[Schema, SchemaStore]:
 
     schema = Schema(
         database_name=database_name,
-        schema_source=SchemaSource.TEXT,
+        schema_source=schema_source,
         path=TESTS_DIR / "tmp",
     )
     schema.parse_response(converted_schema)
@@ -263,59 +264,55 @@ def _write_statistics(
                     evaluation_type_counts[evaluation_type] += 1
                     model_stats[model][evaluation_type] += 1
 
-                status = query_session.status if query_session and query_session.status else None
+                evaluation_status = res.evaluation_status
 
-                if status == QueryStatus.SUCCESS:
+                if evaluation_status == "success":
                     correct_queries += 1
                     model_stats[model]["correct"] += 1
-                elif status == QueryStatus.INCORRECT:
+                elif evaluation_status == "incorrect":
                     incorrect_queries += 1
                     model_stats[model]["incorrect"] += 1
-                    feedback = query_session.llm_feedback if query_session else None
-                    error_category = (
-                        feedback.error_category.value
-                        if feedback
-                        and feedback.feedback_status == FeedbackStatus.INCORRECT
-                        and feedback.error_category
-                        else "UNKNOWN_ERROR"
-                    )
+                    error_category = "UNKNOWN_ERROR"
                     error_type_counts[(error_category, "INCORRECT")] = (
                         error_type_counts.get((error_category, "INCORRECT"), 0) + 1
                     )
-                elif status == QueryStatus.RUNTIME_ERROR:
-                    runtime_errors += 1
-                    model_stats[model]["runtime"] += 1
-                    runtime_category = (
-                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
-                        if query_session and getattr(query_session, "error_type", None)
-                        else QueryStatus.RUNTIME_ERROR.value
-                    )
-                    error_type_counts[(runtime_category, "RUNTIME_ERROR")] = (
-                        error_type_counts.get((runtime_category, "RUNTIME_ERROR"), 0) + 1
-                    )
-                elif status == QueryStatus.SYNTAX_ERROR:
-                    syntax_errors += 1
-                    model_stats[model]["syntax"] += 1
-                    syntax_category = (
-                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
-                        if query_session and getattr(query_session, "error_type", None)
-                        else QueryStatus.SYNTAX_ERROR.value
-                    )
-                    error_type_counts[(syntax_category, "RUNTIME_ERROR")] = (
-                        error_type_counts.get((syntax_category, "RUNTIME_ERROR"), 0) + 1
-                    )
-                elif status == QueryStatus.TIMEOUT_ERROR:
-                    other_errors += 1
-                    timeout_category = (
-                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
-                        if query_session and getattr(query_session, "error_type", None)
-                        else QueryStatus.TIMEOUT_ERROR.value
-                    )
-                    error_type_counts[(timeout_category, "RUNTIME_ERROR")] = (
-                        error_type_counts.get((timeout_category, "RUNTIME_ERROR"), 0) + 1
-                    )
                 else:
-                    other_errors += 1
+                    status = query_session.status if query_session and query_session.status else None
+
+                    if status == QueryStatus.RUNTIME_ERROR:
+                        runtime_errors += 1
+                        model_stats[model]["runtime"] += 1
+                        runtime_category = (
+                            query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                            if query_session and getattr(query_session, "error_type", None)
+                            else QueryStatus.RUNTIME_ERROR.value
+                        )
+                        error_type_counts[(runtime_category, "RUNTIME_ERROR")] = (
+                            error_type_counts.get((runtime_category, "RUNTIME_ERROR"), 0) + 1
+                        )
+                    elif status == QueryStatus.SYNTAX_ERROR:
+                        syntax_errors += 1
+                        model_stats[model]["syntax"] += 1
+                        syntax_category = (
+                            query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                            if query_session and getattr(query_session, "error_type", None)
+                            else QueryStatus.SYNTAX_ERROR.value
+                        )
+                        error_type_counts[(syntax_category, "RUNTIME_ERROR")] = (
+                            error_type_counts.get((syntax_category, "RUNTIME_ERROR"), 0) + 1
+                        )
+                    elif status == QueryStatus.TIMEOUT_ERROR:
+                        other_errors += 1
+                        timeout_category = (
+                            query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                            if query_session and getattr(query_session, "error_type", None)
+                            else QueryStatus.TIMEOUT_ERROR.value
+                        )
+                        error_type_counts[(timeout_category, "RUNTIME_ERROR")] = (
+                            error_type_counts.get((timeout_category, "RUNTIME_ERROR"), 0) + 1
+                        )
+                    else:
+                        other_errors += 1
             else:
                 # Exception occurred – count as other error
                 other_errors += 1
@@ -714,7 +711,7 @@ def generator_thread(
         logger.info(f"Log file: {log_file}")
 
         db_client = SQLiteClient(database_name)
-        if schema.source == SchemaSource.MYSQL:
+        if schema.source == SchemaSource.DB_CONNECTION:
             qs = query_store
         else:
             qs = None
@@ -736,7 +733,7 @@ def generator_thread(
                     database_name=database_name,
                     schema_store=schema_store,
                     model_name=model_key,
-                    database_client=db_client if schema.source == SchemaSource.MYSQL else None,
+                    database_client=db_client if schema.source == SchemaSource.DB_CONNECTION else None,
                     query_store=qs,
                     max_attempts=3,
                     instance_path=TMP_DIR,
@@ -745,15 +742,21 @@ def generator_thread(
                 logger.debug(f"Starting generation")
 
                 result_session = orch.generation(request)
-                
-                eval_result = dataset.evaluation(
-                    predicted_query=result_session,
-                    db_id=database_name,
-                    question=request,
-                    model_name=model_key,
-                    log_dir=logs_dir,
-                    db_client=db_client,
-                )
+                eval_result = None
+
+                if result_session.status is QueryStatus.RUNTIME_ERROR:
+                    logger.info(
+                        "Skipping dataset evaluation because generation ended with runtime error"
+                    )
+                else:
+                    eval_result = dataset.evaluation(
+                        predicted_query=result_session,
+                        db_id=database_name,
+                        question=request,
+                        model_name=model_key,
+                        log_dir=logs_dir,
+                        db_client=db_client,
+                    )
 
                 elapsed = time.time() - start_time
 
@@ -765,7 +768,10 @@ def generator_thread(
                     query_session=result_session,
                     time_taken=elapsed,
                     success=True,
-                    evaluation_method=eval_result.method,
+                    evaluation_method=eval_result.method if eval_result else None,
+                    evaluation_status=eval_result.status if eval_result else None,
+                    evaluation_verdict=eval_result.verdict if eval_result else None,
+                    evaluation_reason=eval_result.reason if eval_result else None,
                 )
 
                 logger.info(
@@ -859,7 +865,8 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
     queries_dir.mkdir(parents=True, exist_ok=True)
     empty_tmp_dir()
 
-    schema, schema_store = build_schema(database_name, dataset.get_schema(database_name))
+    schema_source = SchemaSource.DB_CONNECTION if dataset_name == "bird" else SchemaSource.TEXT
+    schema, schema_store = build_schema(database_name, dataset.get_schema(database_name), schema_source)
     query_store_lock = threading.Lock()
     thread_safe_query_store = ThreadSafeQueryStore(TMP_DIR / "vector_stores", query_store_lock)
 

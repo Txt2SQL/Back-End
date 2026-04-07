@@ -44,14 +44,11 @@ class OfficialEvalReport:
 class EvaluationResult:
     status: str  # "success", "incorrect", "error"
     method: str  # "dataset_eval", "sqlite_execution", "custom_compare", "llm_judge", "fallback"
-    execution_accuracy: Optional[float] = None
-
+    gold: QuerySession
+    pred: QuerySession
+    
     # dataset-level info (Spider/BIRD)
     official_eval: Optional[OfficialEvalReport] = None
-
-    # execution reports
-    gold: Optional[QuerySession] = None
-    pred: Optional[QuerySession] = None
 
     # comparison info
     comparison: Optional[str] = None
@@ -73,8 +70,8 @@ class EvaluationResult:
             f"Method: {self.method}",
         ]
 
-        if self.execution_accuracy is not None:
-            parts.append(f"Execution accuracy: {self.execution_accuracy}")
+        if self.official_eval and self.official_eval.execution_accuracy is not None:
+            parts.append(f"Execution accuracy: {self.official_eval.execution_accuracy}")
 
         if self.comparison:
             parts.append(f"Comparison: {self.comparison}")
@@ -109,7 +106,7 @@ class BaseDataset(ABC):
     
     def get_requests(self, db_name: str) -> list[str]:
         """Fetch all requests (questions) for a given database."""
-        return [item["question"] for item in self.dev if item["db_id"] == db_name]
+        return [item["question"] for item in self.dev if item["db_id"] == db_name][:30]
 
     @abstractmethod
     def get_dbs(self) -> list[tuple[str, int]]:
@@ -163,7 +160,6 @@ class BaseDataset(ABC):
         )
         execution_accuracy = official_report.execution_accuracy
         official_match = official_report.official_match
-        report_info = official_report.to_dict()
 
         self.logger.info(
             "Dataset evaluation finished with execution_accuracy=%s official_match=%s",
@@ -177,7 +173,8 @@ class BaseDataset(ABC):
             result = EvaluationResult(
                 status="success",
                 method="dataset_eval",
-                execution_accuracy=execution_accuracy,
+                gold=gold_query,
+                pred=predicted_query,
                 official_eval=official_report,
             )
             self._write_evaluation_log(
@@ -204,7 +201,6 @@ class BaseDataset(ABC):
             result = EvaluationResult(
                 status="error",
                 method="sqlite_execution",
-                execution_accuracy=execution_accuracy,
                 official_eval=official_report,
                 gold=gold_exec,
                 pred=pred_exec,
@@ -233,7 +229,6 @@ class BaseDataset(ABC):
             result = EvaluationResult(
                 status="success",
                 method="custom_compare",
-                execution_accuracy=execution_accuracy,
                 official_eval=official_report,
                 comparison=cmp_result.value,
                 gold=gold_exec,
@@ -260,7 +255,6 @@ class BaseDataset(ABC):
             result = EvaluationResult(
                 status="success" if judge["verdict"] == "correct" else "incorrect",
                 method="llm_judge",
-                execution_accuracy=execution_accuracy,
                 official_eval=official_report,
                 comparison=cmp_result.value,
                 gold=gold_exec,
@@ -281,16 +275,15 @@ class BaseDataset(ABC):
         result = EvaluationResult(
             status="incorrect",
             method="fallback",
-            execution_accuracy=execution_accuracy,
-            official_eval=official_report,
-            official_details=report_info,
-            comparison=cmp_result.value,
             gold=gold_exec,
             pred=pred_exec,
+            execution_accuracy=execution_accuracy,
+            official_eval=official_report,
+            comparison=cmp_result.value,
         )
         self._write_evaluation_log(
             result=result,
-            output_dir=output_dir,
+            output_dir=log_dir,
             question_index=question_index,
             model_name=model_name,
         )
@@ -367,7 +360,7 @@ class BaseDataset(ABC):
     def _format_question_index(self, question_index: int) -> str:
         return f"{question_index % 100:02d}"
 
-    def _format_query_session_block(self, title: str, query_session: Optional[QuerySession]) -> str:
+    def _format_query_session_block(self, title: str, query_session: QuerySession) -> str:
         if query_session is None:
             return f"{title}\nN/A"
         
@@ -402,12 +395,14 @@ class BaseDataset(ABC):
             f"Dataset: {self.name}",
             f"Question index: {question_index}",
             f"Model name: {model_name}",
+            self._format_query_session_block("Gold query", result.gold),
+            self._format_query_session_block("Predicted query", result.pred),
             f"Status: {result.status}",
             f"Method: {result.method}",
         ]
 
         official_lines = [
-            f"Execution accuracy: {result.execution_accuracy}",
+            f"Execution accuracy: {result.official_eval.execution_accuracy if result.official_eval else 'N/A'}",
             f"Official match: {result.official_eval.official_match if result.official_eval else 'N/A'}",
             f"Return code: {result.official_eval.returncode if result.official_eval else 'N/A'}",
         ]
@@ -419,8 +414,6 @@ class BaseDataset(ABC):
 
         custom_lines = [
             f"Comparison: {result.comparison or 'N/A'}",
-            self._format_query_session_block("Gold query", result.gold),
-            self._format_query_session_block("Predicted query", result.pred),
         ]
 
         llm_lines = [

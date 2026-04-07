@@ -78,7 +78,7 @@ def generator_thread(
         logger.info(f"Started generator thread for model: {model_key}, mode: {schema.source.value}")
         logger.info(f"Log file: {log_file}")
 
-        if mode == SchemaSource.MYSQL:
+        if mode == SchemaSource.DB_CONNECTION:
             db_client = MySQLClient(database=database_name)
             qs = query_store
         else:
@@ -922,7 +922,7 @@ def run_stress_test(mode: str, database_name: str, output_name: str | None = Non
     main_logger.info("Temporary stress test directory reset")
 
     # 4. Acquire schema from MySQL and store in vector store
-    source = SchemaSource.MYSQL if mode == 'mysql' else SchemaSource.TEXT
+    source = SchemaSource.DB_CONNECTION if mode == 'mysql' else SchemaSource.TEXT
     schema, schema_store = build_schema_rag(db_name, source)
 
     # 5. Initialize shared query store with lock

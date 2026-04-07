@@ -36,7 +36,7 @@ class SchemaOrchestrator(BaseOrchestrator):
         self.schema_store = schema_store
         self.schema: Schema = Schema(
             database_name=self.database_name,
-            schema_source=SchemaSource.MYSQL if database_client else SchemaSource.TEXT,
+            schema_source=SchemaSource.DB_CONNECTION if database_client else SchemaSource.TEXT,
             path=self.instance_path / "schema"
         )
     

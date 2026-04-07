@@ -14,6 +14,9 @@ class RequestResult:
     success: bool  # whether completed without exception
     complexity: int = 0
     evaluation_method: Optional[str] = None
+    evaluation_status: Optional[str] = None
+    evaluation_verdict: Optional[str] = None
+    evaluation_reason: Optional[str] = None
     
     def compute_query_complexity(self):
         sql = self.query_session.sql_code if self.query_session else None
@@ -79,7 +82,12 @@ class RequestResult:
         # ----------------------------
         # Status + Outcome formatting
         # ----------------------------
-        status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
+        if self.evaluation_status == "success":
+            status_label = "SUCCESS"
+        elif self.evaluation_status == "incorrect":
+            status_label = "INCORRECT"
+        else:
+            status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
 
         execution_result = query_session.execution_result if query_session else None
 
@@ -105,7 +113,14 @@ class RequestResult:
         # LLM Feedback formatting
         # ----------------------------
         feedback = query_session.llm_feedback if query_session else None
-        if status_label == "RUNTIME_ERROR":
+        if self.evaluation_verdict:
+            reason = self.evaluation_reason or ""
+            lines.append(f"LLM Feedback: {'👍CORRECT' if self.evaluation_verdict == 'correct' else '👎INCORRECT'}")
+            if reason:
+                lines.append(f"({reason})\n")
+            else:
+                lines.append("\n")
+        elif status_label == "RUNTIME_ERROR":
             explanation = feedback.explanation if feedback else ""
             lines.append(f"LLM Feedback: {explanation}\n")
         elif feedback and feedback.feedback_status is FeedbackStatus.INCORRECT:

@@ -1,16 +1,21 @@
 import sqlite3
+import time
 
 from src.classes.domain_states.query import QuerySession, Records
+from src.classes.domain_states import QueryStatus
 from .base_client import BaseClient
 from src.classes.logger import LoggerManager
 from config import DATASET_DATA
 
 class SQLiteClient(BaseClient):
+    QUERY_TIMEOUT_SECONDS = 30.0
+    PROGRESS_HANDLER_STEPS = 1_000
     
     def __init__(self, database: str) -> None:
         super().__init__()
         self.database = database
         self.sqlite_file = DATASET_DATA / self.database / f"{self.database}.sqlite"
+        self.logger.info(f"SQLiteClient initialized with database: {self.database}, file: {self.sqlite_file}")
         self.connection: sqlite3.Connection | None = None
 
         self.open_connection()
@@ -49,13 +54,23 @@ class SQLiteClient(BaseClient):
             query.rows_fetched = 0
             return query
 
-        self.logger.debug(f"Executing query on '{self.database}': {query.sql_code}")
+        self.logger.debug(f"Executing query on '{self.database} ({self.sqlite_file})': {query.sql_code}")
 
         cursor = None
         try:
             self.open_connection()
             if self.connection is None:
                 raise ConnectionError("Failed to establish a connection to the SQLite database")
+
+            deadline = time.monotonic() + self.QUERY_TIMEOUT_SECONDS
+
+            def abort_if_timed_out() -> int:
+                return 1 if time.monotonic() >= deadline else 0
+
+            self.connection.set_progress_handler(
+                abort_if_timed_out,
+                self.PROGRESS_HANDLER_STEPS,
+            )
 
             cursor = self.connection.cursor()
             cursor.execute(query.sql_code)
@@ -66,17 +81,31 @@ class SQLiteClient(BaseClient):
             query.execution_result = Records(rows, columns=columns)
             query.rows_fetched = len(rows)
             query.valid_syntax = True
+            query.execution_status = QueryStatus.SUCCESS
 
             self.logger.debug(f"Query executed successfully. Rows fetched: {query.rows_fetched}")
 
         except sqlite3.Error as e:
             error_msg = str(e)
-            self.logger.error(f"SQLite error on '{self.database}': {error_msg}")
+            timed_out = "interrupted" in error_msg.lower() and self.connection is not None
+            if timed_out:
+                self.logger.error(
+                    "SQLite query timed out on '%s' after %.1fs",
+                    self.database,
+                    self.QUERY_TIMEOUT_SECONDS,
+                )
+                query.execution_result = f"Query execution exceeded time limit ({int(self.QUERY_TIMEOUT_SECONDS)}s)"
+                query.execution_status = QueryStatus.TIMEOUT_ERROR
+            else:
+                self.logger.error(f"SQLite error on '{self.database}': {error_msg}")
+                query.execution_result = error_msg
+                query.execution_status = QueryStatus.RUNTIME_ERROR
             
-            query.execution_result = error_msg
             query.valid_syntax = False
             query.rows_fetched = 0
         finally:
+            if self.connection is not None:
+                self.connection.set_progress_handler(None, 0)
             if cursor is not None:
                 cursor.close()
 
