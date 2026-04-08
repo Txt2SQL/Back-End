@@ -146,7 +146,6 @@ def _process_file(
         query_store=None,
         max_attempts=1,
         instance_path=TESTS_DIR / "tmp",
-        testing=True,
     )
 
     # Initialize schema context once for this request

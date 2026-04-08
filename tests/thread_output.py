@@ -12,6 +12,7 @@ class RequestResult:
     query_session: Optional[QuerySession]
     time_taken: float  # seconds
     success: bool  # whether completed without exception
+    gold_query_sql: Optional[str] = None
     complexity: int = 0
     evaluation_method: Optional[str] = None
     evaluation_status: Optional[str] = None
@@ -19,7 +20,7 @@ class RequestResult:
     evaluation_reason: Optional[str] = None
     
     def compute_query_complexity(self):
-        sql = self.query_session.sql_code if self.query_session else None
+        sql = self.gold_query_sql
         
         if not sql:
             return
@@ -49,7 +50,7 @@ class RequestResult:
         self.complexity = score
 
     def get_query_complexity(self) -> Optional[int]:
-        sql = self.query_session.sql_code if self.query_session else None
+        sql = self.gold_query_sql
         if not sql:
             return None
 

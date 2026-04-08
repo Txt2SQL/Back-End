@@ -792,6 +792,7 @@ def generator_thread(
                     request_index=idx,
                     model_name=model_key,
                     query_session=result_session,
+                    gold_query_sql=eval_result.gold.sql_code if eval_result and eval_result.gold else None,
                     time_taken=elapsed,
                     success=True,
                     evaluation_method=eval_result.method if eval_result else None,

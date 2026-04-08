@@ -1,5 +1,4 @@
 import requests
-from pathlib import Path
 from .exceptions import ConnectionTestError
 from src.classes.loaders.base_loader import BaseLoader
 
