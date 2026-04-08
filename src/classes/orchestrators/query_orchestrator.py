@@ -2,8 +2,6 @@ import copy
 import os
 import sys
 
-from classes.clients.database.sqlite_client import SQLiteClient
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from pathlib import Path
@@ -11,7 +9,7 @@ from typing import Optional, List
 from langchain_core.documents import Document
 
 from src.classes.orchestrators.base_orchestrator import BaseOrchestrator
-from src.classes.clients import BaseLLM, BaseClient 
+from src.classes.clients import BaseLLM, BaseClient, SQLiteClient
 from src.classes.domain_states import QuerySession, QueryStatus
 from src.classes.RAG_service import SchemaStore, QueryStore
 from src.classes.llm_factory import LLMFactory
