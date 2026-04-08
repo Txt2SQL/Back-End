@@ -208,6 +208,7 @@ def _write_statistics(
     total_attempts = 0
     error_type_counts: Dict[tuple[str, str], int] = {}
     evaluation_type_counts = {
+        "not_started": 0,
         "official_evaluation": 0,
         "custom_evaluation": 0,
         "llm_judge": 0,
@@ -231,6 +232,7 @@ def _write_statistics(
             "total_time": 0.0,
             "attempts": 0,
             "count": 0,
+            "not_started": 0,
             "official_evaluation": 0,
             "custom_evaluation": 0,
             "llm_judge": 0,
@@ -266,6 +268,9 @@ def _write_statistics(
                 if evaluation_type is not None:
                     evaluation_type_counts[evaluation_type] += 1
                     model_stats[model][evaluation_type] += 1
+                elif query_session and query_session.status != QueryStatus.SUCCESS:
+                    evaluation_type_counts["not_started"] += 1
+                    model_stats[model]["not_started"] += 1
 
                 evaluation_status = res.evaluation_status
 
@@ -354,6 +359,48 @@ def _write_statistics(
     global_avg_attempts = (total_attempts / total_tests) if total_tests > 0 else 0
     global_avg_time = (global_total_time / total_tests) if total_tests > 0 else 0
 
+    request_complexity_scores: Dict[int, Optional[float]] = {}
+    request_complexity_levels: Dict[int, Optional[str]] = {}
+
+    for request_index in range(1, num_requests + 1):
+        models_dict = results_by_index.get(request_index, {})
+        correct_complexities = []
+        all_complexities = []
+
+        for res in models_dict.values():
+            complexity = res.get_query_complexity()
+            if complexity is None:
+                continue
+
+            all_complexities.append(complexity)
+
+            if (
+                res.success
+                and res.query_session
+                and res.query_session.status == QueryStatus.SUCCESS
+            ):
+                correct_complexities.append(complexity)
+
+        request_complexity: Optional[float]
+        if correct_complexities:
+            request_complexity = float(random.choice(correct_complexities))
+        elif all_complexities:
+            request_complexity = sum(all_complexities) / len(all_complexities)
+        else:
+            request_complexity = None
+
+        request_complexity_scores[request_index] = request_complexity
+        request_complexity_levels[request_index] = (
+            RequestResult.complexity_level_from_score(request_complexity)
+            if request_complexity is not None
+            else None
+        )
+
+    request_complexity_counts = {"low": 0, "medium": 0, "high": 0}
+    for level in request_complexity_levels.values():
+        if level in request_complexity_counts:
+            request_complexity_counts[level] += 1
+
     # Build report
     lines = []
     lines.append("/°" * 50 + "/\n")
@@ -363,17 +410,10 @@ def _write_statistics(
         "",
         f"Total requests tested : {total_requests}",
         f"Total model executions: {total_tests}",
-        f"✅ Correct queries : {correct_queries}",
-        f"❌ Incorrect queries  : {incorrect_queries}",
-        f"⚠️  Syntax errors     : {syntax_errors}",
-        f"❌ Runtime errors    : {runtime_errors}",
-        f"🔧 Other errors      : {other_errors}",
-        f"🟢 Completed runs    : {successful_executions}",
-        f"🔁 Total attempts    : {total_attempts}",
+        f"🟢 Low complexity requests   : {request_complexity_counts['low']}",
+        f"🟡 Medium complexity requests: {request_complexity_counts['medium']}",
+        f"🔴 High complexity requests  : {request_complexity_counts['high']}",
         f"🎯 Total correct %    : {total_correct_percent:.2f}%",
-        f"📏 Official evaluation count : {evaluation_type_counts['official_evaluation']}",
-        f"🧪 Custom evaluation count   : {evaluation_type_counts['custom_evaluation']}",
-        f"🤖 LLM judge count           : {evaluation_type_counts['llm_judge']}",
         "",
     ])
 
@@ -456,14 +496,25 @@ def _write_statistics(
         )
     )
 
+    error_type_rows = [
+        [str(i + 1), category, source_type, str(count)]
+        for i, ((category, source_type), count) in enumerate(
+            sorted(
+                error_type_counts.items(),
+                key=lambda item: (-item[1], item[0][1], item[0][0]),
+            )
+        )
+    ]
+
     lines.extend(
         print_table(
-            "🏁 Evaluation method counts",
-            ["Rank", "Model", "Official", "Custom", "LLM Judge"],
+            "🏁 Evaluation table",
+            ["Rank", "Model", "Not started", "Official", "Custom", "LLM Judge"],
             [
                 [
                     str(i + 1),
                     model,
+                    str(int(stats["not_started"])),
                     str(int(stats["official_evaluation"])),
                     str(int(stats["custom_evaluation"])),
                     str(int(stats["llm_judge"])),
@@ -472,6 +523,7 @@ def _write_statistics(
                     sorted(
                         model_stats.items(),
                         key=lambda item: (
+                            -item[1]["not_started"],
                             -item[1]["official_evaluation"],
                             -item[1]["custom_evaluation"],
                             -item[1]["llm_judge"],
@@ -483,22 +535,13 @@ def _write_statistics(
             footer=[
                 "",
                 "TOTAL",
+                str(evaluation_type_counts["not_started"]),
                 str(evaluation_type_counts["official_evaluation"]),
                 str(evaluation_type_counts["custom_evaluation"]),
                 str(evaluation_type_counts["llm_judge"]),
             ],
         )
     )
-
-    error_type_rows = [
-        [str(i + 1), category, source_type, str(count)]
-        for i, ((category, source_type), count) in enumerate(
-            sorted(
-                error_type_counts.items(),
-                key=lambda item: (-item[1], item[0][1], item[0][0]),
-            )
-        )
-    ]
 
     lines.extend(
         print_table(
@@ -537,43 +580,6 @@ def _write_statistics(
         for model in QUERY_MODELS.keys()
     }
 
-    request_complexity_scores: Dict[int, Optional[float]] = {}
-    request_complexity_levels: Dict[int, Optional[str]] = {}
-
-    for request_index in range(1, num_requests + 1):
-        models_dict = results_by_index.get(request_index, {})
-        correct_complexities = []
-        all_complexities = []
-
-        for res in models_dict.values():
-            complexity = res.get_query_complexity()
-            if complexity is None:
-                continue
-
-            all_complexities.append(complexity)
-
-            if (
-                res.success
-                and res.query_session
-                and res.query_session.status == QueryStatus.SUCCESS
-            ):
-                correct_complexities.append(complexity)
-
-        request_complexity: Optional[float]
-        if correct_complexities:
-            request_complexity = float(random.choice(correct_complexities))
-        elif all_complexities:
-            request_complexity = sum(all_complexities) / len(all_complexities)
-        else:
-            request_complexity = None
-
-        request_complexity_scores[request_index] = request_complexity
-        request_complexity_levels[request_index] = (
-            RequestResult.complexity_level_from_score(request_complexity)
-            if request_complexity is not None
-            else None
-        )
-    
     for request_index, models_dict in results_by_index.items():
         request_complexity = request_complexity_scores.get(request_index)
         request_complexity_level = request_complexity_levels.get(request_index)
