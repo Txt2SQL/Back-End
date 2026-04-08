@@ -5,9 +5,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from bootstrap import bootstrap_project
+# from bootstrap import bootstrap_project
 
-bootstrap_project(PROJECT_ROOT)
+# bootstrap_project(PROJECT_ROOT)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,4 +33,4 @@ app.include_router(query.router)
 def health_check():
     return {"status": "ok"}
 
-# To run: uvicorn src.api.main:app --reload
+# To run: uvicorn api.main:app --reload

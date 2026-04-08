@@ -16,7 +16,6 @@ from scipy.stats import pearsonr, spearmanr
 from pathlib import Path
 from typing import List
 
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, TMP_DIR
@@ -141,7 +140,7 @@ def _write_request_file(
 ) -> None:
     """Write a single request output file."""
     request_text = requests[index - 1]
-    safe_req = request_text.replace(' ', '_')[:20]
+    safe_req = request_text.replace(' ', '_').replace('/', '')[:20] # TODO remove any / or other problematic chars
     filename = f"{index:02d}_{safe_req}.txt"
     filepath = queries_dir / filename
 
@@ -222,6 +221,10 @@ def _write_statistics(
         model: {
             "correct": 0,
             "incorrect": 0,
+            "generation_correct": 0,
+            "generation_incorrect": 0,
+            "evaluation_correct": 0,
+            "evaluation_incorrect": 0,
             "runtime": 0,
             "syntax": 0,
             "executions": 0,
@@ -269,50 +272,55 @@ def _write_statistics(
                 if evaluation_status == "success":
                     correct_queries += 1
                     model_stats[model]["correct"] += 1
+                    model_stats[model]["evaluation_correct"] += 1
                 elif evaluation_status == "incorrect":
                     incorrect_queries += 1
                     model_stats[model]["incorrect"] += 1
+                    model_stats[model]["evaluation_incorrect"] += 1
                     error_category = "UNKNOWN_ERROR"
                     error_type_counts[(error_category, "INCORRECT")] = (
                         error_type_counts.get((error_category, "INCORRECT"), 0) + 1
                     )
-                else:
-                    status = query_session.status if query_session and query_session.status else None
+                status = query_session.status if query_session and query_session.status else None
 
-                    if status == QueryStatus.RUNTIME_ERROR:
-                        runtime_errors += 1
-                        model_stats[model]["runtime"] += 1
-                        runtime_category = (
-                            query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
-                            if query_session and getattr(query_session, "error_type", None)
-                            else QueryStatus.RUNTIME_ERROR.value
-                        )
-                        error_type_counts[(runtime_category, "RUNTIME_ERROR")] = (
-                            error_type_counts.get((runtime_category, "RUNTIME_ERROR"), 0) + 1
-                        )
-                    elif status == QueryStatus.SYNTAX_ERROR:
-                        syntax_errors += 1
-                        model_stats[model]["syntax"] += 1
-                        syntax_category = (
-                            query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
-                            if query_session and getattr(query_session, "error_type", None)
-                            else QueryStatus.SYNTAX_ERROR.value
-                        )
-                        error_type_counts[(syntax_category, "RUNTIME_ERROR")] = (
-                            error_type_counts.get((syntax_category, "RUNTIME_ERROR"), 0) + 1
-                        )
-                    elif status == QueryStatus.TIMEOUT_ERROR:
-                        other_errors += 1
-                        timeout_category = (
-                            query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
-                            if query_session and getattr(query_session, "error_type", None)
-                            else QueryStatus.TIMEOUT_ERROR.value
-                        )
-                        error_type_counts[(timeout_category, "RUNTIME_ERROR")] = (
-                            error_type_counts.get((timeout_category, "RUNTIME_ERROR"), 0) + 1
-                        )
-                    else:
-                        other_errors += 1
+                if status == QueryStatus.SUCCESS:
+                    model_stats[model]["generation_correct"] += 1
+                elif status == QueryStatus.INCORRECT:
+                    model_stats[model]["generation_incorrect"] += 1
+                elif status == QueryStatus.RUNTIME_ERROR:
+                    runtime_errors += 1
+                    model_stats[model]["runtime"] += 1
+                    runtime_category = (
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.RUNTIME_ERROR.value
+                    )
+                    error_type_counts[(runtime_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((runtime_category, "RUNTIME_ERROR"), 0) + 1
+                    )
+                elif status == QueryStatus.SYNTAX_ERROR:
+                    syntax_errors += 1
+                    model_stats[model]["syntax"] += 1
+                    syntax_category = (
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.SYNTAX_ERROR.value
+                    )
+                    error_type_counts[(syntax_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((syntax_category, "RUNTIME_ERROR"), 0) + 1
+                    )
+                elif status == QueryStatus.TIMEOUT_ERROR:
+                    other_errors += 1
+                    timeout_category = (
+                        query_session.error_type.value # pyright: ignore[reportOptionalMemberAccess]
+                        if query_session and getattr(query_session, "error_type", None)
+                        else QueryStatus.TIMEOUT_ERROR.value
+                    )
+                    error_type_counts[(timeout_category, "RUNTIME_ERROR")] = (
+                        error_type_counts.get((timeout_category, "RUNTIME_ERROR"), 0) + 1
+                    )
+                elif evaluation_status not in {"success", "incorrect"}:
+                    other_errors += 1
             else:
                 # Exception occurred – count as other error
                 other_errors += 1
@@ -330,10 +338,11 @@ def _write_statistics(
         model_stats.items(),
         key=lambda x: (
             -(
-                x[1]["correct"] / x[1]["executions"]
+                x[1]["evaluation_correct"] / x[1]["executions"]
                 if x[1]["executions"] > 0 else 0
             ),
-            -x[1]["correct"],
+            -x[1]["evaluation_correct"],
+            x[1]["evaluation_incorrect"],
             x[1]["runtime"],
             x[1]["syntax"],
         ),
@@ -408,24 +417,40 @@ def _write_statistics(
     lines.extend(
         print_table(
             "🏁 Status ranking",
-            ["Rank", "Model", "CORRECT", "RUNTIME", "SYNTAX", "CORRECT %"],
+            [
+                "Rank",
+                "Model",
+                "SYNTAX",
+                "RUNTIME",
+                "GEN INCORRECT",
+                "GEN CORRECT",
+                "EVAL INCORRECT",
+                "EVAL CORRECT",
+                "CORRECT %",
+            ],
             [
                 [
                     str(i + 1),
                     model,
-                    str(int(stats["correct"])),
-                    str(int(stats["runtime"])),
                     str(int(stats["syntax"])),
-                    f"{(stats['correct'] / stats['executions'] * 100) if stats['executions'] > 0 else 0:.2f}%",
+                    str(int(stats["runtime"])),
+                    str(int(stats["generation_incorrect"])),
+                    str(int(stats["generation_correct"])),
+                    str(int(stats["evaluation_incorrect"])),
+                    str(int(stats["evaluation_correct"])),
+                    f"{(stats['evaluation_correct'] / stats['executions'] * 100) if stats['executions'] > 0 else 0:.2f}%",
                 ]
                 for i, (model, stats) in enumerate(status_rank)
             ],
             footer=[
                 "", 
                 "TOTAL", 
-                str(correct_queries), 
-                str(runtime_errors), 
                 str(syntax_errors), 
+                str(runtime_errors), 
+                str(sum(int(stats["generation_incorrect"]) for stats in model_stats.values())),
+                str(sum(int(stats["generation_correct"]) for stats in model_stats.values())),
+                str(incorrect_queries), 
+                str(correct_queries), 
                 f"{total_correct_percent:.2f}%"
             ]
         )
@@ -744,9 +769,10 @@ def generator_thread(
                 result_session = orch.generation(request)
                 eval_result = None
 
-                if result_session.status is QueryStatus.RUNTIME_ERROR:
+                if result_session.status is not QueryStatus.SUCCESS:
                     logger.info(
-                        "Skipping dataset evaluation because generation ended with runtime error"
+                        "Skipping dataset evaluation because generation ended with status=%s",
+                        result_session.status.value if result_session.status else None,
                     )
                 else:
                     eval_result = dataset.evaluation(

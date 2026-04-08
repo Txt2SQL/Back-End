@@ -8,6 +8,7 @@ from api.models import (
     QueryEvaluationRequest,
     QueryResponse,
     DatabaseListResponse,
+    QueryModelListResponse,
 )
 from api.dependencies import get_schema_store, get_query_store, get_mysql_client
 from src.classes.domain_states import QueryStatus
@@ -26,6 +27,16 @@ def _serialize_execution_result(query_session) -> tuple[list[dict] | None, str |
 
     return results, error
 
+@router.get("/models", response_model=QueryModelListResponse)
+def list_query_models():
+    """Return the configured query model names."""
+    return QueryModelListResponse(models=list(QUERY_MODELS.keys()))
+
+@router.get("/mysql/models", response_model=QueryModelListResponse)
+def list_mysql_query_models():
+    """Return the configured query model names."""
+    return QueryModelListResponse(models=list(QUERY_MODELS.keys()))
+
 @router.get("/mysql/databases", response_model=DatabaseListResponse)
 def list_mysql_databases():
     """Return all databases available on the current MySQL connection."""
@@ -34,6 +45,7 @@ def list_mysql_databases():
         databases = db_client.list_databases()
         return DatabaseListResponse(databases=databases)
     except Exception as e:
+        print(f"Error listing databases: {e}")  # Log the error
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/mysql", response_model=QueryResponse)

@@ -92,6 +92,7 @@ Rules:
         schema_context: str,
         previous_fail: list[Document] | QuerySession | None, # penalties or error feedback from previous attempts
         join_hints: list[str] | None,
+        engine: str = "mysql",
     ) -> str:
         """
         Create prompt for SQL generation.
@@ -126,7 +127,6 @@ using the provided tables and columns.
 
         template = template + f"""
 
-
 IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - Do NOT use columns outside the schema
 - Do NOT invent field or table names that don't exist.
@@ -135,7 +135,7 @@ IMPORTANT CONSTRAINTS BASED ON PAST FAILURES:
 - Do NOT add WHERE clauses or conditions unless explicitly requested.
 - Do NOT join tables unless necessary for the request.
 - If using aggregates, include GROUP BY
-- The sql query must be executable on a SQLite database.
+- The sql query must be executable on a {engine.upper()} database.
 """
     
         if previous_fail:

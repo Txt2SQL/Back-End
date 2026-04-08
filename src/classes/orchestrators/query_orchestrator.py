@@ -2,6 +2,8 @@ import copy
 import os
 import sys
 
+from classes.clients.database.sqlite_client import SQLiteClient
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from pathlib import Path
@@ -238,6 +240,7 @@ class QueryOrchestrator(BaseOrchestrator):
             schema_context=self.schema_context,
             previous_fail=previous_fail,
             join_hints=self.join_hints,
+            engine="sqlite" if self.database_client is not None and isinstance(self.database_client, SQLiteClient) else "mysql"
         )
 
         self.logger.info("Sending generation prompt to LLM...")

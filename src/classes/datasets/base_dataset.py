@@ -104,7 +104,7 @@ class BaseDataset(ABC):
     
     def get_requests(self, db_name: str) -> list[str]:
         """Fetch all requests (questions) for a given database."""
-        return [item["question"] for item in self.dev if item["db_id"] == db_name][:30]
+        return [item["question"] for item in self.dev if item["db_id"] == db_name][:10]
 
     @abstractmethod
     def get_dbs(self) -> list[tuple[str, int]]:
