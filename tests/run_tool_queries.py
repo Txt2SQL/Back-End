@@ -43,12 +43,12 @@ def _safe_filename(text: str, max_len: int = REQUEST_FILENAME_MAX_LEN) -> str:
     text = text.strip()
     if not text:
         return "request"
+    # Remove characters that are illegal or dangerous in filenames across OSs
+    text = re.sub(r'[<>:"/\\|?*]', '', text)
     text = re.sub(r"\s+", "_", text)
-    text = re.sub(r"[^\w\-]+", "_", text)
-    text = text.strip("_")
     if len(text) > max_len:
-        text = text[:max_len].rstrip("_")
-    return text or "request"
+        text = text[:max_len]
+    return text.strip("_") or "request"
 
 
 def _parse_tool_queries(path: Path) -> Tuple[str, List[Tuple[str, Optional[str]]]]:
