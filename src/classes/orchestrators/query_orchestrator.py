@@ -58,6 +58,7 @@ class QueryOrchestrator(BaseOrchestrator):
 
     def generation(self, user_request: str) -> QuerySession:
         
+        
         self.current_query = QuerySession(user_request)
         
         self.logger.info("📝 Getting inside the query generation...")
@@ -129,6 +130,7 @@ class QueryOrchestrator(BaseOrchestrator):
                         break
                 
             self.current_query.attempt += 1
+            self.query_store.store_query(self.current_query) if self.query_store else None
             
         self._log_generation_result()
 
