@@ -10,7 +10,7 @@ subprocess that exits with:
 - 1 when execution does not match
 """
 
-import argparse, os, queue, sys, threading, time, math, random
+import argparse, os, queue, re, sys, threading, time, math, random
 from typing import Dict, List, Optional
 from scipy.stats import pearsonr, spearmanr
 from pathlib import Path
@@ -140,7 +140,11 @@ def _write_request_file(
 ) -> None:
     """Write a single request output file."""
     request_text = requests[index - 1]
-    safe_req = request_text.replace(' ', '_').replace('/', '')[:20] # TODO remove any / or other problematic chars
+    safe_req = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', '', request_text)
+    safe_req = re.sub(r'\s+', '_', safe_req).strip(' ._')
+    if not safe_req:
+        safe_req = "request"
+    safe_req = safe_req[:20]
     filename = f"{index:02d}_{safe_req}.txt"
     filepath = queries_dir / filename
 
