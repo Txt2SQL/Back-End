@@ -381,7 +381,7 @@ def _write_statistics(
             if (
                 res.success
                 and res.query_session
-                and res.query_session.status == QueryStatus.SUCCESS
+                and res.evaluation_status == "success"
             ):
                 correct_complexities.append(complexity)
 
@@ -591,7 +591,7 @@ def _write_statistics(
         for model, res in models_dict.items():
             if res.success and res.query_session:
                 qs = res.query_session
-                success = 1 if qs.status == QueryStatus.SUCCESS else 0
+                success = 1 if res.evaluation_status == "success" else 0
 
                 attempts.append(qs.attempt)
                 attempt_successes.append(success)

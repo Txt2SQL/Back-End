@@ -87,12 +87,17 @@ class RequestResult:
             status_label = "SUCCESS"
         elif self.evaluation_status == "incorrect":
             status_label = "INCORRECT"
+        elif query_session and query_session.status:
+            if query_session.status.value == "SUCCESS":
+                status_label = "NOT_EVALUATED"
+            else:
+                status_label = query_session.status.value
         else:
-            status_label = query_session.status.value if query_session and query_session.status else "RUNTIME_ERROR"
+            status_label = "RUNTIME_ERROR"
 
         execution_result = query_session.execution_result if query_session else None
 
-        if status_label in ("SUCCESS", "INCORRECT"):
+        if status_label in ("SUCCESS", "INCORRECT", "NOT_EVALUATED"):
             rows_fetched = query_session.rows_fetched if query_session else None
             if rows_fetched is None and isinstance(execution_result, Records):
                 rows_fetched = len(execution_result)
@@ -100,8 +105,18 @@ class RequestResult:
             if rows_fetched is not None:
                 outcome = f"({rows_fetched} rows fetched)"
             else:
-                outcome = "(Query executed successfully)" if status_label == "SUCCESS" else "(Query executed)"
-            status_emoji = "🍾SUCCESS" if status_label == "SUCCESS" else "❌INCORRECT"
+                if status_label == "SUCCESS":
+                    outcome = "(Query executed successfully)"
+                elif status_label == "INCORRECT":
+                    outcome = "(Query executed)"
+                else:
+                    outcome = "(Query executed, dataset evaluation not available)"
+            if status_label == "SUCCESS":
+                status_emoji = "🍾SUCCESS"
+            elif status_label == "INCORRECT":
+                status_emoji = "❌INCORRECT"
+            else:
+                status_emoji = "⚠️NOT_EVALUATED"
             lines.append(f"status and outcome: {status_emoji} {outcome}\n")
             if isinstance(execution_result, Records):
                 lines.append(f"{execution_result.get_preview()}\n")
