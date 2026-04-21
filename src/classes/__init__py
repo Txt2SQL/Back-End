@@ -1,0 +1,63 @@
+""" Core classes for the Text-to-SQL application. """
+
+# Import from sub-folders
+from .clients import (
+    BaseClient, 
+    MySQLClient, 
+    SQLiteClient, 
+    BaseLLM, 
+    AzureLLM, 
+    OpenWebUILLM
+)
+
+from .orchestrators import (
+    QueryOrchestrator, 
+    SchemaOrchestrator
+)
+
+from .domain_states import (
+    QuerySession, 
+    Schema, 
+    Records, 
+    SchemaSource, 
+)
+
+from .RAG_service import (
+    QueryStore, 
+    SchemaStore
+)
+
+from .loaders import (
+    AzureLoader,
+    MySQLLoader,
+    ChatLoader,
+    CompLoader,
+)
+
+# Import from standalone files in the classes folder
+from .llm_factory import LLMFactory
+from .logger import LoggerManager
+from .prompt_builder import PromptBuilder
+
+# Define what is available when someone does `from src.classes import *`
+__all__ = [
+    # Clients
+    "BaseClient", "MySQLClient", "SQLiteClient",
+    "BaseLLM", "AzureLLM", "OpenWebUILLM",
+    
+    # Orchestrators
+    "QueryOrchestrator", "SchemaOrchestrator",
+    
+    # Domain States
+    "QuerySession", "Schema", "Records", "SchemaSource",
+    
+    # RAG
+    "QueryStore", "SchemaStore",
+    
+    # Loaders
+    "AzureLoader", "MySQLLoader", 
+    "ChatLoader", "CompLoader",
+    
+    # Utilities
+    "LLMFactory", "LoggerManager", "PromptBuilder",
+]
