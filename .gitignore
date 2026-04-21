@@ -8,3 +8,4 @@ codex.patch
 tests/tmp
 tests/output/generations/*/*/
 tests/output/runs/*/
+my_backend.egg-info/

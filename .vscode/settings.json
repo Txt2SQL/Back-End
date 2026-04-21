@@ -1,17 +1,17 @@
 {
     "workbench.colorCustomizations": {
         "terminal.background": "#00000000",
-        "activityBar.background": "#594905",
-        "titleBar.activeBackground": "#7D6607",
-        "titleBar.activeForeground": "#FEFBEC",
-        "titleBar.inactiveBackground": "#594905",
-        "titleBar.inactiveForeground": "#FEFBEC",
-        "statusBar.background": "#594905",
-        "statusBar.foreground": "#FEFBEC",
-        "statusBar.debuggingBackground": "#594905",
-        "statusBar.debuggingForeground": "#FEFBEC",
-        "statusBar.noFolderBackground": "#594905",
-        "statusBar.noFolderForeground": "#FEFBEC"
+        "activityBar.background": "#511C1C",
+        "titleBar.activeBackground": "#712727",
+        "titleBar.activeForeground": "#FEFBFB",
+        "titleBar.inactiveBackground": "#511C1C",
+        "titleBar.inactiveForeground": "#FEFBFB",
+        "statusBar.background": "#511C1C",
+        "statusBar.foreground": "#FEFBFB",
+        "statusBar.debuggingBackground": "#511C1C",
+        "statusBar.debuggingForeground": "#FEFBFB",
+        "statusBar.noFolderBackground": "#511C1C",
+        "statusBar.noFolderForeground": "#FEFBFB"
     },
     "python.testing.pytestArgs": [
         "test"
@@ -25,7 +25,7 @@
         "pvalue",
         "sqlcoder"
     ],
-    "windowColors.baseColor": "#f1c40f",
+    "windowColors.baseColor": "#5c2020",
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "sqltools.connections": [
         {
