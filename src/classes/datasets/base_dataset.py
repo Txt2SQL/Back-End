@@ -41,7 +41,7 @@ class OfficialEvalReport:
 @dataclass
 class EvaluationResult:
     status: str  # "success", "incorrect", "error"
-    method: str  # "dataset_eval", "sqlite_execution", "custom_compare", "llm_judge", "fallback"
+    method: str  # "dataset_eval", "sqlite_execution", "custom_compare", "llm_judge"
     gold: QuerySession
     pred: QuerySession
     
@@ -165,8 +165,10 @@ class BaseDataset(ABC):
             official_match,
         )
 
+        result: EvaluationResult
+
         # dataset evaluation enough
-        if official_match or execution_accuracy == 1.0:
+        if execution_accuracy == 1.0:
             self.logger.info("Dataset evaluation returned an exact execution match")
             result = EvaluationResult(
                 status="success",
@@ -175,110 +177,70 @@ class BaseDataset(ABC):
                 pred=predicted_query,
                 official_eval=official_report,
             )
-            self._write_evaluation_log(
-                result=result,
-                output_dir=log_dir,
-                question_index=question_index,
-                model_name=model_name,
-            )
-            return result
+        else:
+            self.logger.info("Falling back to local SQLite comparison")
+            gold_exec = db_client.execute_query(gold_query)
+            pred_exec = db_client.execute_query(predicted_query)
 
-        self.logger.info("Falling back to local SQLite comparison")
-        gold_exec = db_client.execute_query(gold_query)
-        pred_exec = db_client.execute_query(predicted_query)
+            gold_error = gold_exec.execution_result if isinstance(gold_exec.execution_result, str) else None
+            pred_error = pred_exec.execution_result if isinstance(pred_exec.execution_result, str) else None
 
-        gold_error = gold_exec.execution_result if isinstance(gold_exec.execution_result, str) else None
-        pred_error = pred_exec.execution_result if isinstance(pred_exec.execution_result, str) else None
+            if gold_error or pred_error:
+                self.logger.warning(
+                    "SQLite execution failed. gold_error=%r pred_error=%r",
+                    gold_error,
+                    pred_error,
+                )
+                result = EvaluationResult(
+                    status="error",
+                    method="sqlite_execution",
+                    official_eval=official_report,
+                    gold=gold_exec,
+                    pred=pred_exec,
+                )
+            else:
+                cmp_result = self.custom_execution_compare(
+                    self._extract_rows(gold_exec),
+                    self._extract_rows(pred_exec),
+                )
+                self.logger.info("Custom execution comparison result: %s", cmp_result.value)
 
-        if gold_error or pred_error:
-            self.logger.warning(
-                "SQLite execution failed. gold_error=%r pred_error=%r",
-                gold_error,
-                pred_error,
-            )
-            result = EvaluationResult(
-                status="error",
-                method="sqlite_execution",
-                official_eval=official_report,
-                gold=gold_exec,
-                pred=pred_exec,
-            )
-            self._write_evaluation_log(
-                result=result,
-                output_dir=log_dir,
-                question_index=question_index,
-                model_name=model_name,
-            )
-            return result
+                # acceptable match, no need for LLM judge
+                if cmp_result in {
+                    ComparisonResult.EXACT_MATCH,
+                    ComparisonResult.SUPERSET_COLUMNS_MATCH,
+                    ComparisonResult.SET_MATCH,
+                }:
+                    self.logger.info("Skipping LLM judge because execution comparison is acceptable")
+                    result = EvaluationResult(
+                        status="success",
+                        method="custom_compare",
+                        official_eval=official_report,
+                        comparison=cmp_result.value,
+                        gold=gold_exec,
+                        pred=pred_exec,
+                    )
+                else:
+                    self.logger.info("Invoking LLM judge for semantic comparison")
+                    judge = self._run_llm_judge(
+                        question=question,
+                        database_name=db_id,
+                        gold_query=gold_exec,
+                        pred_query=pred_exec,
+                    )
 
-        cmp_result = self.custom_execution_compare(
-            self._extract_rows(gold_exec),
-            self._extract_rows(pred_exec),
-        )
-        self.logger.info("Custom execution comparison result: %s", cmp_result.value)
+                    result = EvaluationResult(
+                        status="success" if judge["verdict"] == "correct" else "incorrect",
+                        method="llm_judge",
+                        official_eval=official_report,
+                        comparison=cmp_result.value,
+                        gold=gold_exec,
+                        pred=pred_exec,
+                        verdict=judge["verdict"],
+                        reason=judge["reason"],
+                        raw_response=judge["raw_response"],
+                    )
 
-        # acceptable match, no need for LLM judge
-        if cmp_result in {
-            ComparisonResult.EXACT_MATCH,
-            ComparisonResult.SUPERSET_COLUMNS_MATCH,
-            ComparisonResult.SET_MATCH,
-        }:
-            self.logger.info("Skipping LLM judge because execution comparison is acceptable")
-            result = EvaluationResult(
-                status="success",
-                method="custom_compare",
-                official_eval=official_report,
-                comparison=cmp_result.value,
-                gold=gold_exec,
-                pred=pred_exec,
-            )
-            self._write_evaluation_log(
-                result=result,
-                output_dir=log_dir,
-                question_index=question_index,
-                model_name=model_name,
-            )
-            return result
-
-        # LLM judge
-        if question is not None:
-            self.logger.info("Invoking LLM judge for semantic comparison")
-            judge = self._run_llm_judge(
-                question=question,
-                database_name=db_id,
-                gold_query=gold_exec,
-                pred_query=pred_exec,
-            )
-
-            result = EvaluationResult(
-                status="success" if judge["verdict"] == "correct" else "incorrect",
-                method="llm_judge",
-                official_eval=official_report,
-                comparison=cmp_result.value,
-                gold=gold_exec,
-                pred=pred_exec,
-                verdict=judge["verdict"],
-                reason=judge["reason"],
-                raw_response=judge["raw_response"],
-            )
-            self._write_evaluation_log(
-                result=result,
-                output_dir=log_dir,
-                question_index=question_index,
-                model_name=model_name,
-            )
-            return result
-
-        # fallback
-        result = EvaluationResult(
-            status="incorrect",
-            method="fallback",
-            gold=gold_exec,
-            pred=pred_exec,
-            execution_accuracy=execution_accuracy,
-            official_eval=official_report,
-            comparison=cmp_result.value,
-        )
         self._write_evaluation_log(
             result=result,
             output_dir=log_dir,
@@ -321,23 +283,24 @@ class BaseDataset(ABC):
         if len(pred_norm) != len(gold_norm):
             return ComparisonResult.ROW_COUNT_MISMATCH
 
-        # 3. superset columns
-        if not gold_norm:
-            return ComparisonResult.EXACT_MATCH if not pred_norm else ComparisonResult.ROW_COUNT_MISMATCH
-
+        # 3. superset columns (gold_norm guaranteed non-empty here)
         gold_width = len(gold_norm[0])
         pred_projected = [row[:gold_width] for row in pred_norm]
 
         if sorted(pred_projected) == sorted(gold_norm):
             return ComparisonResult.SUPERSET_COLUMNS_MATCH
 
-        # 4. set match
-        if set(pred_norm) == set(gold_norm):
+        from collections import Counter
+
+        # 4. multiset match (order-insensitive, duplicates matter)
+        if Counter(pred_norm) == Counter(gold_norm):
             return ComparisonResult.SET_MATCH
 
-        # 5. partial match
-        intersection = set(pred_norm) & set(gold_norm)
-        ratio = len(intersection) / max(len(gold_norm), 1)
+        # 5. partial match (based on overlapping rows with multiplicity)
+        gold_counter = Counter(gold_norm)
+        pred_counter = Counter(pred_norm)
+        intersection_count = sum((gold_counter & pred_counter).values())
+        ratio = intersection_count / max(sum(gold_counter.values()), 1)
 
         if ratio > 0.8:
             return ComparisonResult.PARTIAL_MATCH
@@ -389,49 +352,44 @@ class BaseDataset(ABC):
         formatted_question_index = self._format_question_index(question_index)
         log_file = log_dir / f"{formatted_question_index}_{safe_model_name}.log"
 
-        header_lines = [
-            f"Dataset: {self.name}",
-            f"Question index: {question_index}",
-            f"Model name: {model_name}",
-            self._format_query_session_block("Gold query", result.gold),
-            self._format_query_session_block("Predicted query", result.pred),
-            f"Status: {result.status}",
-            f"Method: {result.method}",
-        ]
-
-        official_lines = [
-            f"Execution accuracy: {result.official_eval.execution_accuracy if result.official_eval else 'N/A'}",
-            f"Official match: {result.official_eval.official_match if result.official_eval else 'N/A'}",
-            f"Return code: {result.official_eval.returncode if result.official_eval else 'N/A'}",
-        ]
-
-        if result.official_eval and result.official_eval.stdout:
-            official_lines.append(f"Stdout:\n{result.official_eval.stdout.strip()}")
-        if result.official_eval and result.official_eval.stderr:
-            official_lines.append(f"Stderr:\n{result.official_eval.stderr.strip()}")
-
-        custom_lines = [
-            f"Comparison: {result.comparison or 'N/A'}",
-        ]
-
-        llm_lines = [
-            f"Verdict: {result.verdict or 'N/A'}",
-            f"Reason: {result.reason or 'N/A'}",
-            f"Raw response: {result.raw_response or 'N/A'}",
-        ]
-
         sections = [
-            "\n".join(header_lines),
-            "",
-            "======== official evaluation ========",
-            "\n".join(official_lines),
-            "",
-            "======== custom evaluation ========",
-            "\n".join(custom_lines),
-            "",
-            "======== llm verdict ========",
-            "\n".join(llm_lines),
+            "\n".join([
+                f"Dataset: {self.name}",
+                f"Question index: {question_index}",
+                f"Model name: {model_name}",
+                self._format_query_session_block("Gold query", result.gold),
+                self._format_query_session_block("Predicted query", result.pred),
+                f"Status: {result.status}",
+                f"Method: {result.method}",
+            ]),
         ]
+
+        # Only include relevant sections
+        if result.official_eval:
+            official_lines = [
+                f"Execution accuracy: {result.official_eval.execution_accuracy}",
+                f"Official match: {result.official_eval.official_match}",
+                f"Return code: {result.official_eval.returncode}",
+            ]
+            if result.official_eval.stdout:
+                official_lines.append(f"Stdout:\n{result.official_eval.stdout.strip()}")
+            if result.official_eval.stderr:
+                official_lines.append(f"Stderr:\n{result.official_eval.stderr.strip()}")
+            sections.append("")
+            sections.append("======== official evaluation ========")
+            sections.append("\n".join(official_lines))
+
+        if result.comparison:
+            sections.append("")
+            sections.append("======== custom evaluation ========")
+            sections.append(f"Comparison: {result.comparison}")
+
+        if result.verdict or result.reason:
+            sections.append("")
+            sections.append("======== llm verdict ========")
+            sections.append(f"Verdict: {result.verdict or 'N/A'}")
+            sections.append(f"Reason: {result.reason or 'N/A'}")
+            sections.append(f"Raw response: {result.raw_response or 'N/A'}")
 
         log_file.write_text("\n".join(sections) + "\n", encoding="utf-8")
 
@@ -451,8 +409,15 @@ class BaseDataset(ABC):
             pred_report=pred_query,
         )
         response = judge.generate(prompt)
-        self.logger.debug("LLM judge raw response: %s", response)
+        if not response:
+            self.logger.warning("LLM judge returned empty response")
+            return {
+                "verdict": "incorrect",
+                "reason": "LLM judge returned empty response",
+                "raw_response": "",
+            }
 
+        self.logger.debug("LLM judge raw response: %s", response)
         verdict = "incorrect"
         reason = response.strip()
 
@@ -462,9 +427,11 @@ class BaseDataset(ABC):
             reason = str(parsed.get("reason", response)).strip()
         except Exception:
             lowered = response.lower()
-            if '"verdict":"correct"' in lowered or '"verdict": "correct"' in lowered:
+            # Handle both single and double quotes
+            if re.search(r'''['"]verdict['"]\s*:\s*['"]correct['"]''', lowered):
                 verdict = "correct"
-            elif re.search(r"\bcorrect\b", lowered) and not re.search(r"\bincorrect\b", lowered):
+            # More specific pattern to avoid false positives
+            elif re.search(r'\bverdict\s*[:=]\s*correct\b', lowered):
                 verdict = "correct"
 
         return {

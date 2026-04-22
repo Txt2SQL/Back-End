@@ -242,6 +242,11 @@ class SpiderDataset(BaseDataset):
         gold_file = eval_folder / "gold.sql"
         pred_file = eval_folder / "pred.sql"
 
+        # Initialize defaults before try block
+        exec_result = None
+        execution_accuracy = 0.0
+        official_match = False
+
         try:
             # 3. Write directly to the unique folder
             gold_file.write_text(f"{normalized_gold}\t{db_id}\n", encoding="utf-8")
@@ -255,22 +260,23 @@ class SpiderDataset(BaseDataset):
 
             execution_accuracy = self._extract_metric(exec_result.stdout, "Execution Accuracy")
             official_match = execution_accuracy == 1.0
-            
+                        
+            # Add after subprocess.run in both BIRD and Spider:
+            if execution_accuracy != 1.0 and exec_result.stderr:
+                self.logger.warning("Evaluation stderr: %s", exec_result.stderr.strip())
+
         finally:
-            # 4. Clean up the SQL files and the hash folder to avoid cluttering the disk
-            # (Remove these three lines if you want to keep the files for manual debugging)
             gold_file.unlink(missing_ok=True)
             pred_file.unlink(missing_ok=True)
             try:
                 eval_folder.rmdir()
             except OSError:
-                pass # Folder not empty or OS lock
+                pass
 
-        # Return the strongly typed Dataclass
         return OfficialEvalReport(
             execution_accuracy=execution_accuracy,
             official_match=official_match,
-            returncode=exec_result.returncode,
-            stdout=exec_result.stdout,
-            stderr=exec_result.stderr,
+            returncode=exec_result.returncode if exec_result else -1,
+            stdout=exec_result.stdout if exec_result else "",
+            stderr=exec_result.stderr if exec_result else "",
         )

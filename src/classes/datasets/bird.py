@@ -238,6 +238,11 @@ class BirdDataset(BaseDataset):
         gold_file = gold_dir / "dev_gold.sql"
         mock_dev_file = eval_folder / "mock_dev.json"
 
+        # Initialize defaults before try block
+        exec_result = None
+        execution_accuracy = 0.0
+        official_match = False
+
         try:
             # 3. Write BIRD-specific files
             pred_payload, gold_payload, diff_payload = self._build_eval_payloads(
@@ -246,22 +251,11 @@ class BirdDataset(BaseDataset):
                 db_id=db_id,
             )
 
-            # A. predict_dev.json (Requires specific BIRD delimiter)
-            with open(pred_file, "w", encoding="utf-8") as f:
-                json.dump(pred_payload, f)
-
-            # B. dev_gold.sql (Requires standard tab delimiter)
-            with open(gold_file, "w", encoding="utf-8") as f:
-                f.writelines(gold_payload)
-
-            # C. mock_dev.json must include all difficulty buckets to prevent
-            #    ZeroDivisionError inside the official evaluator.
-            with open(mock_dev_file, "w", encoding="utf-8") as f:
-                json.dump(diff_payload, f)
+            pred_file.write_text(json.dumps(pred_payload), encoding="utf-8")
+            gold_file.write_text("".join(gold_payload), encoding="utf-8")
+            mock_dev_file.write_text(json.dumps(diff_payload), encoding="utf-8")
 
             # 4. Build and run command
-            # Note: trailing slashes "/" are strictly required because BIRD's
-            # evaluation script builds paths using raw string concatenation!
             cmd = [
                 sys.executable,
                 str(self.eval_file),
@@ -282,9 +276,12 @@ class BirdDataset(BaseDataset):
             execution_accuracy = self._extract_accuracy(exec_result.stdout)
             official_match = execution_accuracy == 1.0
 
+            # Add after subprocess.run in both BIRD and Spider:
+            if execution_accuracy != 1.0 and exec_result.stderr:
+                self.logger.warning("Evaluation stderr: %s", exec_result.stderr.strip())
+
         finally:
             # 5. Clean up files and folders to keep disk usage near zero
-            # Files must be deleted before directories
             pred_file.unlink(missing_ok=True)
             gold_file.unlink(missing_ok=True)
             mock_dev_file.unlink(missing_ok=True)
@@ -293,12 +290,12 @@ class BirdDataset(BaseDataset):
                 gold_dir.rmdir()
                 eval_folder.rmdir()
             except OSError:
-                pass # Folder lock / not empty
+                pass
 
         return OfficialEvalReport(
             execution_accuracy=execution_accuracy,
             official_match=official_match,
-            returncode=exec_result.returncode,
-            stdout=exec_result.stdout,
-            stderr=exec_result.stderr,
+            returncode=exec_result.returncode if exec_result else -1,
+            stdout=exec_result.stdout if exec_result else "",
+            stderr=exec_result.stderr if exec_result else "",
         )

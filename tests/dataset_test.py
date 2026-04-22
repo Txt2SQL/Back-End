@@ -10,7 +10,7 @@ subprocess that exits with:
 - 1 when execution does not match
 """
 
-import argparse, os, queue, re, sys, threading, time, math, random
+import argparse, os, queue, re, shutil, sys, threading, time, math, random
 from typing import Dict, List, Optional
 from scipy.stats import pearsonr, spearmanr
 from pathlib import Path
@@ -19,14 +19,14 @@ from typing import List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from config import QUERY_MODELS, TESTS_DIR, TIMEOUT_PER_REQUEST, TMP_DIR
-from src.classes.clients.database.sqlite_client import SQLiteClient
+from src.classes.clients import SQLiteClient
 from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource
 from src.classes.logger import LoggerManager
 from src.classes.orchestrators.query_orchestrator import QueryOrchestrator
 from src.classes.datasets import BaseDataset, BirdDataset, SpiderDataset
 from tests.thread_output import RequestResult
-from tests.test_sql_generation import empty_tmp_dir, create_output_dir, _print_model_progress, ThreadSafeQueryStore
+from tests.test_sql_generation import empty_tmp_dir, _print_model_progress, ThreadSafeQueryStore
 
 
 LoggerManager.setup_project_logger()
@@ -61,6 +61,19 @@ def build_schema(
     schema_store.add_schema(schema)
 
     return schema, schema_store
+
+
+def prepare_output_dir(database_name: str) -> Path:
+    output_dir = TESTS_DIR / "output" / "generations" / f"{database_name}_results"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for child in output_dir.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+    return output_dir
 
 # ----------------------------------------------------------------------
 # Printer thread function
@@ -244,13 +257,15 @@ def _write_statistics(
         for model in QUERY_MODELS.keys()
     }
 
-    def normalize_evaluation_method(method: Optional[str]) -> Optional[str]:
+    def normalize_evaluation_method(method: Optional[str], status: Optional[str] = None) -> Optional[str]:
         if method == "dataset_eval":
             return "official_evaluation"
-        if method in {"custom_compare", "sqlite_execution", "fallback"}:
-            return "custom_evaluation"
         if method == "llm_judge":
             return "llm_judge"
+        if method == "sqlite_execution":
+            return None if status == "error" else "custom_evaluation"  # Don't count failures
+        if method == "custom_compare":
+            return "custom_evaluation"
         return None
 
     for _, models_dict in results_by_index.items():
@@ -268,7 +283,7 @@ def _write_statistics(
                 global_total_time += res.time_taken
                 model_stats[model]["count"] += 1
 
-                evaluation_type = normalize_evaluation_method(res.evaluation_method)
+                evaluation_type = normalize_evaluation_method(res.evaluation_method, res.evaluation_status)
                 if evaluation_type is not None:
                     evaluation_type_counts[evaluation_type] += 1
                     model_stats[model][evaluation_type] += 1
@@ -290,6 +305,12 @@ def _write_statistics(
                     error_type_counts[(error_category, "INCORRECT")] = (
                         error_type_counts.get((error_category, "INCORRECT"), 0) + 1
                     )
+                elif evaluation_status == "error":
+                    # Explicit tracking for evaluation failures
+                    error_type_counts[("EVALUATION_ERROR", res.evaluation_method or "unknown")] = (
+                        error_type_counts.get(("EVALUATION_ERROR", res.evaluation_method or "unknown"), 0) + 1
+                    )
+
                 status = query_session.status if query_session and query_session.status else None
 
                 if status == QueryStatus.SUCCESS:
@@ -315,8 +336,8 @@ def _write_statistics(
                         if query_session and getattr(query_session, "error_type", None)
                         else QueryStatus.SYNTAX_ERROR.value
                     )
-                    error_type_counts[(syntax_category, "RUNTIME_ERROR")] = (
-                        error_type_counts.get((syntax_category, "RUNTIME_ERROR"), 0) + 1
+                    error_type_counts[(syntax_category, "SYNTAX_ERROR")] = (
+                        error_type_counts.get((syntax_category, "SYNTAX_ERROR"), 0) + 1
                     )
                 elif status == QueryStatus.TIMEOUT_ERROR:
                     other_errors += 1
@@ -325,10 +346,10 @@ def _write_statistics(
                         if query_session and getattr(query_session, "error_type", None)
                         else QueryStatus.TIMEOUT_ERROR.value
                     )
-                    error_type_counts[(timeout_category, "RUNTIME_ERROR")] = (
-                        error_type_counts.get((timeout_category, "RUNTIME_ERROR"), 0) + 1
+                    error_type_counts[(timeout_category, "TIMEOUT_ERROR")] = (
+                        error_type_counts.get((timeout_category, "TIMEOUT_ERROR"), 0) + 1
                     )
-                elif evaluation_status not in {"success", "incorrect"}:
+                elif evaluation_status not in {"success", "incorrect", "error"}:
                     other_errors += 1
             else:
                 # Exception occurred – count as other error
@@ -876,9 +897,9 @@ def select_dataset() -> str:
         else:
             print("Invalid choice. Try again.")
 
-def run_spider_test(database_name: str | None, dataset_name: str | None, output_name: str | None = None) -> None:
-    print("=== SPIDER TEST INITIALIZATION ===")
-    main_logger.info("Starting Spider test")
+def run_dataset_test(database_name: str | None, dataset_name: str | None, _output_name: str | None = None) -> None:
+    print("=== DATASET TEST INITIALIZATION ===")
+    main_logger.info("Starting dataset test")
 
     if dataset_name is None:
         dataset_name = select_dataset()
@@ -895,7 +916,7 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
     if database_name is None:
         database_name = select_database(dataset.get_dbs())
 
-    output_dir = create_output_dir(database_name, output_name)
+    output_dir = prepare_output_dir(database_name)
     logs_dir = output_dir / "logs"
     queries_dir = output_dir / "queries"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -943,8 +964,8 @@ def run_spider_test(database_name: str | None, dataset_name: str | None, output_
 
     printer.join()
 
-    print(f"All Spider threads finished. Output written to: {output_dir}")
-    main_logger.info("Spider test completed. Output written to: %s", output_dir)
+    print(f"All {dataset_name.upper()} threads finished. Output written to: {output_dir}")
+    main_logger.info("%s test completed. Output written to: %s", dataset_name.upper(), output_dir)
 
 
 def main() -> None:
@@ -959,7 +980,7 @@ def main() -> None:
         "--output-name",
         type=str,
         default=None,
-        help="Custom name for the output run directory. Defaults to a timestamped name.",
+        help="Unused. Results now overwrite the fixed '<database>_results' directory.",
     )
     parser.add_argument(
         "--dataset",
@@ -969,7 +990,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    run_spider_test(args.database_name, args.dataset, args.output_name)
+    run_dataset_test(args.database_name, args.dataset, args.output_name)
 
 
 if __name__ == "__main__":

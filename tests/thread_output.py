@@ -87,6 +87,8 @@ class RequestResult:
             status_label = "SUCCESS"
         elif self.evaluation_status == "incorrect":
             status_label = "INCORRECT"
+        elif self.evaluation_status == "error":
+            status_label = "EVAL_ERROR"
         elif query_session and query_session.status:
             if query_session.status.value == "SUCCESS":
                 status_label = "NOT_EVALUATED"
@@ -122,6 +124,9 @@ class RequestResult:
                 lines.append(f"{execution_result.get_preview()}\n")
             else:
                 lines.append(f"{execution_result}\n")
+        elif status_label == "EVAL_ERROR":
+            error_detail = self.evaluation_reason or "Local execution comparison failed"
+            lines.append(f"status and outcome: ⚠️EVAL_ERROR - {error_detail}\n")
         else:
             error_msg = execution_result if isinstance(execution_result, str) else "Unknown error"
             lines.append(f"status and outcome: ⚠️RUNTIME_ERROR - {error_msg}\n")
