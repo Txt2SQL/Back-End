@@ -14,7 +14,7 @@ from src.classes.logger import LoggerManager
 from src.classes.orchestrators import QueryOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore
 from tests.utils import RequestResult, ThreadSafeQueryStore
-from tests.statistics import _write_statistics
+from tests.statistics import write_statistics_report
 
 def _progress_bar(done: int, total: int, width: int = 26) -> str:
     """Build a unicode progress bar like █████░░░░ for terminal output."""
@@ -147,7 +147,7 @@ def printer_thread(
                 logger.warning(f"Incomplete results for index {idx} (should not happen)")
 
     # Write final statistics
-    _write_statistics(results_by_index, num_requests, queries_dir.parent / "final_stats.txt")
+    write_statistics_report(results_by_index, num_requests, queries_dir.parent / "final_stats.txt")
     logger.info("Printer finished.")
     if sys.stdout.isatty():
         print("✅ All model requests have been processed.\n")
