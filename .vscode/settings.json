@@ -1,48 +1,40 @@
 {
-    "workbench.colorCustomizations": {
-        "terminal.background": "#00000000",
-        "activityBar.background": "#511C1C",
-        "titleBar.activeBackground": "#712727",
-        "titleBar.activeForeground": "#FEFBFB",
-        "titleBar.inactiveBackground": "#511C1C",
-        "titleBar.inactiveForeground": "#FEFBFB",
-        "statusBar.background": "#511C1C",
-        "statusBar.foreground": "#FEFBFB",
-        "statusBar.debuggingBackground": "#511C1C",
-        "statusBar.debuggingForeground": "#FEFBFB",
-        "statusBar.noFolderBackground": "#511C1C",
-        "statusBar.noFolderForeground": "#FEFBFB"
-    },
-    "python.testing.pytestArgs": [
-        "test"
-    ],
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true,
-    "cSpell.words": [
-        "deepseek",
-        "Ollama",
-        "punkt",
-        "pvalue",
-        "sqlcoder"
-    ],
-    "windowColors.baseColor": "#5c2020",
-    "python-envs.defaultEnvManager": "ms-python.python:system",
-    "sqltools.connections": [
-        {
-            "mysqlOptions": {
-                "authProtocol": "default",
-                "enableSsl": "Disabled"
-            },
-            "ssh": "Disabled",
-            "previewLimit": 50,
-            "server": "localhost",
-            "port": 3306,
-            "driver": "MySQL",
-            "name": "Text-to-SQL",
-            "group": "UniTN",
-            "database": "supermarket",
-            "username": "root",
-            "password": "Vittorio.1931"
-        }
-    ],
+  "workbench.colorCustomizations": {
+    "terminal.background": "#00000000",
+    "activityBar.background": "#511C1C",
+    "titleBar.activeBackground": "#712727",
+    "titleBar.activeForeground": "#FEFBFB",
+    "titleBar.inactiveBackground": "#511C1C",
+    "titleBar.inactiveForeground": "#FEFBFB",
+    "statusBar.background": "#511C1C",
+    "statusBar.foreground": "#FEFBFB",
+    "statusBar.debuggingBackground": "#511C1C",
+    "statusBar.debuggingForeground": "#FEFBFB",
+    "statusBar.noFolderBackground": "#511C1C",
+    "statusBar.noFolderForeground": "#FEFBFB"
+  },
+  "python.testing.pytestArgs": ["test"],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true,
+  "cSpell.words": ["deepseek", "Ollama", "punkt", "pvalue", "sqlcoder"],
+  "windowColors.baseColor": "#5c2020",
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "sqltools.connections": [
+    {
+      "mysqlOptions": {
+        "authProtocol": "default",
+        "enableSsl": "Disabled"
+      },
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 3306,
+      "driver": "MySQL",
+      "name": "Text-to-SQL",
+      "group": "UniTN",
+      "database": "supermarket",
+      "username": "root",
+      "password": "Vittorio.1931"
+    }
+  ]
 }
