@@ -80,6 +80,7 @@ def prepare_output_dir(database_name: str) -> Path:
 # ----------------------------------------------------------------------
 def printer_thread(
     result_queue: queue.Queue,
+    database_name: str,
     num_models: int,
     num_requests: int,
     queries_dir: Path,
@@ -100,7 +101,7 @@ def printer_thread(
     # Use LoggerManager for printer thread
     logger = LoggerManager.get_logger("printer", log_file=output_dir / "logs" / "printer.log")
     logger.info(f"Printer started. Expecting {total_expected} results.")
-    _print_model_progress(model_progress, num_requests, received, total_expected)
+    _print_model_progress(database_name, model_progress, num_requests, received, total_expected)
 
     while received < total_expected:
         try:
@@ -109,7 +110,7 @@ def printer_thread(
             logger.info(f"Received result for request: {idx}, model: {model}")
             if model in model_progress:
                 model_progress[model] += 1
-            _print_model_progress(model_progress, num_requests, received, total_expected)
+            _print_model_progress(database_name, model_progress, num_requests, received, total_expected)
             if idx not in results_by_index:
                 results_by_index[idx] = {}
             results_by_index[idx][model] = res
@@ -934,7 +935,7 @@ def run_dataset_test(database_name: str | None, dataset_name: str | None, _outpu
 
     printer = threading.Thread(
         target=printer_thread,
-        args=(result_queue, num_models, len(requests), queries_dir, output_dir, requests),
+        args=(result_queue, database_name, num_models, len(requests), queries_dir, output_dir, requests),
     )
     printer.start()
     main_logger.info("Printer thread started")

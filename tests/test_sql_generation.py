@@ -188,13 +188,22 @@ def _progress_bar(done: int, total: int, width: int = 26) -> str:
     return f"{'█' * filled}{'░' * (width - filled)}"
 
 
-def _print_model_progress(model_progress: Dict[str, int], num_requests: int, received: int, total_expected: int) -> None:
+def _print_model_progress(
+    database_name: str,
+    model_progress: Dict[str, int],
+    num_requests: int,
+    received: int,
+    total_expected: int,
+) -> None:
     """Render an in-place multi-line status panel with per-model request progress."""
     if not sys.stdout.isatty():
         return
 
     term_width = shutil.get_terminal_size((110, 30)).columns
-    header = f"✨ Live model progress | total results: {received}/{total_expected}"
+    header = (
+        f"✨ Live model progress | database: {database_name} | "
+        f"total results: {received}/{total_expected}"
+    )
     lines = [header, "─" * min(term_width, max(30, len(header)))]
 
     for i, model in enumerate(QUERY_MODELS.keys(), 1):
@@ -215,6 +224,7 @@ def _print_model_progress(model_progress: Dict[str, int], num_requests: int, rec
 # ----------------------------------------------------------------------
 def printer_thread(
     result_queue: queue.Queue,
+    database_name: str,
     num_models: int,
     num_requests: int,
     queries_dir: Path,
@@ -235,7 +245,7 @@ def printer_thread(
     # Use LoggerManager for printer thread
     logger = LoggerManager.get_logger("printer", log_file=logs_dir / "printer.log")
     logger.info(f"Printer started. Expecting {total_expected} results.")
-    _print_model_progress(model_progress, num_requests, received, total_expected)
+    _print_model_progress(database_name, model_progress, num_requests, received, total_expected)
 
     while received < total_expected:
         try:
@@ -244,7 +254,7 @@ def printer_thread(
             logger.info(f"Received result for request: {idx}, model: {model}")
             if model in model_progress:
                 model_progress[model] += 1
-            _print_model_progress(model_progress, num_requests, received, total_expected)
+            _print_model_progress(database_name, model_progress, num_requests, received, total_expected)
             if idx not in results_by_index:
                 results_by_index[idx] = {}
             results_by_index[idx][model] = res
@@ -941,7 +951,7 @@ def run_stress_test(mode: str, database_name: str, output_name: str | None = Non
     # Start printer thread
     printer = threading.Thread(
         target=printer_thread,
-        args=(result_queue, num_models, len(requests), queries_dir, logs_dir, requests)
+        args=(result_queue, db_name, num_models, len(requests), queries_dir, logs_dir, requests)
     )
     printer.start()
     main_logger.info("Printer thread started")
