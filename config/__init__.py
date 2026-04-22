@@ -3,8 +3,6 @@
 This package contains all project-wide configuration settings,
 including model definitions, error categories, and filesystem paths.
 """
-import os
-from dotenv import load_dotenv
 
 from .settings import (
     SCHEMA_MODELS,

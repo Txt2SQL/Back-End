@@ -1,9 +1,21 @@
 import re
 
+from pathlib import Path
 from dataclasses import dataclass
+import threading
 from typing import Optional
 
-from src.classes.domain_states import QuerySession, Records, FeedbackStatus
+from classes.RAG_service.query_store import QueryStore
+from src.classes.domain_states import QuerySession, Records
+
+class ThreadSafeQueryStore(QueryStore):
+    def __init__(self, path: Path, lock: threading.Lock):
+        super().__init__(path)
+        self._lock = lock
+
+    def store_query(self, query: QuerySession) -> None:
+        with self._lock:
+            super().store_query(query)
 
 @dataclass
 class RequestResult:

@@ -1,13 +1,12 @@
 import json, subprocess, re, os, sys, hashlib
 
-from tests.test_sql_generation import TMP_DIR
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.classes.logger import LoggerManager
 from .base_dataset import BaseDataset, OfficialEvalReport
 from src.classes.domain_states import QuerySession
-
+from config import TMP_DIR
 # ---------------------------------------------------------
 # SHARED DIRECTORY CONFIGURATION
 # ---------------------------------------------------------
