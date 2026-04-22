@@ -8,7 +8,7 @@ from config import QUERY_MODELS
 from scipy.stats import pearsonr, spearmanr
 from src.classes.domain_states.query import QuerySession
 from src.classes.domain_states import QueryStatus
-from tests.utils import RequestResult
+from tests.thread_wrappers import RequestResult
 
 ResultsByIndex: TypeAlias = Dict[int, Dict[str, RequestResult]]
 

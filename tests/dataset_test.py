@@ -20,7 +20,7 @@ from src.classes.RAG_service.schema_store import SchemaStore
 from src.classes.domain_states import Schema, SchemaSource
 from src.classes.logger import LoggerManager
 from src.classes.datasets import BirdDataset, SpiderDataset
-from tests.utils import ThreadSafeQueryStore
+from tests.thread_wrappers import ThreadSafeQueryStore
 from tests.thread_wrappers import generator_thread, printer_thread
 
 LoggerManager.setup_project_logger()
