@@ -12,11 +12,12 @@ from classes.RAG_service.query_store import QueryStore
 from config import QUERY_MODELS, TIMEOUT_PER_REQUEST, TMP_DIR
 from src.classes.clients import SQLiteClient
 from src.classes.datasets import BaseDataset
-from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource, Records
+from src.classes.domain_states import QuerySession, QueryStatus, Schema, SchemaSource
 from src.classes.logger import LoggerManager
 from src.classes.orchestrators import QueryOrchestrator
 from src.classes.RAG_service.schema_store import SchemaStore
-from tests.stats_report import ResultsByIndex, write_statistics_report
+from tests.stats_report import ResultsByIndex, write_statistics_report, RequestResult
+
 
 class ThreadSafeQueryStore(QueryStore):
     def __init__(self, path: Path, lock: threading.Lock):
@@ -27,123 +28,7 @@ class ThreadSafeQueryStore(QueryStore):
         with self._lock:
             super().store_query(query)
 
-@dataclass
-class RequestResult:
-    request_index: int
-    model_name: str
-    query_session: Optional[QuerySession]
-    time_taken: float
-    success: bool
-    gold_query_sql: Optional[str] = None
-    complexity: int = 0
-    evaluation_method: Optional[str] = None
-    evaluation_status: Optional[str] = None
-    evaluation_verdict: Optional[str] = None
-    evaluation_reason: Optional[str] = None
 
-    def compute_query_complexity(self) -> None:
-        sql = self.gold_query_sql
-
-        if not sql:
-            return
-
-        score = 0
-        score += len(re.findall(r"\bJOIN\b", sql, re.IGNORECASE)) * 2
-        score += len(re.findall(r"\b(SUM|AVG|MIN|MAX|COUNT)\s*\(", sql, re.IGNORECASE)) * 2
-
-        if re.search(r"\bGROUP\s+BY\b", sql, re.IGNORECASE):
-            score += 2
-
-        if re.search(r"\bHAVING\b", sql, re.IGNORECASE):
-            score += 2
-
-        score += len(re.findall(r"\bOVER\s*\(", sql, re.IGNORECASE)) * 3
-        score += len(re.findall(r"\bSELECT\b", sql, re.IGNORECASE)) - 1
-        self.complexity = score
-
-    def get_query_complexity(self) -> Optional[int]:
-        sql = self.gold_query_sql
-        if not sql:
-            return None
-
-        if self.complexity == 0:
-            self.compute_query_complexity()
-
-        return self.complexity
-
-    @staticmethod
-    def complexity_level_from_score(score: float) -> str:
-        if score <= 2:
-            return "low"
-        if score <= 5:
-            return "medium"
-        return "high"
-
-    def get_complexity_level(self) -> Optional[str]:
-        complexity = self.get_query_complexity()
-        if complexity is None:
-            return None
-
-        return self.complexity_level_from_score(complexity)
-
-    def format_output_content(self, index: int) -> str:
-        query_session = self.query_session
-        lines = []
-
-        lines.append(f"{index}. 🤖[{self.model_name}]\n")
-        lines.append(f"🧮 Query:\n\n{query_session.sql_code if query_session else 'N/A'}\n")
-
-        if self.evaluation_status == "success":
-            status_label = "SUCCESS"
-        elif self.evaluation_status == "incorrect":
-            status_label = "INCORRECT"
-        elif self.evaluation_status == "error":
-            status_label = "EVAL_ERROR"
-        elif query_session and query_session.status:
-            if query_session.status.value == "SUCCESS":
-                status_label = "NOT_EVALUATED"
-            else:
-                status_label = query_session.status.value
-        else:
-            status_label = "RUNTIME_ERROR"
-
-        execution_result = query_session.execution_result if query_session else None
-
-        if status_label in ("SUCCESS", "INCORRECT", "NOT_EVALUATED"):
-            rows_fetched = query_session.rows_fetched if query_session else None
-            if rows_fetched is None and isinstance(execution_result, Records):
-                rows_fetched = len(execution_result)
-
-            if rows_fetched is not None:
-                outcome = f"({rows_fetched} rows fetched)"
-            else:
-                if status_label == "SUCCESS":
-                    outcome = "(Query executed successfully)"
-                elif status_label == "INCORRECT":
-                    outcome = "(Query executed)"
-                else:
-                    outcome = "(Query executed, dataset evaluation not available)"
-            if status_label == "SUCCESS":
-                status_emoji = "🍾SUCCESS"
-            elif status_label == "INCORRECT":
-                status_emoji = "⚠️INCORRECT"
-            else:
-                status_emoji = "✅NOT_EVALUATED"
-        else:
-            outcome = f"({execution_result})" if execution_result else ""
-            status_emoji = f"❌{status_label}"
-
-        lines.append(f"📌 Status:\n\n{status_emoji} {outcome}\n")
-
-        if self.evaluation_method:
-            lines.append(f"🧪 Eval Method:\n\n{self.evaluation_method}\n")
-        if self.evaluation_verdict:
-            lines.append(f"⚖️ Eval Verdict:\n\n{self.evaluation_verdict}\n")
-        if self.evaluation_reason:
-            lines.append(f"📝 Eval Reason:\n\n{self.evaluation_reason}\n")
-
-        lines.append(f"⏱️ Time: {self.time_taken:.2f}s")
-        return "\n".join(lines)
 
 def _progress_bar(done: int, total: int, width: int = 26) -> str:
     """Build a unicode progress bar like █████░░░░ for terminal output."""
