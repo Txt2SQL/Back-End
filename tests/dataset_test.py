@@ -35,9 +35,11 @@ def empty_tmp_dir() -> None:
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     main_logger.info(f"Created fresh tmp directory: {TMP_DIR}")
 
-def select_database(tables: list[tuple[str, int]]) -> str:
+def select_database(dataset: SpiderDataset | BirdDataset) -> str:
+    tables = dataset.get_dbs()
     for db_name, table_count in tables:
-        print(f"{db_name} ({table_count} tables)")
+        question_count = len(dataset.get_requests(db_name))
+        print(f"{db_name} ({table_count} tables, {question_count} questions)")
     
     while True:
         choice = input("Select database by name: ").strip()
@@ -108,7 +110,7 @@ def run_dataset_test(database_name: str | None, dataset_name: str | None, _outpu
         dataset = SpiderDataset()
 
     if database_name is None:
-        database_name = select_database(dataset.get_dbs())
+        database_name = select_database(dataset)
 
     output_dir = prepare_output_dir(database_name)
     logs_dir = output_dir / "logs"
