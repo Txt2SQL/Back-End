@@ -606,6 +606,7 @@ def _build_statistics_json(
             "status": {
                 "n_syntax": model_stats.syntax,
                 "n_runtime": model_stats.runtime,
+                "n_incorrect": model_stats.generation_incorrect + model_stats.evaluation_incorrect,
                 "n_eval_correct": model_stats.evaluation_correct,
                 "correct_pct": round(model_stats.success_rate, 2),
             },
