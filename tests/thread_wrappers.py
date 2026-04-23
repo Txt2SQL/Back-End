@@ -1,12 +1,6 @@
-import queue
-import shutil
-import sys
-import threading
-import time
-import re
+import queue, shutil, sys, threading, time, re
 from pathlib import Path
-from typing import Dict, List, Optional
-from dataclasses import dataclass
+from typing import Dict, List
 
 from classes.RAG_service.query_store import QueryStore
 from config import QUERY_MODELS, TIMEOUT_PER_REQUEST, TMP_DIR

@@ -1,5 +1,4 @@
-import json
-import argparse
+import json, argparse
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 

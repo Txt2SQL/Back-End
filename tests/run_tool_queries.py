@@ -11,11 +11,7 @@ Input format (per .sql file in tests/input/queries/tools):
   the tool is treated as unable to handle the request.
 """
 
-import os
-import sys
-import re
-import time
-import threading
+import os, sys, re, time, threading
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
