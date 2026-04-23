@@ -1,3 +1,4 @@
+import json
 import math
 import random
 import re
@@ -562,6 +563,59 @@ def _format_correlation(metric: Optional[CorrelationMetric]) -> str:
     return "true" if metric.p_value < 0.05 else "false"
 
 
+def _success_rate_percent(values: List[int]) -> Optional[float]:
+    if not values:
+        return None
+    return float(sum(values) / len(values) * 100)
+
+
+def _correlation_statistic(metric: Optional[CorrelationMetric]) -> Optional[float]:
+    if metric is None:
+        return None
+    return metric.statistic
+
+
+def _build_statistics_json(
+    stats: AggregatedStats,
+    complexity: ComplexityAnalysis,
+    correlations: CorrelationResults,
+) -> Dict[str, Dict[str, Dict[str, Optional[float]]]]:
+    json_report: Dict[str, Dict[str, Dict[str, Optional[float]]]] = {}
+
+    for model in QUERY_MODELS.keys():
+        model_stats = stats.models[model]
+        model_buckets = complexity.per_model_buckets[model]
+        model_correlations = correlations.per_model[model]
+
+        json_report[model] = {
+            "attempts": {
+                "avg": round(model_stats.avg_attempts, 2),
+                "total": model_stats.attempts,
+                "pearson": _correlation_statistic(model_correlations.attempts_pearson),
+                "spearman": _correlation_statistic(model_correlations.attempts_spearman),
+            },
+            "time": {
+                "avg": round(model_stats.avg_time, 2),
+                "total": round(model_stats.total_time, 1),
+            },
+            "status": {
+                "n_syntax": model_stats.syntax,
+                "n_runtime": model_stats.runtime,
+                "n_eval_correct": model_stats.evaluation_correct,
+                "correct_pct": round(model_stats.success_rate, 2),
+            },
+            "csr": {
+                "low": _success_rate_percent(model_buckets["low"]),
+                "medium": _success_rate_percent(model_buckets["medium"]),
+                "high": _success_rate_percent(model_buckets["high"]),
+                "pearson": _correlation_statistic(model_correlations.complexity_pearson),
+                "spearman": _correlation_statistic(model_correlations.complexity_spearman),
+            },
+        }
+
+    return json_report
+
+
 def _format_summary_header(stats: AggregatedStats, complexity: ComplexityAnalysis) -> str:
     total_correct_percent = (
         stats.correct_queries / stats.total_tests * 100
@@ -775,11 +829,12 @@ def write_statistics_report(
     num_requests: int,
     stats_path: Path,
 ) -> None:
-    """Aggregate statistics and write to final_stats.txt."""
+    """Aggregate statistics and write to final_stats.txt and final_stats.json."""
     stats = aggregate_results(results_by_index, num_requests)
     rankings = calculate_rankings(stats)
     complexity_analysis = calculate_complexity(results_by_index, stats)
     correlations = calculate_correlations(complexity_analysis, results_by_index)
+    json_report = _build_statistics_json(stats, complexity_analysis, correlations)
 
     best_model = rankings["status"][0][0] if rankings["status"] else "N/A"
     report = "\n".join([
@@ -794,3 +849,7 @@ def write_statistics_report(
 
     with open(stats_path, 'w', encoding='utf-8') as f:
         f.write(report)
+
+    json_path = stats_path.with_suffix(".json")
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(json_report, f, indent=2)
