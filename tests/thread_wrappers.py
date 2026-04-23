@@ -107,6 +107,7 @@ def printer_thread(
     queries_dir: Path,
     output_dir: Path,
     requests: List[str],
+    schema: Schema,
 ) -> None:
     """
     Collect results from all threads, write per-request files in order,
@@ -161,7 +162,13 @@ def printer_thread(
                 logger.warning(f"Incomplete results for index {idx} (should not happen)")
 
     # Write final statistics
-    write_statistics_report(results_by_index, num_requests, queries_dir.parent / "final_stats.txt")
+    num_tables = len(schema.tables["tables"]) if schema.tables and "tables" in schema.tables else 0
+    write_statistics_report(
+        results_by_index,
+        num_requests,
+        output_dir / "final_stats.txt",
+        num_tables,
+    )
     logger.info("Printer finished.")
     if sys.stdout.isatty():
         print("✅ All model requests have been processed.\n")
