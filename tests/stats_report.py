@@ -862,6 +862,6 @@ def write_statistics_report(
     with open(stats_path, 'w', encoding='utf-8') as f:
         f.write(report)
 
-    json_path = stats_path.with_suffix(".json")
+    json_path = stats_path.parent / "test_report.json"  
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(json_report, f, indent=2)

@@ -93,7 +93,7 @@ def select_dataset() -> str:
         else:
             print("Invalid choice. Try again.")
 
-def run_dataset_test(database_name: str | None, dataset_name: str | None, _output_name: str | None = None) -> None:
+def run_dataset_test(database_name: str | None, dataset_name: str | None) -> None:
     print("=== DATASET TEST INITIALIZATION ===")
     main_logger.info("Starting dataset test")
 
@@ -173,12 +173,6 @@ def main() -> None:
         help="Spider database id to test. If omitted, the script prints all databases and prompts for one.",
     )
     parser.add_argument(
-        "--output-name",
-        type=str,
-        default=None,
-        help="Unused. Results now overwrite the fixed '<database>_results' directory.",
-    )
-    parser.add_argument(
         "--dataset",
         type=str,
         default=None,
@@ -186,7 +180,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    run_dataset_test(args.database_name, args.dataset, args.output_name)
+    run_dataset_test(args.database_name, args.dataset)
 
 
 if __name__ == "__main__":
