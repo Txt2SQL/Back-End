@@ -1,5 +1,3 @@
-# README
-
 ## venv dependencies
 
 windows:
