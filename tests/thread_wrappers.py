@@ -177,6 +177,7 @@ def generator_thread(
     logs_dir: Path,
     schema: Schema,
     dataset: BaseDataset,
+    db_client: SQLiteClient | None,
 ) -> None:
     """
     Process all requests for a single model.
@@ -199,7 +200,6 @@ def generator_thread(
         logger.info(f"Started generator thread for model: {model_key}, mode: {schema.source.value}")
         logger.info(f"Log file: {log_file}")
 
-        db_client = SQLiteClient(database_name)
         if schema.source == SchemaSource.DB_CONNECTION:
             qs = query_store
         else:
@@ -239,6 +239,10 @@ def generator_thread(
                         result_session.status.value if result_session.status else None,
                     )
                 else:
+                    if db_client is None:
+                        db_client = SQLiteClient(database_name)
+                        
+                    logger.debug(f"Starting dataset evaluation")
                     eval_result = dataset.evaluation(
                         predicted_query=result_session,
                         db_id=database_name,

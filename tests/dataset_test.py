@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from config import QUERY_MODELS, TESTS_DIR, TMP_DIR
 from src.classes.RAG_service.schema_store import SchemaStore
+from src.classes.clients import SQLiteClient
 from src.classes.domain_states import Schema, SchemaSource
 from src.classes.logger import LoggerManager
 from src.classes.datasets import BirdDataset, SpiderDataset
@@ -93,7 +94,11 @@ def select_dataset() -> str:
         else:
             print("Invalid choice. Try again.")
 
-def run_dataset_test(database_name: str | None, dataset_name: str | None) -> None:
+def run_dataset_test(
+    database_name: str | None,
+    dataset_name: str | None,
+    mode: str = "db_conn",
+) -> None:
     print("=== DATASET TEST INITIALIZATION ===")
     main_logger.info("Starting dataset test")
 
@@ -119,7 +124,10 @@ def run_dataset_test(database_name: str | None, dataset_name: str | None) -> Non
     queries_dir.mkdir(parents=True, exist_ok=True)
     empty_tmp_dir()
 
-    schema_source = SchemaSource.DB_CONNECTION if dataset_name == "bird" else SchemaSource.TEXT
+    if mode not in {"db_conn", "text"}:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    schema_source = SchemaSource.DB_CONNECTION if mode == "db_conn" else SchemaSource.TEXT
     schema, schema_store = build_schema(database_name, dataset.get_schema(database_name), schema_source)
     query_store_lock = threading.Lock()
     thread_safe_query_store = ThreadSafeQueryStore(TMP_DIR / "vector_stores", query_store_lock)
@@ -137,6 +145,7 @@ def run_dataset_test(database_name: str | None, dataset_name: str | None) -> Non
 
     threads = []
     for model_key in QUERY_MODELS.keys():
+        db_client = SQLiteClient(database_name) if mode == "db_conn" else None
         thread = threading.Thread(
             target=generator_thread,
             args=(
@@ -149,6 +158,7 @@ def run_dataset_test(database_name: str | None, dataset_name: str | None) -> Non
                 logs_dir,
                 schema,
                 dataset,
+                db_client,
             ),
         )
         thread.start()
@@ -167,20 +177,27 @@ def run_dataset_test(database_name: str | None, dataset_name: str | None) -> Non
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Spider evaluation across configured query models.")
     parser.add_argument(
+        "--dataset",
+        type=str,
+        default=None,
+        help="Dataset to run the test on. Supported values: 'spider', 'bird'.",
+    )
+    parser.add_argument(
         "--database-name",
         type=str,
         default=None,
         help="Spider database id to test. If omitted, the script prints all databases and prompts for one.",
     )
     parser.add_argument(
-        "--dataset",
+        "--mode",
         type=str,
-        default=None,
-        help="Dataset to run the test on. Supported values: 'spider', 'bird'.",
+        default="db_conn",
+        help="Schema loading mode. Use 'db_conn' for database connection or 'text' for basic generation.",
     )
+
     args = parser.parse_args()
 
-    run_dataset_test(args.database_name, args.dataset)
+    run_dataset_test(args.database_name, args.dataset, args.mode)
 
 
 if __name__ == "__main__":
