@@ -69,8 +69,8 @@ def build_schema(
     return schema, schema_store
 
 
-def prepare_output_dir(database_name: str) -> Path:
-    output_dir = TESTS_DIR / "output" / "generations" / f"{database_name}_results"
+def prepare_output_dir(database_name: str, mode: str) -> Path:
+    output_dir = TESTS_DIR / "output" / "generations" / f"{database_name}_results" / mode
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for child in output_dir.iterdir():
@@ -117,7 +117,7 @@ def run_dataset_test(
     if database_name is None:
         database_name = select_database(dataset)
 
-    output_dir = prepare_output_dir(database_name)
+    output_dir = prepare_output_dir(database_name, mode)
     logs_dir = output_dir / "logs"
     queries_dir = output_dir / "queries"
     logs_dir.mkdir(parents=True, exist_ok=True)
