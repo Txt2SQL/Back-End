@@ -18,8 +18,6 @@ class SQLiteClient(BaseClient):
         self.logger.info(f"SQLiteClient initialized with database: {self.database}, file: {self.sqlite_file}")
         self.connection: sqlite3.Connection | None = None
 
-        self.open_connection()
-
     @property
     def logger(self):
         return LoggerManager.get_logger(__name__)

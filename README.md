@@ -17,7 +17,7 @@ source venv/bin/activate
 ## `pip install`
 
 ```bash
-pip install requests mysql-connector-python Faker python-dotenv openai sqlglot langchain_openai langchain_core langchain_chroma langchain_ollama fastapi scipy
+pip install requests mysql-connector-python Faker python-dotenv openai sqlglot langchain_openai langchain_core langchain_chroma langchain_ollama fastapi scipy nltk func_timeout
 ```
 
 ---
