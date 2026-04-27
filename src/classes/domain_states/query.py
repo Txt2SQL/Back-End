@@ -336,6 +336,8 @@ Status: {self.status.value}
 
         if self.llm_feedback and self.status is not QueryStatus.SYNTAX_ERROR:
             details = self.llm_feedback.format_error_details(self.attempt)
+        elif self.execution_result and self.status is QueryStatus.RUNTIME_ERROR:
+            details = f"Execution result: {self.execution_result}"
 
         if not self.sql_code:
             return ""

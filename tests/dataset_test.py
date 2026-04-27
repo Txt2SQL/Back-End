@@ -97,7 +97,7 @@ def select_dataset() -> str:
 def run_dataset_test(
     database_name: str | None,
     dataset_name: str | None,
-    mode: str = "db_conn",
+    mode: str,
 ) -> None:
     print("=== DATASET TEST INITIALIZATION ===")
     main_logger.info("Starting dataset test")
