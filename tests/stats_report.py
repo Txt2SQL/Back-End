@@ -5,8 +5,7 @@ from typing import Dict, List, Optional, Tuple, TypeAlias
 
 from config import QUERY_MODELS
 from scipy.stats import pearsonr, spearmanr
-from src.classes.domain_states.query import QuerySession, Records
-from src.classes.domain_states import QueryStatus
+from src.classes.domain_states import QuerySession, Records, QueryStatus
 
 @dataclass
 class RequestResult:
@@ -564,10 +563,19 @@ def _success_count(values: List[int]) -> int:
     return sum(values)
 
 
-def _correlation_statistic(metric: Optional[CorrelationMetric]) -> Optional[float]:
+def _correlation_json(metric: Optional[CorrelationMetric]) -> Dict[str, Optional[float | bool]]:
     if metric is None:
-        return None
-    return metric.statistic
+        return {
+            "float": None,
+            # "p_value": None,
+            "bool": None,
+        }
+
+    return {
+        "float": metric.statistic,
+        # "p_value": metric.p_value,
+        "bool": metric.p_value < 0.05,
+    }
 
 
 def _build_statistics_json(
@@ -582,7 +590,7 @@ def _build_statistics_json(
         "models": {},
     }
 
-    models_report: Dict[str, Dict[str, Dict[str, Optional[float]]]] = {}
+    models_report: Dict[str, object] = {}
 
     for model in QUERY_MODELS.keys():
         model_stats = stats.models[model]
@@ -593,8 +601,8 @@ def _build_statistics_json(
             "attempts": {
                 "avg": round(model_stats.avg_attempts, 2),
                 "total": model_stats.attempts,
-                "pearson": _correlation_statistic(model_correlations.attempts_pearson),
-                "spearman": _correlation_statistic(model_correlations.attempts_spearman),
+                "pearson": _correlation_json(model_correlations.attempts_pearson),
+                "spearman": _correlation_json(model_correlations.attempts_spearman),
             },
             "time": {
                 "avg": round(model_stats.avg_time, 2),
@@ -611,8 +619,8 @@ def _build_statistics_json(
                 "low": _success_count(model_buckets["low"]),
                 "medium": _success_count(model_buckets["medium"]),
                 "high": _success_count(model_buckets["high"]),
-                "pearson": _correlation_statistic(model_correlations.complexity_pearson),
-                "spearman": _correlation_statistic(model_correlations.complexity_spearman),
+                "pearson": _correlation_json(model_correlations.complexity_pearson),
+                "spearman": _correlation_json(model_correlations.complexity_spearman),
             },
         }
 
