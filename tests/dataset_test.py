@@ -138,7 +138,7 @@ def run_dataset_test(
 
     printer = threading.Thread(
         target=printer_thread,
-        args=(result_queue, database_name, num_models, len(requests), queries_dir, output_dir, requests, schema),
+        args=(result_queue, database_name, dataset_name, num_models, len(requests), queries_dir, output_dir, requests, schema),
     )
     printer.start()
     main_logger.info("Printer thread started")

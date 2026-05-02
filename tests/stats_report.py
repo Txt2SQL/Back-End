@@ -578,50 +578,128 @@ def _correlation_json(metric: Optional[CorrelationMetric]) -> Dict[str, Optional
     }
 
 
+def _detect_report_mode(stats_path: Path) -> Optional[str]:
+    for part in reversed(stats_path.parts):
+        normalized = part.lower()
+        if normalized in {"db_conn", "database_connection", "mysql"}:
+            return "db_conn"
+        if normalized == "text":
+            return "text"
+    return None
+
+
+def _json_evaluation_label(method: Optional[str], status: Optional[str]) -> Optional[str]:
+    evaluation_type = _normalize_evaluation_method(method, status)
+    if evaluation_type == "official_evaluation":
+        return "official eval"
+    if evaluation_type == "custom_evaluation":
+        return "custom eval"
+    if evaluation_type == "llm_judge":
+        return "llm judge"
+    return None
+
+
+def _has_empty_result(res: RequestResult) -> bool:
+    query_session = res.query_session
+    return (
+        query_session is None
+        or not query_session.sql_code
+        or (not res.success and query_session.status == QueryStatus.PENDING)
+    )
+
+
+def _json_outcome(res: RequestResult, mode: Optional[str]) -> str:
+    query_session = res.query_session
+
+    if _has_empty_result(res):
+        return "empty result"
+
+    status = query_session.status if query_session else None
+    if status == QueryStatus.SYNTAX_ERROR:
+        return "syntax error"
+    if status in {QueryStatus.RUNTIME_ERROR, QueryStatus.TIMEOUT_ERROR}:
+        return "runtime error"
+    if status == QueryStatus.INCORRECT:
+        return "incorrect gen"
+
+    if res.evaluation_status == "success":
+        return "correct"
+    if res.evaluation_status == "incorrect":
+        return "incorrect eval"
+    if res.evaluation_status == "error":
+        return "runtime error" if mode == "text" else "incorrect eval"
+
+    if not res.success:
+        return "runtime error" if status == QueryStatus.RUNTIME_ERROR else "empty result"
+
+    return "incorrect gen"
+
+
+def _json_error(res: RequestResult, outcome: str) -> str:
+    if outcome == "correct":
+        return "C"
+    if outcome == "empty result":
+        return "NK"
+
+    query_session = res.query_session
+    if query_session and query_session.error_type:
+        return query_session.error_type.value
+    if query_session and query_session.status:
+        return query_session.status.value
+    if res.evaluation_status == "error":
+        return "EVALUATION_ERROR"
+    if outcome in {"incorrect gen", "incorrect eval"}:
+        return "UNKNOWN_ERROR"
+    return "NK"
+
+
 def _build_statistics_json(
-    stats: AggregatedStats,
-    complexity: ComplexityAnalysis,
-    correlations: CorrelationResults,
-    num_tables: int,
+    results_by_index: ResultsByIndex,
+    num_requests: int,
+    dataset_name: str,
+    stats_path: Path,
 ) -> Dict[str, object]:
+    mode = _detect_report_mode(stats_path)
     json_report: Dict[str, object] = {
-        "num_tables": num_tables,
-        "num_requests": stats.total_requests,
+        "dataset": dataset_name,
         "models": {},
     }
 
     models_report: Dict[str, object] = {}
 
     for model in QUERY_MODELS.keys():
-        model_stats = stats.models[model]
-        model_buckets = complexity.per_model_buckets[model]
-        model_correlations = correlations.per_model[model]
+        attempts: List[Optional[int]] = []
+        times: List[Optional[float]] = []
+        outcomes: List[Optional[str]] = []
+        errors: List[Optional[str]] = []
+        evaluations: List[Optional[str]] = []
+
+        for request_index in range(1, num_requests + 1):
+            res = results_by_index.get(request_index, {}).get(model)
+
+            if res is None:
+                attempts.append(None)
+                times.append(None)
+                outcomes.append("empty result")
+                errors.append("NK")
+                evaluations.append(None)
+                continue
+
+            query_session = res.query_session
+            outcome = _json_outcome(res, mode)
+
+            attempts.append(query_session.attempt if query_session else None)
+            times.append(round(res.time_taken, 2))
+            outcomes.append(outcome)
+            errors.append(_json_error(res, outcome))
+            evaluations.append(_json_evaluation_label(res.evaluation_method, res.evaluation_status))
 
         models_report[model] = {
-            "attempts": {
-                "avg": round(model_stats.avg_attempts, 2),
-                "total": model_stats.attempts,
-                "pearson": _correlation_json(model_correlations.attempts_pearson),
-                "spearman": _correlation_json(model_correlations.attempts_spearman),
-            },
-            "time": {
-                "avg": round(model_stats.avg_time, 2),
-                "total": round(model_stats.total_time, 1),
-            },
-            "status": {
-                "n_syntax": model_stats.syntax,
-                "n_runtime": model_stats.runtime,
-                "n_incorrect": model_stats.generation_incorrect + model_stats.evaluation_incorrect,
-                "n_eval_correct": model_stats.evaluation_correct,
-                "correct_pct": round(model_stats.success_rate, 2),
-            },
-            "complexity": {
-                "low": _success_count(model_buckets["low"]),
-                "medium": _success_count(model_buckets["medium"]),
-                "high": _success_count(model_buckets["high"]),
-                "pearson": _correlation_json(model_correlations.complexity_pearson),
-                "spearman": _correlation_json(model_correlations.complexity_spearman),
-            },
+            "attempts": attempts,
+            "times": times,
+            "outcomes": outcomes,
+            "errors": errors,
+            "evaluation": evaluations,
         }
 
     json_report["models"] = models_report
@@ -841,6 +919,7 @@ def write_statistics_report(
     num_requests: int,
     stats_path: Path,
     num_tables: int,
+    dataset_name: str,
 ) -> None:
     """Aggregate statistics and write to final_stats.txt and final_stats.json."""
     stats = aggregate_results(results_by_index, num_requests)
@@ -848,10 +927,10 @@ def write_statistics_report(
     complexity_analysis = calculate_complexity(results_by_index, stats)
     correlations = calculate_correlations(complexity_analysis, results_by_index)
     json_report = _build_statistics_json(
-        stats,
-        complexity_analysis,
-        correlations,
-        num_tables,
+        results_by_index,
+        num_requests,
+        dataset_name,
+        stats_path,
     )
 
     best_model = rankings["status"][0][0] if rankings["status"] else "N/A"

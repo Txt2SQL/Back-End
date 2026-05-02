@@ -96,6 +96,7 @@ def _write_request_file(
 def printer_thread(
     result_queue: queue.Queue,
     database_name: str,
+    dataset_name: str,
     num_models: int,
     num_requests: int,
     queries_dir: Path,
@@ -162,6 +163,7 @@ def printer_thread(
         num_requests,
         output_dir / "final_stats.txt",
         num_tables,
+        dataset_name,
     )
     logger.info("Printer finished.")
     if sys.stdout.isatty():
