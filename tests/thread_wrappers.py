@@ -234,16 +234,18 @@ def generator_thread(
 
                 result_session = orch.generation(request)
                 eval_result = None
+                if db_client is None:
+                    db_client = SQLiteClient(database_name)
+                    result_session = db_client.execute_query(result_session)
+                    logger.debug(f"Executed query against database for evaluation with status: {result_session.execution_status.value if result_session.execution_status else None}")
+                    result_session.evaluate()
 
-                if result_session.status is not QueryStatus.SUCCESS:
+                if result_session.execution_status is not QueryStatus.SUCCESS:
                     logger.info(
-                        "Skipping dataset evaluation because generation ended with status=%s",
-                        result_session.status.value if result_session.status else None,
+                        "Skipping dataset evaluation because execution ended with status=%s",
+                        result_session.execution_status.value if result_session.execution_status else None,
                     )
                 else:
-                    if db_client is None:
-                        db_client = SQLiteClient(database_name)
-                        
                     logger.debug(f"Starting dataset evaluation")
                     eval_result = dataset.evaluation(
                         predicted_query=result_session,
@@ -262,7 +264,6 @@ def generator_thread(
                     request_index=idx,
                     model_name=model_key,
                     query_session=result_session,
-                    gold_query_sql=eval_result.gold.sql_code if eval_result and eval_result.gold else None,
                     time_taken=elapsed,
                     success=True,
                     evaluation_method=eval_result.method if eval_result else None,

@@ -1,11 +1,13 @@
-import json, math, random, re
+import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, TypeAlias
+from typing import Any, Dict, List, Optional, Tuple, TypeAlias
 
-from config import QUERY_MODELS
-from scipy.stats import pearsonr, spearmanr
+from config import OUTPUT_DIR, QUERY_MODELS
 from src.classes.domain_states import QuerySession, Records, QueryStatus
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class RequestResult:
@@ -14,59 +16,18 @@ class RequestResult:
     query_session: Optional[QuerySession]
     time_taken: float
     success: bool
-    gold_query_sql: Optional[str] = None
-    complexity: int = 0
+    complexity: Optional[int] = None
     evaluation_method: Optional[str] = None
     evaluation_status: Optional[str] = None
     evaluation_verdict: Optional[str] = None
     evaluation_reason: Optional[str] = None
 
-    def compute_query_complexity(self) -> None:
-        sql = self.gold_query_sql
-
-        if not sql:
-            return
-
-        score = 0
-        score += len(re.findall(r"\bJOIN\b", sql, re.IGNORECASE)) * 2
-        score += len(re.findall(r"\b(SUM|AVG|MIN|MAX|COUNT)\s*\(", sql, re.IGNORECASE)) * 2
-
-        if re.search(r"\bGROUP\s+BY\b", sql, re.IGNORECASE):
-            score += 2
-
-        if re.search(r"\bHAVING\b", sql, re.IGNORECASE):
-            score += 2
-
-        score += len(re.findall(r"\bOVER\s*\(", sql, re.IGNORECASE)) * 3
-        score += len(re.findall(r"\bSELECT\b", sql, re.IGNORECASE)) - 1
-        self.complexity = score
-
     def get_query_complexity(self) -> Optional[int]:
-        sql = self.gold_query_sql
-        if not sql:
-            return None
-
-        if self.complexity == 0:
-            self.compute_query_complexity()
-
+        logger.info("Getting query complexity for request %d, model %s: %s", self.request_index, self.model_name, self.complexity)
         return self.complexity
 
-    @staticmethod
-    def complexity_level_from_score(score: float) -> str:
-        if score <= 2:
-            return "low"
-        if score <= 5:
-            return "medium"
-        return "high"
-
-    def get_complexity_level(self) -> Optional[str]:
-        complexity = self.get_query_complexity()
-        if complexity is None:
-            return None
-
-        return self.complexity_level_from_score(complexity)
-
     def format_output_content(self, index: int) -> str:
+        logger.info("Formatting output content for request %d, model %s", self.request_index, self.model_name)
         query_session = self.query_session
         lines = []
 
@@ -75,17 +36,23 @@ class RequestResult:
 
         if self.evaluation_status == "success":
             status_label = "SUCCESS"
+            logger.info("Request %d model %s: evaluation status is SUCCESS", self.request_index, self.model_name)
         elif self.evaluation_status == "incorrect":
             status_label = "INCORRECT"
+            logger.info("Request %d model %s: evaluation status is INCORRECT", self.request_index, self.model_name)
         elif self.evaluation_status == "error":
             status_label = "EVAL_ERROR"
+            logger.info("Request %d model %s: evaluation status is EVAL_ERROR", self.request_index, self.model_name)
         elif query_session and query_session.status:
             if query_session.status.value == "SUCCESS":
                 status_label = "NOT_EVALUATED"
+                logger.info("Request %d model %s: status is NOT_EVALUATED", self.request_index, self.model_name)
             else:
                 status_label = query_session.status.value
+                logger.info("Request %d model %s: status from query_session is %s", self.request_index, self.model_name, status_label)
         else:
             status_label = "RUNTIME_ERROR"
+            logger.info("Request %d model %s: fallback status is RUNTIME_ERROR", self.request_index, self.model_name)
 
         execution_result = query_session.execution_result if query_session else None
 
@@ -93,9 +60,11 @@ class RequestResult:
             rows_fetched = query_session.rows_fetched if query_session else None
             if rows_fetched is None and isinstance(execution_result, Records):
                 rows_fetched = len(execution_result)
+                logger.info("Request %d model %s: rows_fetched derived from Records: %d", self.request_index, self.model_name, rows_fetched)
 
             if rows_fetched is not None:
                 outcome = f"({rows_fetched} rows fetched)"
+                logger.info("Request %d model %s: outcome with rows_fetched=%d", self.request_index, self.model_name, rows_fetched)
             else:
                 if status_label == "SUCCESS":
                     outcome = "(Query executed successfully)"
@@ -103,6 +72,7 @@ class RequestResult:
                     outcome = "(Query executed)"
                 else:
                     outcome = "(Query executed, dataset evaluation not available)"
+                logger.info("Request %d model %s: outcome without rows_fetched: %s", self.request_index, self.model_name, outcome)
             if status_label == "SUCCESS":
                 status_emoji = "🍾SUCCESS"
             elif status_label == "INCORRECT":
@@ -112,23 +82,27 @@ class RequestResult:
         else:
             outcome = f"({execution_result})" if execution_result else ""
             status_emoji = f"❌{status_label}"
+            logger.info("Request %d model %s: error outcome: %s", self.request_index, self.model_name, outcome)
 
         lines.append(f"📌 Status:\n\n{status_emoji} {outcome}\n")
 
         if self.evaluation_method:
+            logger.info("Request %d model %s: evaluation_method=%s", self.request_index, self.model_name, self.evaluation_method)
             lines.append(f"🧪 Eval Method:\n\n{self.evaluation_method}\n")
         if self.evaluation_verdict:
+            logger.info("Request %d model %s: evaluation_verdict=%s", self.request_index, self.model_name, self.evaluation_verdict)
             lines.append(f"⚖️ Eval Verdict:\n\n{self.evaluation_verdict}\n")
         if self.evaluation_reason:
+            logger.info("Request %d model %s: evaluation_reason=%s", self.request_index, self.model_name, self.evaluation_reason[:100] if len(self.evaluation_reason) > 100 else self.evaluation_reason)
             lines.append(f"📝 Eval Reason:\n\n{self.evaluation_reason}\n")
 
         lines.append(f"⏱️ Time: {self.time_taken:.2f}s")
+        logger.info("Request %d model %s: format_output_content completed, time_taken=%.2f", self.request_index, self.model_name, self.time_taken)
         return "\n".join(lines)
 
 ResultsByIndex: TypeAlias = Dict[int, Dict[str, RequestResult]]
 
-COMPLEXITY_LOW_THRESHOLD = 2
-COMPLEXITY_MEDIUM_THRESHOLD = 5
+DATABASE_REPORT_PATH = OUTPUT_DIR / "database_report.json"
 
 
 @dataclass
@@ -152,17 +126,24 @@ class ModelStats:
 
     @property
     def avg_attempts(self) -> float:
-        return self.attempts / self.count if self.count > 0 else 0.0
+        result = self.attempts / self.count if self.count > 0 else 0.0
+        logger.debug("avg_attempts: attempts=%d, count=%d, result=%.2f", self.attempts, self.count, result)
+        return result
 
     @property
     def avg_time(self) -> float:
-        return self.total_time / self.count if self.count > 0 else 0.0
+        result = self.total_time / self.count if self.count > 0 else 0.0
+        logger.debug("avg_time: total_time=%.2f, count=%d, result=%.2f", self.total_time, self.count, result)
+        return result
 
     @property
     def success_rate(self) -> float:
-        return (self.evaluation_correct / self.executions * 100) if self.executions > 0 else 0.0
+        result = (self.evaluation_correct / self.executions * 100) if self.executions > 0 else 0.0
+        logger.debug("success_rate: evaluation_correct=%d, executions=%d, result=%.2f%%", self.evaluation_correct, self.executions, result)
+        return result
 
     def increment_evaluation_type(self, eval_type: Optional[str]) -> None:
+        logger.info("Incrementing evaluation type: %s", eval_type)
         if eval_type == "official_evaluation":
             self.official_evaluation += 1
         elif eval_type == "custom_evaluation":
@@ -197,74 +178,66 @@ class AggregatedStats:
 @dataclass
 class ComplexityAnalysis:
     request_scores: Dict[int, Optional[float]] = field(default_factory=dict)
-    request_levels: Dict[int, Optional[str]] = field(default_factory=dict)
-    per_model_buckets: Dict[str, Dict[str, List[int]]] = field(default_factory=dict)
-    global_buckets: Dict[str, List[int]] = field(default_factory=dict)
-
-
-@dataclass
-class CorrelationMetric:
-    statistic: float
-    p_value: float
-
-
-@dataclass
-class ModelCorrelationResults:
-    attempts_pearson: Optional[CorrelationMetric] = None
-    attempts_spearman: Optional[CorrelationMetric] = None
-    complexity_pearson: Optional[CorrelationMetric] = None
-    complexity_spearman: Optional[CorrelationMetric] = None
-
-
-@dataclass
-class CorrelationResults:
-    global_attempts_pearson: Optional[CorrelationMetric] = None
-    global_attempts_spearman: Optional[CorrelationMetric] = None
-    global_complexity_pearson: Optional[CorrelationMetric] = None
-    global_complexity_spearman: Optional[CorrelationMetric] = None
-    per_model: Dict[str, ModelCorrelationResults] = field(default_factory=dict)
+    average_score: Optional[float] = None
 
 
 def _normalize_evaluation_method(method: Optional[str], status: Optional[str] = None) -> Optional[str]:
+    logger.info("Normalizing evaluation method: method=%s, status=%s", method, status)
     if method == "dataset_eval":
+        logger.info("Normalized to: official_evaluation")
         return "official_evaluation"
     if method == "llm_judge":
+        logger.info("Normalized to: llm_judge")
         return "llm_judge"
     if method == "sqlite_execution":
-        return None if status == "error" else "custom_evaluation"
+        result = None if status == "error" else "custom_evaluation"
+        logger.info("sqlite_execution with status=%s -> %s", status, result)
+        return result
     if method == "custom_compare":
+        logger.info("Normalized to: custom_evaluation")
         return "custom_evaluation"
+    logger.info("Could not normalize, returning None")
     return None
 
 
 def _extract_error_category(session: Optional[QuerySession], fallback_status: QueryStatus) -> str:
     if session and session.error_type:
-        return session.error_type.value
-    return fallback_status.value
+        result = session.error_type.value
+        logger.info("Extracted error category from session.error_type: %s", result)
+        return result
+    result = fallback_status.value
+    logger.info("Using fallback error category: %s", result)
+    return result
 
 
 def aggregate_results(
     results_by_index: ResultsByIndex,
     num_requests: int,
 ) -> AggregatedStats:
+    logger.info("Starting aggregate_results with num_requests=%d", num_requests)
     stats = AggregatedStats(
         total_requests=num_requests,
         models={model: ModelStats() for model in QUERY_MODELS.keys()},
     )
+    logger.info("Initialized AggregatedStats with models: %s", list(QUERY_MODELS.keys()))
 
-    for models_dict in results_by_index.values():
+    for request_index, models_dict in results_by_index.items():
+        logger.info("Processing request_index=%d with %d models", request_index, len(models_dict))
         for model, res in models_dict.items():
+            logger.info("Processing request %d, model %s", request_index, model)
             stats.total_tests += 1
             model_stats = stats.models[model]
             model_stats.executions += 1
 
             if not res.success:
                 stats.other_errors += 1
+                logger.info("Request %d model %s: not successful, incrementing other_errors", request_index, model)
                 continue
 
             query_session = res.query_session
             attempts = query_session.attempt if query_session else 0
             stats.total_attempts += attempts
+            logger.info("Request %d model %s: attempts=%d", request_index, model, attempts)
 
             model_stats.attempts += attempts
             model_stats.total_time += res.time_taken
@@ -275,15 +248,19 @@ def aggregate_results(
             if evaluation_type is not None:
                 stats.evaluation_type_counts[evaluation_type] += 1
                 model_stats.increment_evaluation_type(evaluation_type)
+                logger.info("Request %d model %s: evaluation_type=%s, count now=%d", request_index, model, evaluation_type, stats.evaluation_type_counts[evaluation_type])
             elif query_session and query_session.status != QueryStatus.SUCCESS:
                 stats.evaluation_type_counts["not_started"] += 1
                 model_stats.not_started += 1
+                logger.info("Request %d model %s: not_started incremented, count now=%d", request_index, model, stats.evaluation_type_counts["not_started"])
 
             evaluation_status = res.evaluation_status
+            logger.info("Request %d model %s: evaluation_status=%s", request_index, model, evaluation_status)
             if evaluation_status == "success":
                 stats.correct_queries += 1
                 model_stats.correct += 1
                 model_stats.evaluation_correct += 1
+                logger.info("Request %d model %s: correct query, total_correct=%d", request_index, model, stats.correct_queries)
             elif evaluation_status == "incorrect":
                 stats.incorrect_queries += 1
                 model_stats.incorrect += 1
@@ -292,16 +269,21 @@ def aggregate_results(
                 stats.error_type_counts[(error_category, "INCORRECT")] = (
                     stats.error_type_counts.get((error_category, "INCORRECT"), 0) + 1
                 )
+                logger.info("Request %d model %s: incorrect query, error_category=%s", request_index, model, error_category)
             elif evaluation_status == "error":
                 stats.error_type_counts[("EVALUATION_ERROR", res.evaluation_method or "unknown")] = (
                     stats.error_type_counts.get(("EVALUATION_ERROR", res.evaluation_method or "unknown"), 0) + 1
                 )
+                logger.info("Request %d model %s: evaluation error, method=%s", request_index, model, res.evaluation_method)
 
             status = query_session.status if query_session else None
+            logger.info("Request %d model %s: query_session.status=%s", request_index, model, status)
             if status == QueryStatus.SUCCESS:
                 model_stats.generation_correct += 1
+                logger.info("Request %d model %s: generation correct", request_index, model)
             elif status == QueryStatus.INCORRECT:
                 model_stats.generation_incorrect += 1
+                logger.info("Request %d model %s: generation incorrect", request_index, model)
             elif status == QueryStatus.RUNTIME_ERROR:
                 stats.runtime_errors += 1
                 model_stats.runtime += 1
@@ -309,6 +291,7 @@ def aggregate_results(
                 stats.error_type_counts[(runtime_category, "RUNTIME_ERROR")] = (
                     stats.error_type_counts.get((runtime_category, "RUNTIME_ERROR"), 0) + 1
                 )
+                logger.info("Request %d model %s: runtime error, category=%s", request_index, model, runtime_category)
             elif status == QueryStatus.SYNTAX_ERROR:
                 stats.syntax_errors += 1
                 model_stats.syntax += 1
@@ -316,20 +299,26 @@ def aggregate_results(
                 stats.error_type_counts[(syntax_category, "SYNTAX_ERROR")] = (
                     stats.error_type_counts.get((syntax_category, "SYNTAX_ERROR"), 0) + 1
                 )
+                logger.info("Request %d model %s: syntax error, category=%s", request_index, model, syntax_category)
             elif status == QueryStatus.TIMEOUT_ERROR:
                 stats.other_errors += 1
                 timeout_category = _extract_error_category(query_session, QueryStatus.TIMEOUT_ERROR)
                 stats.error_type_counts[(timeout_category, "TIMEOUT_ERROR")] = (
                     stats.error_type_counts.get((timeout_category, "TIMEOUT_ERROR"), 0) + 1
                 )
+                logger.info("Request %d model %s: timeout error, category=%s", request_index, model, timeout_category)
             elif evaluation_status not in {"success", "incorrect", "error"}:
                 stats.other_errors += 1
+                logger.info("Request %d model %s: other error, evaluation_status=%s", request_index, model, evaluation_status)
 
+    logger.info("aggregate_results completed: total_tests=%d, correct=%d, incorrect=%d, runtime_errors=%d, syntax_errors=%d",
+                stats.total_tests, stats.correct_queries, stats.incorrect_queries, stats.runtime_errors, stats.syntax_errors)
     return stats
 
 
 def calculate_rankings(stats: AggregatedStats) -> Dict[str, List[Tuple[str, ModelStats]]]:
-    return {
+    logger.info("Starting calculate_rankings")
+    rankings = {
         "attempts": sorted(
             stats.models.items(),
             key=lambda item: item[1].avg_attempts if item[1].count > 0 else float("inf"),
@@ -349,168 +338,106 @@ def calculate_rankings(stats: AggregatedStats) -> Dict[str, List[Tuple[str, Mode
             ),
         ),
     }
+    logger.info("Attempts ranking: %s", [model for model, _ in rankings["attempts"]])
+    logger.info("Time ranking: %s", [model for model, _ in rankings["time"]])
+    logger.info("Status ranking: %s", [model for model, _ in rankings["status"]])
+    return rankings
 
 
-def calculate_complexity(
-    results_by_index: ResultsByIndex,
-    stats: AggregatedStats,
-) -> ComplexityAnalysis:
-    request_scores: Dict[int, Optional[float]] = {}
-    request_levels: Dict[int, Optional[str]] = {}
-    per_model_buckets = {
-        model: {
-            "low": [],
-            "medium": [],
-            "high": [],
-            "total": [],
-        }
-        for model in stats.models.keys()
-    }
-    global_buckets = {
-        "low": [],
-        "medium": [],
-        "high": [],
-        "total": [],
-    }
+def _database_name_from_stats_path(stats_path: Path) -> str:
+    logger.info("Extracting database name from stats_path: %s", stats_path)
+    for part in reversed(stats_path.parts):
+        if part.endswith("_results"):
+            result = part.removesuffix("_results")
+            logger.info("Found database name: %s", result)
+            return result
 
-    for request_index in range(1, stats.total_requests + 1):
-        models_dict = results_by_index.get(request_index, {})
-        correct_complexities: List[float] = []
-        all_complexities: List[float] = []
+    raise ValueError(f"Could not infer database name from stats path: {stats_path}")
 
-        for res in models_dict.values():
-            complexity = res.get_query_complexity()
-            if complexity is None:
-                continue
 
-            all_complexities.append(complexity)
-
-            if res.success and res.query_session and res.evaluation_status == "success":
-                correct_complexities.append(complexity)
-
-        request_complexity: Optional[float]
-        if correct_complexities:
-            request_complexity = float(random.choice(correct_complexities))
-        elif all_complexities:
-            request_complexity = sum(all_complexities) / len(all_complexities)
-        else:
-            request_complexity = None
-
-        request_scores[request_index] = request_complexity
-        request_levels[request_index] = (
-            RequestResult.complexity_level_from_score(request_complexity)
-            if request_complexity is not None
-            else None
+def _load_database_report(report_path: Path = DATABASE_REPORT_PATH) -> List[Dict[str, Any]]:
+    logger.info("Loading database report from: %s", report_path)
+    if not report_path.exists():
+        logger.error("Database report not found: %s", report_path)
+        raise FileNotFoundError(
+            f"Database report not found: {report_path}. "
+            "Run tests/summarize_database.py before generating stats."
         )
 
-    for request_index, models_dict in results_by_index.items():
-        request_complexity = request_scores.get(request_index)
-        request_level = request_levels.get(request_index)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(report, list):
+        logger.error("Invalid database report format in %s: expected a JSON list", report_path)
+        raise ValueError(f"Invalid database report format in {report_path}: expected a JSON list.")
 
-        for model, res in models_dict.items():
-            if not (res.success and res.query_session):
-                continue
+    logger.info("Loaded database report with %d entries", len(report))
+    return report
 
-            success = 1 if res.evaluation_status == "success" else 0
 
-            if request_complexity is None:
-                continue
+def _load_database_report_entry(
+    stats_path: Path,
+    dataset_name: str,
+) -> Dict[str, Any]:
+    logger.info("Loading database report entry for stats_path=%s, dataset_name=%s", stats_path, dataset_name)
+    database_name = _database_name_from_stats_path(stats_path)
+    normalized_dataset = dataset_name.lower()
+    logger.info("Looking for database_name=%s, normalized_dataset=%s", database_name, normalized_dataset)
 
-            per_model_buckets[model]["total"].append(success)
-            global_buckets["total"].append(success)
+    for entry in _load_database_report():
+        if not isinstance(entry, dict):
+            logger.debug("Skipping non-dict entry in database report")
+            continue
+        if str(entry.get("dataset", "")).lower() != normalized_dataset:
+            continue
+        if entry.get("database_name") != database_name:
+            continue
+        logger.info("Found matching database report entry")
+        return entry
 
-            if request_level is not None:
-                per_model_buckets[model][request_level].append(success)
-
-            if request_complexity <= COMPLEXITY_LOW_THRESHOLD:
-                global_buckets["low"].append(success)
-            elif request_complexity <= COMPLEXITY_MEDIUM_THRESHOLD:
-                global_buckets["medium"].append(success)
-            else:
-                global_buckets["high"].append(success)
-
-    return ComplexityAnalysis(
-        request_scores=request_scores,
-        request_levels=request_levels,
-        per_model_buckets=per_model_buckets,
-        global_buckets=global_buckets,
+    logger.error("Database %s for dataset %s not found in %s", database_name, normalized_dataset, DATABASE_REPORT_PATH)
+    raise ValueError(
+        f"Database {database_name!r} for dataset {normalized_dataset!r} not found in "
+        f"{DATABASE_REPORT_PATH}."
     )
 
 
-def calculate_correlations(
-    complexity_analysis: ComplexityAnalysis,
-    results_by_index: ResultsByIndex,
-) -> CorrelationResults:
-    def safe_corr(values: List[float], outcomes: List[int], method: str) -> Optional[CorrelationMetric]:
-        if len(values) < 2 or len(outcomes) < 2:
-            return None
-        if len(set(values)) <= 1 or len(set(outcomes)) <= 1:
-            return None
-
-        result = pearsonr(values, outcomes) if method == "pearson" else spearmanr(values, outcomes)
-        statistic = getattr(result, "statistic", None)
-        pvalue = getattr(result, "pvalue", None)
-
-        if statistic is None or pvalue is None:
-            return None
-        if math.isnan(statistic) or math.isnan(pvalue):
-            return None
-
-        return CorrelationMetric(statistic=float(statistic), p_value=float(pvalue))
-
-    global_attempts: List[float] = []
-    global_attempt_successes: List[int] = []
-    global_complexities: List[float] = []
-    global_complexity_successes: List[int] = []
-    per_model_data = {
-        model: {
-            "attempts": [],
-            "attempt_successes": [],
-            "complexities": [],
-            "complexity_successes": [],
-        }
-        for model in QUERY_MODELS.keys()
-    }
-
-    for request_index, models_dict in results_by_index.items():
-        request_complexity = complexity_analysis.request_scores.get(request_index)
-
-        for model, res in models_dict.items():
-            if not (res.success and res.query_session):
-                continue
-
-            success = 1 if res.evaluation_status == "success" else 0
-            attempt = float(res.query_session.attempt)
-
-            global_attempts.append(attempt)
-            global_attempt_successes.append(success)
-            per_model_data[model]["attempts"].append(attempt)
-            per_model_data[model]["attempt_successes"].append(success)
-
-            if request_complexity is None:
-                continue
-
-            global_complexities.append(request_complexity)
-            global_complexity_successes.append(success)
-            per_model_data[model]["complexities"].append(request_complexity)
-            per_model_data[model]["complexity_successes"].append(success)
-
-    per_model = {
-        model: ModelCorrelationResults(
-            attempts_pearson=safe_corr(model_data["attempts"], model_data["attempt_successes"], "pearson"),
-            attempts_spearman=safe_corr(model_data["attempts"], model_data["attempt_successes"], "spearman"),
-            complexity_pearson=safe_corr(model_data["complexities"], model_data["complexity_successes"], "pearson"),
-            complexity_spearman=safe_corr(model_data["complexities"], model_data["complexity_successes"], "spearman"),
+def _load_complexity_vector(
+    database_report_entry: Dict[str, Any],
+    num_requests: int,
+) -> List[float]:
+    database_name = database_report_entry.get("database_name", "unknown")
+    logger.info("Loading complexity vector for database %s, num_requests=%d", database_name, num_requests)
+    vector = database_report_entry.get("complexity_vector")
+    if not isinstance(vector, list):
+        logger.error("Missing complexity_vector for database %s", database_name)
+        raise ValueError(f"Missing complexity_vector for database {database_name!r}.")
+    if len(vector) != num_requests:
+        logger.error("Complexity vector length mismatch for database %s: expected %d, found %d", database_name, num_requests, len(vector))
+        raise ValueError(
+            f"Complexity vector length mismatch for database {database_name!r}: "
+            f"expected {num_requests}, found {len(vector)}."
         )
-        for model, model_data in per_model_data.items()
-    }
 
-    return CorrelationResults(
-        global_attempts_pearson=safe_corr(global_attempts, global_attempt_successes, "pearson"),
-        global_attempts_spearman=safe_corr(global_attempts, global_attempt_successes, "spearman"),
-        global_complexity_pearson=safe_corr(global_complexities, global_complexity_successes, "pearson"),
-        global_complexity_spearman=safe_corr(global_complexities, global_complexity_successes, "spearman"),
-        per_model=per_model,
+    result = [float(score) for score in vector]
+    logger.info("Loaded complexity vector with %d scores", len(result))
+    return result
+
+
+def calculate_complexity(
+    stats: AggregatedStats,
+    complexity_vector: List[float],
+) -> ComplexityAnalysis:
+    logger.info("Calculating complexity for %d requests", stats.total_requests)
+    request_scores: Dict[int, Optional[float]] = {}
+
+    for request_index in range(1, stats.total_requests + 1):
+        request_complexity = complexity_vector[request_index - 1]
+        request_scores[request_index] = request_complexity
+
+    average_score = sum(complexity_vector) / len(complexity_vector) if complexity_vector else None
+    logger.info("Complexity analysis: average_score=%.4f", average_score)
+    return ComplexityAnalysis(
+        request_scores=request_scores,
+        average_score=average_score,
     )
 
 
@@ -520,6 +447,7 @@ def _format_ascii_table(
     rows: List[List[str]],
     footer: Optional[List[str]] = None,
 ) -> str:
+    logger.info("Formatting ASCII table: %s with %d rows", title, len(rows))
     lines: List[str] = [f"\n{title}", "-" * 60]
     all_data = [headers] + rows
     if footer:
@@ -529,6 +457,7 @@ def _format_ascii_table(
         max(len(str(cell)) for cell in [row[i] for row in all_data])
         for i in range(len(headers))
     ]
+    logger.debug("Column widths: %s", col_widths)
 
     def format_row(row: List[str]) -> str:
         return " | ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
@@ -547,95 +476,89 @@ def _format_ascii_table(
     return "\n".join(lines)
 
 
-def _format_success_rate(values: List[int]) -> str:
-    if not values:
-        return "N/A"
-    return f"{(sum(values) / len(values)):.2%}"
-
-
-def _format_correlation(metric: Optional[CorrelationMetric]) -> str:
-    if metric is None:
-        return "N/A"
-    return "true" if metric.p_value < 0.05 else "false"
-
-
-def _success_count(values: List[int]) -> int:
-    return sum(values)
-
-
-def _correlation_json(metric: Optional[CorrelationMetric]) -> Dict[str, Optional[float | bool]]:
-    if metric is None:
-        return {
-            "float": None,
-            # "p_value": None,
-            "bool": None,
-        }
-
-    return {
-        "float": metric.statistic,
-        # "p_value": metric.p_value,
-        "bool": metric.p_value < 0.05,
-    }
-
-
 def _detect_report_mode(stats_path: Path) -> Optional[str]:
+    logger.info("Detecting report mode from stats_path: %s", stats_path)
     for part in reversed(stats_path.parts):
         normalized = part.lower()
         if normalized in {"db_conn", "database_connection", "mysql"}:
+            logger.info("Detected mode: db_conn")
             return "db_conn"
         if normalized == "text":
+            logger.info("Detected mode: text")
             return "text"
+    logger.info("Could not detect report mode, returning None")
     return None
 
 
 def _json_evaluation_label(method: Optional[str], status: Optional[str]) -> Optional[str]:
     evaluation_type = _normalize_evaluation_method(method, status)
     if evaluation_type == "official_evaluation":
+        logger.debug("JSON evaluation label: official eval")
         return "official eval"
     if evaluation_type == "custom_evaluation":
+        logger.debug("JSON evaluation label: custom eval")
         return "custom eval"
     if evaluation_type == "llm_judge":
+        logger.debug("JSON evaluation label: llm judge")
         return "llm judge"
+    logger.debug("JSON evaluation label: None")
     return None
 
 
 def _has_empty_result(res: RequestResult) -> bool:
     query_session = res.query_session
-    return (
+    result = (
         query_session is None
         or not query_session.sql_code
         or (not res.success and query_session.status == QueryStatus.PENDING)
     )
+    if result:
+        logger.info("Request %d model %s: has empty result", res.request_index, res.model_name)
+    return result
 
 
 def _json_outcome(res: RequestResult, mode: Optional[str]) -> str:
+    logger.info("Determining JSON outcome for request %d model %s, mode=%s", res.request_index, res.model_name, mode)
     query_session = res.query_session
 
     if _has_empty_result(res):
+        logger.info("Request %d model %s: outcome=empty result", res.request_index, res.model_name)
         return "empty result"
 
     status = query_session.status if query_session else None
+    logger.info("Request %d model %s: query_session.status=%s", res.request_index, res.model_name, status)
     if status == QueryStatus.SYNTAX_ERROR:
+        logger.info("Request %d model %s: outcome=syntax error", res.request_index, res.model_name)
         return "syntax error"
     if status in {QueryStatus.RUNTIME_ERROR, QueryStatus.TIMEOUT_ERROR}:
+        logger.info("Request %d model %s: outcome=runtime error", res.request_index, res.model_name)
         return "runtime error"
     if status == QueryStatus.INCORRECT:
+        logger.info("Request %d model %s: outcome=incorrect gen", res.request_index, res.model_name)
         return "incorrect gen"
 
     if res.evaluation_status == "success":
+        logger.info("Request %d model %s: outcome=correct", res.request_index, res.model_name)
         return "correct"
     if res.evaluation_status == "incorrect":
+        logger.info("Request %d model %s: outcome=incorrect eval", res.request_index, res.model_name)
         return "incorrect eval"
     if res.evaluation_status == "error":
-        return "runtime error" if mode == "text" else "incorrect eval"
+        outcome = "runtime error" if mode == "text" else "incorrect eval"
+        logger.info("Request %d model %s: evaluation error, outcome=%s", res.request_index, res.model_name, outcome)
+        return outcome
 
     if not res.success:
-        return "runtime error" if status == QueryStatus.RUNTIME_ERROR else "empty result"
+        outcome = "runtime error" if status == QueryStatus.RUNTIME_ERROR else "empty result"
+        logger.info("Request %d model %s: not successful, outcome=%s", res.request_index, res.model_name, outcome)
+        return outcome
 
+    logger.info("Request %d model %s: outcome=incorrect gen (fallback)", res.request_index, res.model_name)
     return "incorrect gen"
 
 
 def _json_error(res: RequestResult, outcome: str) -> str:
+    logger.debug("Determining JSON error for request %d, outcome=%s", res.request_index, outcome)
     if outcome == "correct":
         return "C"
     if outcome == "empty result":
@@ -643,13 +566,18 @@ def _json_error(res: RequestResult, outcome: str) -> str:
 
     query_session = res.query_session
     if query_session and query_session.error_type:
+        logger.debug("Request %d: error from error_type=%s", res.request_index, query_session.error_type.value)
         return query_session.error_type.value
     if query_session and query_session.status:
+        logger.debug("Request %d: error from status=%s", res.request_index, query_session.status.value)
         return query_session.status.value
     if res.evaluation_status == "error":
+        logger.debug("Request %d: error=EVALUATION_ERROR", res.request_index)
         return "EVALUATION_ERROR"
     if outcome in {"incorrect gen", "incorrect eval"}:
+        logger.debug("Request %d: error=UNKNOWN_ERROR", res.request_index)
         return "UNKNOWN_ERROR"
+    logger.debug("Request %d: error=NK (fallback)", res.request_index)
     return "NK"
 
 
@@ -658,16 +586,34 @@ def _build_statistics_json(
     num_requests: int,
     dataset_name: str,
     stats_path: Path,
+    complexity_analysis: ComplexityAnalysis,
+    database_report_entry: Dict[str, Any],
 ) -> Dict[str, object]:
+    logger.info("Building statistics JSON: dataset=%s, num_requests=%d", dataset_name, num_requests)
     mode = _detect_report_mode(stats_path)
+    logger.info("Report mode: %s", mode)
+    complexity_average = complexity_analysis.average_score
+    logger.info("Complexity average: %s", complexity_average)
+
     json_report: Dict[str, object] = {
         "dataset": dataset_name,
+        "num_tables": database_report_entry.get("num_tables"),
+        "num_columns": database_report_entry.get("num_columns"),
+        "num_requests": num_requests,
+        "complexity_vector": [
+            complexity_analysis.request_scores[index]
+            for index in range(1, num_requests + 1)
+        ],
+        "complexity_average_score": round(complexity_average, 2) if complexity_average is not None else None,
         "models": {},
     }
+    logger.info("JSON report metadata: num_tables=%s, num_columns=%s",
+                database_report_entry.get("num_tables"), database_report_entry.get("num_columns"))
 
     models_report: Dict[str, object] = {}
 
     for model in QUERY_MODELS.keys():
+        logger.info("Building JSON for model: %s", model)
         attempts: List[Optional[int]] = []
         times: List[Optional[float]] = []
         outcomes: List[Optional[str]] = []
@@ -683,10 +629,12 @@ def _build_statistics_json(
                 outcomes.append("empty result")
                 errors.append("NK")
                 evaluations.append(None)
+                logger.debug("Model %s request %d: no result found", model, request_index)
                 continue
 
             query_session = res.query_session
             outcome = _json_outcome(res, mode)
+            logger.debug("Model %s request %d: outcome=%s", model, request_index, outcome)
 
             attempts.append(query_session.attempt if query_session else None)
             times.append(round(res.time_taken, 2))
@@ -701,20 +649,26 @@ def _build_statistics_json(
             "errors": errors,
             "evaluation": evaluations,
         }
+        logger.info("Model %s JSON built: %d outcomes", model, len(outcomes))
 
     json_report["models"] = models_report
+    logger.info("Statistics JSON build completed")
     return json_report
 
 
 def _format_summary_header(stats: AggregatedStats, complexity: ComplexityAnalysis) -> str:
+    logger.info("Formatting summary header")
     total_correct_percent = (
         stats.correct_queries / stats.total_tests * 100
         if stats.total_tests > 0 else 0.0
     )
-    request_complexity_counts = {"low": 0, "medium": 0, "high": 0}
-    for level in complexity.request_levels.values():
-        if level in request_complexity_counts:
-            request_complexity_counts[level] += 1
+    average_complexity = (
+        f"{complexity.average_score:.2f}"
+        if complexity.average_score is not None
+        else "N/A"
+    )
+    logger.info("Summary: total_requests=%d, total_tests=%d, correct_percent=%.2f%%, avg_complexity=%s",
+                stats.total_requests, stats.total_tests, total_correct_percent, average_complexity)
 
     return "\n".join([
         "/°" * 50 + "/\n",
@@ -723,9 +677,7 @@ def _format_summary_header(stats: AggregatedStats, complexity: ComplexityAnalysi
         "",
         f"Total requests tested : {stats.total_requests}",
         f"Total model executions: {stats.total_tests}",
-        f"🟢 Low complexity requests   : {request_complexity_counts['low']}",
-        f"🟡 Medium complexity requests: {request_complexity_counts['medium']}",
-        f"🔴 High complexity requests  : {request_complexity_counts['high']}",
+        f"Average complexity score: {average_complexity}",
         f"🎯 Total correct %    : {total_correct_percent:.2f}%",
         "",
     ])
@@ -735,6 +687,7 @@ def _format_rankings_table(
     rankings: Dict[str, List[Tuple[str, ModelStats]]],
     stats: AggregatedStats,
 ) -> str:
+    logger.info("Formatting rankings table")
     total_correct_percent = (
         stats.correct_queries / stats.total_tests * 100
         if stats.total_tests > 0 else 0.0
@@ -747,6 +700,8 @@ def _format_rankings_table(
         stats.global_total_time / stats.total_tests
         if stats.total_tests > 0 else 0.0
     )
+    logger.info("Global averages: avg_attempts=%.2f, avg_time=%.2f, correct_percent=%.2f%%",
+                global_avg_attempts, global_avg_time, total_correct_percent)
 
     attempts_table = _format_ascii_table(
         "🏁 Attempts ranking (avg)",
@@ -818,10 +773,25 @@ def _format_rankings_table(
         ],
     )
 
+    logger.info("Rankings tables formatted successfully")
     return "\n".join([attempts_table, time_table, status_table])
 
 
 def _format_evaluation_table(stats: AggregatedStats) -> str:
+    logger.info("Formatting evaluation table")
+    
+    sorted_models = sorted(
+        stats.models.items(),
+        key=lambda item: (
+            -item[1].not_started,
+            -item[1].official_evaluation,
+            -item[1].custom_evaluation,
+            -item[1].llm_judge,
+            item[0],
+        ),
+    )
+    logger.info("Evaluation table sorted by: not_started, official, custom, llm_judge")
+
     evaluation_table = _format_ascii_table(
         "🏁 Evaluation table",
         ["Rank", "Model", "Not started", "Official", "Custom", "LLM Judge"],
@@ -834,18 +804,7 @@ def _format_evaluation_table(stats: AggregatedStats) -> str:
                 str(model_stats.custom_evaluation),
                 str(model_stats.llm_judge),
             ]
-            for i, (model, model_stats) in enumerate(
-                sorted(
-                    stats.models.items(),
-                    key=lambda item: (
-                        -item[1].not_started,
-                        -item[1].official_evaluation,
-                        -item[1].custom_evaluation,
-                        -item[1].llm_judge,
-                        item[0],
-                    ),
-                )
-            )
+            for i, (model, model_stats) in enumerate(sorted_models)
         ],
         footer=[
             "",
@@ -856,6 +815,7 @@ def _format_evaluation_table(stats: AggregatedStats) -> str:
             str(stats.evaluation_type_counts["llm_judge"]),
         ],
     )
+    logger.info("Evaluation type counts: %s", stats.evaluation_type_counts)
 
     error_type_rows = [
         [str(i + 1), category, source_type, str(count)]
@@ -866,52 +826,17 @@ def _format_evaluation_table(stats: AggregatedStats) -> str:
             )
         )
     ]
+    logger.info("Error type rows: %d entries", len(error_type_rows))
+    
     error_type_table = _format_ascii_table(
         "🏁 Error type ranking",
         ["Rank", "Category", "Type", "Count"],
         error_type_rows,
         footer=["", "TOTAL", "", str(sum(stats.error_type_counts.values()))],
     )
+    logger.info("Total error count: %d", sum(stats.error_type_counts.values()))
 
     return "\n".join([evaluation_table, error_type_table])
-
-
-def _format_complexity_table(complexity: ComplexityAnalysis) -> str:
-    complexity_rows = []
-    for model in QUERY_MODELS.keys():
-        model_buckets = complexity.per_model_buckets[model]
-        complexity_rows.append([
-            model,
-            _format_success_rate(model_buckets["low"]),
-            _format_success_rate(model_buckets["medium"]),
-            _format_success_rate(model_buckets["high"]),
-            _format_success_rate(model_buckets["total"]),
-        ])
-
-    return _format_ascii_table(
-        "🏁 Complexity success rate by model",
-        ["Model", "Low", "Medium", "High", "Total"],
-        complexity_rows,
-    )
-
-
-def _format_correlations_table(correlations: CorrelationResults) -> str:
-    per_model_corr_rows = []
-    for model in QUERY_MODELS.keys():
-        model_correlations = correlations.per_model[model]
-        per_model_corr_rows.append([
-            model,
-            _format_correlation(model_correlations.attempts_pearson),
-            _format_correlation(model_correlations.attempts_spearman),
-            _format_correlation(model_correlations.complexity_pearson),
-            _format_correlation(model_correlations.complexity_spearman),
-        ])
-
-    return _format_ascii_table(
-        "🏁 Correlation by model",
-        ["Model", "Attempts Pearson", "Attempts Spearman", "Complexity Pearson", "Complexity Spearman"],
-        per_model_corr_rows,
-    )
 
 
 def write_statistics_report(
@@ -922,31 +847,57 @@ def write_statistics_report(
     dataset_name: str,
 ) -> None:
     """Aggregate statistics and write to final_stats.txt and final_stats.json."""
+    logger.info("=" * 60)
+    logger.info("Starting write_statistics_report")
+    logger.info("Parameters: num_requests=%d, stats_path=%s, num_tables=%d, dataset_name=%s",
+                num_requests, stats_path, num_tables, dataset_name)
+    
     stats = aggregate_results(results_by_index, num_requests)
+    logger.info("Aggregated stats completed")
+
     rankings = calculate_rankings(stats)
-    complexity_analysis = calculate_complexity(results_by_index, stats)
-    correlations = calculate_correlations(complexity_analysis, results_by_index)
+    logger.info("Rankings calculated")
+
+    database_report_entry = _load_database_report_entry(stats_path, dataset_name)
+    logger.info("Database report entry loaded")
+
+    complexity_vector = _load_complexity_vector(database_report_entry, num_requests)
+    logger.info("Complexity vector loaded")
+
+    complexity_analysis = calculate_complexity(stats, complexity_vector)
+    logger.info("Complexity analysis calculated")
+
     json_report = _build_statistics_json(
         results_by_index,
         num_requests,
         dataset_name,
         stats_path,
+        complexity_analysis,
+        database_report_entry,
     )
+    logger.info("Statistics JSON built")
 
     best_model = rankings["status"][0][0] if rankings["status"] else "N/A"
+    logger.info("Best overall model: %s", best_model)
+    
     report = "\n".join([
         _format_summary_header(stats, complexity_analysis),
         _format_rankings_table(rankings, stats),
         _format_evaluation_table(stats),
-        _format_complexity_table(complexity_analysis),
-        _format_correlations_table(correlations),
         f"\n🏆 Best overall model: {best_model}",
         "=" * 60,
     ])
+    logger.info("Report text generated")
 
+    logger.info("Writing report to: %s", stats_path)
     with open(stats_path, 'w', encoding='utf-8') as f:
         f.write(report)
+    logger.info("Report written successfully")
 
-    json_path = stats_path.parent / "test_report.json"  
+    json_path = stats_path.parent / "test_report.json"
+    logger.info("Writing JSON report to: %s", json_path)
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(json_report, f, indent=2)
+    logger.info("JSON report written successfully")
+    logger.info("write_statistics_report completed")
+    logger.info("=" * 60)
