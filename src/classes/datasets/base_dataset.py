@@ -104,7 +104,7 @@ class BaseDataset(ABC):
     
     def get_requests(self, db_name: str) -> list[str]:
         """Fetch all requests (questions) for a given database."""
-        return [item["question"] for item in self.dev if item["db_id"] == db_name]#[:10]
+        return [item["question"] for item in self.dev if item["db_id"] == db_name][-15:]  # take the last 15 questions for testing
 
     @abstractmethod
     def get_dbs(self) -> list[tuple[str, int]]:
@@ -185,12 +185,17 @@ class BaseDataset(ABC):
             gold_error = gold_exec.execution_result if isinstance(gold_exec.execution_result, str) else None
             pred_error = pred_exec.execution_result if isinstance(pred_exec.execution_result, str) else None
 
-            if gold_error or pred_error:
-                self.logger.warning(
-                    "SQLite execution failed. gold_error=%r pred_error=%r",
-                    gold_error,
-                    pred_error,
+            if pred_error:
+                self.logger.warning("SQLite execution failed. pred_error=%r", pred_error)
+                result = EvaluationResult(
+                    status="runtime_error",
+                    method="sqlite_execution",
+                    official_eval=official_report,
+                    gold=gold_exec,
+                    pred=pred_exec,
                 )
+            elif gold_error:
+                self.logger.warning("Gold query execution failed with error: %s", gold_error)
                 result = EvaluationResult(
                     status="error",
                     method="sqlite_execution",

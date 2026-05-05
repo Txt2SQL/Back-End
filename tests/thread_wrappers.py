@@ -179,7 +179,7 @@ def generator_thread(
     logs_dir: Path,
     schema: Schema,
     dataset: BaseDataset,
-    db_client: SQLiteClient | None,
+    db_client: SQLiteClient,
 ) -> None:
     """
     Process all requests for a single model.
@@ -220,11 +220,14 @@ def generator_thread(
             try:
                 logger.debug(f"Creating QueryOrchestrator")
 
+                # Pass db_client to orchestrator if schema requires it
+                # For SQLite datasets, we always need the client for execution
+                use_db_client = db_client if schema.source == SchemaSource.DB_CONNECTION else None
                 orch = QueryOrchestrator(
                     database_name=database_name,
                     schema_store=schema_store,
                     model_name=model_key,
-                    database_client=db_client if schema.source == SchemaSource.DB_CONNECTION else None,
+                    database_client=use_db_client,
                     query_store=qs,
                     max_attempts=3,
                     instance_path=TMP_DIR,
@@ -234,16 +237,11 @@ def generator_thread(
 
                 result_session = orch.generation(request)
                 eval_result = None
-                if db_client is None:
-                    db_client = SQLiteClient(database_name)
-                    result_session = db_client.execute_query(result_session)
-                    logger.debug(f"Executed query against database for evaluation with status: {result_session.execution_status.value if result_session.execution_status else None}")
-                    result_session.evaluate()
 
-                if result_session.execution_status is not QueryStatus.SUCCESS:
+                if result_session.status is not QueryStatus.SUCCESS:
                     logger.info(
                         "Skipping dataset evaluation because execution ended with status=%s",
-                        result_session.execution_status.value if result_session.execution_status else None,
+                        result_session.status.value if result_session.status else None,
                     )
                 else:
                     logger.debug(f"Starting dataset evaluation")

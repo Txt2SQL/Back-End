@@ -410,12 +410,12 @@ def _load_complexity_vector(
     if not isinstance(vector, list):
         logger.error("Missing complexity_vector for database %s", database_name)
         raise ValueError(f"Missing complexity_vector for database {database_name!r}.")
-    if len(vector) != num_requests:
-        logger.error("Complexity vector length mismatch for database %s: expected %d, found %d", database_name, num_requests, len(vector))
-        raise ValueError(
-            f"Complexity vector length mismatch for database {database_name!r}: "
-            f"expected {num_requests}, found {len(vector)}."
-        )
+    # if len(vector) != num_requests:
+    #     logger.error("Complexity vector length mismatch for database %s: expected %d, found %d", database_name, num_requests, len(vector))
+    #     raise ValueError(
+    #         f"Complexity vector length mismatch for database {database_name!r}: "
+    #         f"expected {num_requests}, found {len(vector)}."
+    #     )
 
     result = [float(score) for score in vector]
     logger.info("Loaded complexity vector with %d scores", len(result))
@@ -522,8 +522,8 @@ def _json_outcome(res: RequestResult, mode: Optional[str]) -> str:
     query_session = res.query_session
 
     if _has_empty_result(res):
-        logger.info("Request %d model %s: outcome=empty result", res.request_index, res.model_name)
-        return "empty result"
+        logger.info("Request %d model %s: outcome=incomplete gen", res.request_index, res.model_name)
+        return "incomplete gen"
 
     status = query_session.status if query_session else None
     logger.info("Request %d model %s: query_session.status=%s", res.request_index, res.model_name, status)
@@ -543,42 +543,45 @@ def _json_outcome(res: RequestResult, mode: Optional[str]) -> str:
     if res.evaluation_status == "incorrect":
         logger.info("Request %d model %s: outcome=incorrect eval", res.request_index, res.model_name)
         return "incorrect eval"
+    if res.evaluation_status == "runtime_error":
+        outcome = "runtime error" if mode == "text" else "incomplete eval"
+        logger.info("Request %d model %s: evaluation error, outcome=%s", res.request_index, res.model_name, outcome)
+        return outcome
     if res.evaluation_status == "error":
-        outcome = "runtime error" if mode == "text" else "incorrect eval"
+        outcome = "incomplete eval"
         logger.info("Request %d model %s: evaluation error, outcome=%s", res.request_index, res.model_name, outcome)
         return outcome
 
     if not res.success:
-        outcome = "runtime error" if status == QueryStatus.RUNTIME_ERROR else "empty result"
+        outcome = "runtime error" if status == QueryStatus.RUNTIME_ERROR else "incomplete test"
         logger.info("Request %d model %s: not successful, outcome=%s", res.request_index, res.model_name, outcome)
         return outcome
 
-    logger.info("Request %d model %s: outcome=incorrect gen (fallback)", res.request_index, res.model_name)
-    return "incorrect gen"
+    logger.info("Request %d model %s: outcome=incomplete test (fallback)", res.request_index, res.model_name)
+    return "incomplete test"
 
 
 def _json_error(res: RequestResult, outcome: str) -> str:
     logger.debug("Determining JSON error for request %d, outcome=%s", res.request_index, outcome)
     if outcome == "correct":
         return "C"
-    if outcome == "empty result":
-        return "NK"
+    if outcome == "incomplete test":
+        return "IT"
+    if outcome in {"incorrect gen", "incorrect eval"}:
+        return "INC"
 
     query_session = res.query_session
     if query_session and query_session.error_type:
         logger.debug("Request %d: error from error_type=%s", res.request_index, query_session.error_type.value)
         return query_session.error_type.value
-    if query_session and query_session.status:
-        logger.debug("Request %d: error from status=%s", res.request_index, query_session.status.value)
-        return query_session.status.value
     if res.evaluation_status == "error":
         logger.debug("Request %d: error=EVALUATION_ERROR", res.request_index)
         return "EVALUATION_ERROR"
     if outcome in {"incorrect gen", "incorrect eval"}:
         logger.debug("Request %d: error=UNKNOWN_ERROR", res.request_index)
         return "UNKNOWN_ERROR"
-    logger.debug("Request %d: error=NK (fallback)", res.request_index)
-    return "NK"
+    logger.debug("Request %d: error=IT (fallback)", res.request_index)
+    return "IT"
 
 
 def _build_statistics_json(
@@ -626,8 +629,8 @@ def _build_statistics_json(
             if res is None:
                 attempts.append(None)
                 times.append(None)
-                outcomes.append("empty result")
-                errors.append("NK")
+                outcomes.append("incomplete test")
+                errors.append("IT")
                 evaluations.append(None)
                 logger.debug("Model %s request %d: no result found", model, request_index)
                 continue

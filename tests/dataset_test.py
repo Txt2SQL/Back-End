@@ -145,7 +145,7 @@ def run_dataset_test(
 
     threads = []
     for model_key in QUERY_MODELS.keys():
-        db_client = SQLiteClient(database_name) if mode == "db_conn" else None
+        db_client = SQLiteClient(database_name)
         thread = threading.Thread(
             target=generator_thread,
             args=(
