@@ -565,7 +565,7 @@ def _json_error(res: RequestResult, outcome: str) -> str:
     logger.debug("Determining JSON error for request %d, outcome=%s", res.request_index, outcome)
     if outcome == "correct":
         return "C"
-    if outcome == "incomplete test":
+    if outcome in {"incomplete gen", "incomplete eval"}:
         return "IT"
     if outcome in {"incorrect gen", "incorrect eval"}:
         return "INC"
@@ -577,9 +577,6 @@ def _json_error(res: RequestResult, outcome: str) -> str:
     if res.evaluation_status == "error":
         logger.debug("Request %d: error=EVALUATION_ERROR", res.request_index)
         return "EVALUATION_ERROR"
-    if outcome in {"incorrect gen", "incorrect eval"}:
-        logger.debug("Request %d: error=UNKNOWN_ERROR", res.request_index)
-        return "UNKNOWN_ERROR"
     logger.debug("Request %d: error=IT (fallback)", res.request_index)
     return "IT"
 

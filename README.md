@@ -32,6 +32,18 @@ uvicorn main:app --reload
 
 ## MySQL
 
+Avviare il servizio MySQL:
+
+```bash
+net start MySQL
+```
+
+Ferma il servizio MySQL:
+
+```bash
+net stop MySQL
+```
+
 ### Host
 
 ```bash
@@ -75,10 +87,10 @@ mysql://webuser:PietroGasparini237317@87.9.229.214:3306/supermarket?allowPublicK
 ### Custom database
 
 ```bash
-python .\tests\test_sql_generation.py --database-name supermarket --mode text --output-name text
-python .\tests\test_sql_generation.py --database-name hacker_news --mode text --output-name text
-python .\tests\test_sql_generation.py --database-name akaunting --mode text --output-name text
-python .\tests\test_sql_generation.py --database-name monica --mode text --output-name text
+python .\tests\test_sql_generation.py --database-name supermarket  --output-name text
+python .\tests\test_sql_generation.py --database-name hacker_news  --output-name text
+python .\tests\test_sql_generation.py --database-name akaunting  --output-name text
+python .\tests\test_sql_generation.py --database-name monica  --output-name text
 python .\tests\test_sql_generation.py --database-name supermarket --output-name mysql
 python .\tests\test_sql_generation.py --database-name hacker_news --output-name mysql
 python .\tests\test_sql_generation.py --database-name akaunting --output-name mysql
@@ -96,7 +108,7 @@ python .\tests\dataset_test.py --dataset bird --database-name codebase_community
 python .\tests\dataset_test.py --dataset bird --database-name superhero --mode text
 python .\tests\dataset_test.py --dataset bird --database-name formula_1 --mode text
 python .\tests\dataset_test.py --dataset bird --database-name european_football_2 --mode text
-python .\tests\dataset_test.py --dataset bird --database-name thrombosis prediction --mode text
+python .\tests\dataset_test.py --dataset bird --database-name thrombosis_prediction --mode text
 python .\tests\dataset_test.py --dataset bird --database-name student_club --mode text
 python .\tests\dataset_test.py --dataset bird --database-name debit_card_specializing --mode text
 ```
@@ -104,24 +116,22 @@ python .\tests\dataset_test.py --dataset bird --database-name debit_card_special
 ### Spider dataset
 
 ```bash
-python .\tests\dataset_test.py --dataset spider --database-name concert_singer
-python .\tests\dataset_test.py --dataset spider --database-name pets_1
-python .\tests\dataset_test.py --dataset spider --database-name car_1
-python .\tests\dataset_test.py --dataset spider --database-name flight_2
-python .\tests\dataset_test.py --dataset spider --database-name employee_hire_evaluation 
-python .\tests\dataset_test.py --dataset spider --database-name cre_Doc_Template_Mgt
-python .\tests\dataset_test.py --dataset spider --database-name course_teach
-python .\tests\dataset_test.py --dataset spider --database-name museum_visit
-python .\tests\dataset_test.py --dataset spider --database-name wta_1
-python .\tests\dataset_test.py --dataset spider --database-name battle_death
-python .\tests\dataset_test.py --dataset spider --database-name student_transcripts_tracking
-python .\tests\dataset_test.py --dataset spider --database-name tvshow
-python .\tests\dataset_test.py --dataset spider --database-name poker_player
-python .\tests\dataset_test.py --dataset spider --database-name voter_1
-python .\tests\dataset_test.py --dataset spider --database-name world_1
-python .\tests\dataset_test.py --dataset spider --database-name orchestra
-python .\tests\dataset_test.py --dataset spider --database-name network_1
-python .\tests\dataset_test.py --dataset spider --database-name dog_kennels
-python .\tests\dataset_test.py --dataset spider --database-name singer
-python .\tests\dataset_test.py --dataset spider --database-name real_estate_properties
+python .\tests\dataset_test.py --dataset spider --database-name concert_singer --mode text
+python .\tests\dataset_test.py --dataset spider --database-name pets_1 --mode text
+python .\tests\dataset_test.py --dataset spider --database-name car_1 --mode text
+python .\tests\dataset_test.py --dataset spider --database-name flight_2 --mode text
+python .\tests\dataset_test.py --dataset spider --database-name employee_hire_evaluation --mode text 
+python .\tests\dataset_test.py --dataset spider --database-name cre_Doc_Template_Mgt --mode text
+python .\tests\dataset_test.py --dataset spider --database-name course_teach --mode text
+python .\tests\dataset_test.py --dataset spider --database-name museum_visit --mode text
+python .\tests\dataset_test.py --dataset spider --database-name battle_death --mode text
+python .\tests\dataset_test.py --dataset spider --database-name student_transcripts_tracking --mode text
+python .\tests\dataset_test.py --dataset spider --database-name tvshow --mode text
+python .\tests\dataset_test.py --dataset spider --database-name poker_player --mode text
+python .\tests\dataset_test.py --dataset spider --database-name voter_1 --mode text
+python .\tests\dataset_test.py --dataset spider --database-name orchestra  --mode text
+python .\tests\dataset_test.py --dataset spider --database-name network_1 --mode text
+python .\tests\dataset_test.py --dataset spider --database-name dog_kennels --mode text
+python .\tests\dataset_test.py --dataset spider --database-name singer --mode text
+python .\tests\dataset_test.py --dataset spider --database-name real_estate_properties --mode text
 ```

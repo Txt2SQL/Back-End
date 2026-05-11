@@ -1,107 +1,72 @@
-# Model Performance Comparison: `sqlcoder:34b`
+# Model Performance Summary: `sqlcoder:34b`
 
-**Base directory:** `tests\output\generations`
+**Base directory:** `C:\Users\pietr\Desktop\UniTn\Tesi\Progetto Text2SQL\Back-End\tests\output\generations`
 
 Each row compares the same database in `db_conn` mode against `text` mode. Deltas are `db_conn - text`.
 
-## Database
-
-| Database | Tables | Requests | Complexity L/M/H |
-| --- | --- | --- | --- |
-| battle_death | 3 | 16 | 10/4/2 |
-| california_schools | 3 | 89 | 51/26/12 |
-| car_1 | 6 | 92 | 37/22/30 |
-| card_games | 6 | 191 | 139/37/15 |
-| codebase_community | 8 | 186 | 109/51/26 |
-| concert_singer | 4 | 45 | 20/15/10 |
-| course_teach | 3 | 30 | 14/10/6 |
-| cre_Doc_Template_Mgt | 4 | 84 | 48/18/18 |
-| debit_card_specializing | 5 | 64 | 16/24/24 |
-| dog_kennels | 8 | 82 | 44/18/20 |
-| employee_hire_evaluation | 4 | 38 | 22/8/8 |
-| european_football_2 | 7 | 129 | 75/24/30 |
-| financial | 8 | 106 | 21/51/34 |
-| flight_2 | 3 | 80 | 44/16/20 |
-| formula_1 | 13 | 174 | 102/43/29 |
-| museum_visit | 3 | 18 | 10/4/4 |
-| network_1 | 3 | 56 | 18/22/16 |
-| orchestra | 4 | 40 | 26/8/6 |
-| pets_1 | 3 | 42 | 14/16/12 |
-| poker_player | 2 | 40 | 32/6/2 |
-| real_estate_properties | 5 | 4 | 3/1/0 |
-| singer | 2 | 30 | 20/6/4 |
-| student_club | 8 | 158 | 87/42/29 |
-| student_transcripts_tracking | 11 | 78 | 46/8/24 |
-| superhero | 10 | 129 | 47/45/37 |
-| toxicology | 4 | 145 | 82/32/31 |
-| tvshow | 3 | 62 | 44/12/6 |
-| voter_1 | 3 | 15 | 9/2/4 |
-| **MODEL VERDICT** | **146** | **2223** | **1190/571/459** |
-
 ## Status
 
-| Database | Success db_conn | Success text | Success delta | Avg time db_conn | Avg time text | Avg time delta | Avg attempts db_conn | Avg attempts text | Avg attempts delta | Syntax db_conn | Syntax text | Syntax delta | Runtime db_conn |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| battle_death | 56.25% | 25% | +31.25% | 13.35s | 4.4s | +8.95s | 3.75 | 1.31 | +2.44 | 2 | 0 | +2 | 2 |
-| california_schools | 0% | 2.25% | -2.25% | 23.88s | 5.16s | +18.72s | 5.19 | 1.44 | +3.75 | 17 | 0 | +17 | 58 |
-| car_1 | 26.09% | 29.35% | -3.26% | 15.07s | 4.48s | +10.59s | 4.07 | 1.36 | +2.71 | 7 | 0 | +7 | 40 |
-| card_games | 7.33% | 5.76% | +1.57% | 20.62s | 4.62s | +16s | 4.8 | 1.3 | +3.50 | 26 | 0 | +26 | 99 |
-| codebase_community | 24.73% | 11.29% | +13.44% | 20.25s | 6.77s | +13.48s | 4.01 | 1.3 | +2.71 | 18 | 0 | +18 | 53 |
-| concert_singer | 57.78% | 60% | -2.22% | 11.66s | 4.4s | +7.26s | 3.11 | 1.18 | +1.93 | 2 | 0 | +2 | 10 |
-| course_teach | 50% | 46.67% | +3.33% | 13.59s | 4.4s | +9.19s | 4 | 1.33 | +2.67 | 0 | 0 | +0 | 12 |
-| cre_Doc_Template_Mgt | 32.14% | 22.62% | +9.52% | 18.63s | 4.11s | +14.52s | 4.39 | 1.25 | +3.14 | 10 | 0 | +10 | 42 |
-| debit_card_specializing | 3.12% | 1.56% | +1.56% | 21.59s | 5.41s | +16.18s | 4.86 | 1.19 | +3.67 | 9 | 0 | +9 | 26 |
-| dog_kennels | 26.83% | 12.2% | +14.63% | 22.91s | 4.62s | +18.29s | 4.39 | 1.24 | +3.15 | 9 | 0 | +9 | 42 |
-| employee_hire_evaluation | 84.21% | 76.32% | +7.89% | 9.14s | 4.26s | +4.88s | 2.5 | 1.18 | +1.32 | 2 | 0 | +2 | 3 |
-| european_football_2 | 19.38% | 5.43% | +13.95% | 22.63s | 8.48s | +14.15s | 4.67 | 1.31 | +3.36 | 22 | 0 | +22 | 52 |
-| financial | 3.77% | 0% | +3.77% | 27.07s | 6.67s | +20.40s | 4.79 | 1.16 | +3.63 | 13 | 0 | +13 | 55 |
-| flight_2 | 21.25% | 17.5% | +3.75% | 17.33s | 6.94s | +10.39s | 4.55 | 1.12 | +3.43 | 11 | 0 | +11 | 42 |
-| formula_1 | 13.22% | 9.77% | +3.45% | 22.4s | 4.58s | +17.82s | 4.65 | 1.26 | +3.39 | 21 | 0 | +21 | 75 |
-| museum_visit | 44.44% | 61.11% | -16.67% | 15.42s | 13.97s | +1.45s | 3.5 | 1 | +2.50 | 4 | 0 | +4 | 4 |
-| network_1 | 46.43% | 39.29% | +7.14% | 14.25s | 4.35s | +9.90s | 3.91 | 1.27 | +2.64 | 3 | 0 | +3 | 4 |
-| orchestra | 52.5% | 30% | +22.50% | 19.69s | 3.99s | +15.70s | 3.85 | 1.25 | +2.60 | 2 | 0 | +2 | 17 |
-| pets_1 | 45.24% | 21.43% | +23.81% | 14.39s | 3.95s | +10.44s | 3.86 | 1.12 | +2.74 | 3 | 0 | +3 | 18 |
-| poker_player | 87.5% | 77.5% | +10% | 6.54s | 4.01s | +2.53s | 1.82 | 1.2 | +0.62 | 0 | 0 | +0 | 1 |
-| real_estate_properties | 50% | 0% | +50% | 16.34s | 4.77s | +11.57s | 3.75 | 1.25 | +2.50 | 1 | 0 | +1 | 1 |
-| singer | 76.67% | 63.33% | +13.34% | 9.91s | 3.57s | +6.34s | 3 | 1.17 | +1.83 | 1 | 0 | +1 | 4 |
-| student_club | 30.38% | 13.92% | +16.46% | 16.51s | 4.41s | +12.10s | 3.93 | 1.28 | +2.65 | 9 | 0 | +9 | 45 |
-| student_transcripts_tracking | 26.92% | 19.23% | +7.69% | 18.13s | 4.81s | +13.32s | 4.24 | 1.36 | +2.88 | 10 | 0 | +10 | 35 |
-| superhero | 11.63% | 1.55% | +10.08% | 21.55s | 3.4s | +18.15s | 4.82 | 1.37 | +3.45 | 19 | 0 | +19 | 56 |
-| toxicology | 5.52% | 2.76% | +2.76% | 26.37s | 3.64s | +22.73s | 4.69 | 1.28 | +3.41 | 13 | 0 | +13 | 94 |
-| tvshow | 40.32% | 19.35% | +20.97% | 18.15s | 4.5s | +13.65s | 4.13 | 1.19 | +2.94 | 1 | 0 | +1 | 28 |
-| voter_1 | 40% | 26.67% | +13.33% | 15.11s | 4.49s | +10.62s | 3.67 | 1.07 | +2.60 | 0 | 0 | +0 | 4 |
-| **MODEL VERDICT** | **24.43%** | **16.46%** | **+7.96%** | **19.65s** | **5.08s** | **+14.57s** | **4.31** | **1.27** | **+3.04** | **235** | **0** | **+235** | **922** |
+| Database | Success db_conn | Success text | Success delta | Avg time db_conn | Avg time text | Avg time delta | Avg attempts db_conn | Avg attempts text | Avg attempts delta | Syntax db_conn | Syntax text | Syntax delta | Runtime db_conn | Runtime text | Incorrect db_conn | Incorrect text |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| battle_death | 25% | 37.5% | -12.5% | 20.01s | 6.46s | +13.55s | 3.94 | 1.44 | +2.5 | 0 | 0 | +0 | 3 | 8 | 6 | 2 |
+| california_schools | 3.37% | 1.12% | +2.25% | 13.7s | 5.03s | +8.67s | 2.71 | 1.36 | +1.35 | 0 | 0 | +0 | 21 | 86 | 6 | 1 |
+| car_1 | 30.43% | 27.17% | +3.26% | 17.87s | 4.78s | +13.09s | 4.3 | 1.21 | +3.1 | 0 | 0 | +0 | 42 | 51 | 13 | 16 |
+| card_games | 10.99% | 5.76% | +5.24% | 19.03s | 5.73s | +13.31s | 4.7 | 1.35 | +3.35 | 0 | 0 | +0 | 95 | 151 | 35 | 28 |
+| codebase_community | 32.26% | 18.82% | +13.44% | 15.68s | 5.41s | +10.27s | 3.82 | 1.24 | +2.58 | 0 | 0 | +0 | 49 | 106 | 53 | 39 |
+| concert_singer | 60% | 55.56% | +4.44% | 15.79s | 4.65s | +11.15s | 3.31 | 1.27 | +2.04 | 0 | 0 | +0 | 11 | 11 | 5 | 9 |
+| course_teach | 56.67% | 43.33% | +13.33% | 15.15s | 3.97s | +11.18s | 3.63 | 1.1 | +2.53 | 0 | 0 | +0 | 9 | 15 | 2 | 2 |
+| cre_Doc_Template_Mgt | 32.14% | 25% | +7.14% | 19.71s | 4.13s | +15.58s | 4.43 | 1.27 | +3.15 | 0 | 0 | +0 | 36 | 59 | 2 | 4 |
+| debit_card_specializing | 6.25% | 1.56% | +4.69% | 36.69s | 8.46s | +28.23s | 4.55 | 1.27 | +3.28 | 0 | 0 | +0 | 25 | 52 | 24 | 11 |
+| dog_kennels | 29.27% | 9.76% | +19.51% | 23.71s | 4.38s | +19.33s | 4.39 | 1.32 | +3.07 | 0 | 0 | +0 | 45 | 71 | 3 | 3 |
+| employee_hire_evaluation | 73.68% | 65.79% | +7.89% | 11.39s | 4.07s | +7.33s | 2.95 | 1.13 | +1.82 | 0 | 0 | +0 | 3 | 11 | 4 | 2 |
+| european_football_2 | 17.05% | 4.65% | +12.4% | 28.98s | 7.22s | +21.75s | 4.71 | 1.35 | +3.36 | 0 | 0 | +0 | 53 | 100 | 22 | 21 |
+| financial | 4.72% | 0% | +4.72% | 28.28s | 3.7s | +24.58s | 4.68 | 1.33 | +3.35 | 0 | 0 | +0 | 57 | 101 | 29 | 5 |
+| flight_2 | 25% | 20% | +5% | 26.48s | 4.2s | +22.27s | 4.76 | 1.12 | +3.64 | 0 | 0 | +0 | 47 | 61 | 2 | 3 |
+| formula_1 | 17.24% | 8.05% | +9.2% | 21.68s | 4.42s | +17.27s | 4.45 | 1.31 | +3.14 | 0 | 0 | +0 | 75 | 117 | 44 | 43 |
+| museum_visit | 66.67% | 55.56% | +11.11% | 17.15s | 4.39s | +12.76s | 3.22 | 1.17 | +2.06 | 0 | 0 | +0 | 4 | 6 | 1 | 2 |
+| network_1 | 50% | 35.71% | +14.29% | 13.6s | 4.69s | +8.91s | 3.8 | 1.29 | +2.52 | 0 | 0 | +0 | 9 | 26 | 6 | 10 |
+| orchestra | 75% | 25% | +50% | 13.74s | 4.52s | +9.23s | 3.7 | 1.27 | +2.43 | 0 | 0 | +0 | 7 | 28 | 0 | 2 |
+| pets_1 | 38.1% | 30.95% | +7.14% | 15.78s | 4.28s | +11.5s | 4.19 | 1.21 | +2.98 | 0 | 0 | +0 | 18 | 26 | 1 | 3 |
+| poker_player | 90% | 75% | +15% | 6.73s | 4.14s | +2.59s | 1.75 | 1.23 | +0.52 | 0 | 0 | +0 | 1 | 6 | 3 | 4 |
+| real_estate_properties | 0% | 25% | -25% | 23.25s | 5.65s | +17.6s | 5.25 | 1.25 | +4 | 0 | 0 | +0 | 4 | 2 | 0 | 1 |
+| singer | 80% | 66.67% | +13.33% | 9.47s | 3.96s | +5.51s | 2.73 | 1.33 | +1.4 | 0 | 0 | +0 | 5 | 8 | 1 | 2 |
+| student_transcripts_tracking | 30.77% | 16.67% | +14.1% | 26.54s | 4.66s | +21.87s | 4.41 | 1.26 | +3.15 | 0 | 0 | +0 | 38 | 59 | 8 | 6 |
+| superhero | 10.08% | 1.55% | +8.53% | 25.24s | 3.94s | +21.3s | 4.61 | 1.43 | +3.18 | 0 | 0 | +0 | 69 | 119 | 28 | 8 |
+| toxicology | 4.83% | 2.07% | +2.76% | 25.17s | 3.7s | +21.47s | 4.79 | 1.28 | +3.51 | 0 | 0 | +0 | 90 | 132 | 21 | 10 |
+| tvshow | 32.26% | 25.81% | +6.45% | 22.12s | 4.72s | +17.4s | 4.44 | 1.11 | +3.32 | 0 | 0 | +0 | 18 | 37 | 12 | 9 |
+| voter_1 | 26.67% | 33.33% | -6.67% | 18.31s | 5.37s | +12.94s | 4 | 1.13 | +2.87 | 0 | 0 | +0 | 8 | 7 | 3 | 3 |
+| **MODEL VERDICT** | **25.86%** | **16.95%** | **+8.91%** | **21.04s** | **4.86s** | **+16.18s** | **4.21** | **1.28** | **+2.93** | **0** | **0** | **+0** | **842** | **1456** | **334** | **249** |
 
 ## Correlations
 
-| Database | Attempts Pearson float db_conn | Attempts Pearson bool db_conn | Attempts Pearson float text | Attempts Pearson bool text | Attempts Pearson delta | Attempts Spearman float db_conn | Attempts Spearman bool db_conn | Attempts Spearman float text | Attempts Spearman bool text | Attempts Spearman delta | Complexity Pearson float db_conn | Complexity Pearson bool db_conn | Complexity Pearson float text | Complexity Pearson bool text | Complexity Pearson delta | Complexity Spearman float db_conn | Complexity Spearman bool db_conn | Complexity Spearman float text | Complexity Spearman bool text | Complexity Spearman delta |
+| Database | Attempts Pearson stats db_conn | Attempts Pearson p-value db_conn | Attempts Pearson stats text | Attempts Pearson p-value text | Attempts Pearson delta | Attempts Spearman stats db_conn | Attempts Spearman p-value db_conn | Attempts Spearman stats text | Attempts Spearman p-value text | Attempts Spearman delta | Complexity Pearson stats db_conn | Complexity Pearson p-value db_conn | Complexity Pearson stats text | Complexity Pearson p-value text | Complexity Pearson delta | Complexity Spearman stats db_conn | Complexity Spearman p-value db_conn | Complexity Spearman stats text | Complexity Spearman p-value text | Complexity Spearman delta |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| battle_death | -0.7019 | true | -0.3095 | false | -0.3924 | -0.6967 | true | -0.3308 | false | -0.3660 | -0.0991 | false | -0.4543 | false | +0.3551 | -0.2256 | false | -0.5491 | true | +0.3236 |
-| california_schools | N/A | N/A | -0.0838 | false | N/A | N/A | N/A | -0.0987 | false | N/A | N/A | N/A | -0.1609 | false | N/A | N/A | N/A | -0.1719 | false | N/A |
-| car_1 | -0.6752 | true | -0.0233 | false | -0.6519 | -0.6695 | true | -0.0632 | false | -0.6063 | -0.4437 | true | -0.4429 | true | -0.0007 | -0.5193 | true | -0.5169 | true | -0.0024 |
-| card_games | -0.3328 | true | -0.0111 | false | -0.3216 | -0.3303 | true | 0.0245 | false | -0.3548 | -0.1720 | true | -0.0824 | false | -0.0895 | -0.1978 | true | -0.0904 | false | -0.1073 |
-| codebase_community | -0.5547 | true | 0.0621 | false | -0.6168 | -0.5561 | true | 0.0753 | false | -0.6314 | -0.2342 | true | -0.0821 | false | -0.1521 | -0.2410 | true | -0.0638 | false | -0.1772 |
-| concert_singer | -0.6645 | true | 0.0237 | false | -0.6883 | -0.6459 | true | 0.0237 | false | -0.6696 | -0.2005 | false | 0.0724 | false | -0.2729 | -0.2059 | false | 0.0783 | false | -0.2842 |
-| course_teach | -0.3710 | true | 0.0374 | false | -0.4083 | -0.4425 | true | 0.0399 | false | -0.4824 | -0.3395 | false | -0.4223 | true | +0.0828 | -0.3446 | false | -0.4337 | true | +0.0891 |
-| cre_Doc_Template_Mgt | -0.7554 | true | -0.0937 | false | -0.6617 | -0.8156 | true | -0.1225 | false | -0.6931 | 0.2245 | true | 0.3738 | true | -0.1494 | 0.2290 | true | 0.3617 | true | -0.1327 |
-| debit_card_specializing | -0.2505 | true | 0.2063 | false | -0.4569 | -0.2634 | true | 0.2870 | true | -0.5504 | -0.0977 | false | -0.0324 | false | -0.0653 | -0.1601 | false | -0.0285 | false | -0.1316 |
-| dog_kennels | -0.7713 | true | 0.1146 | false | -0.8859 | -0.7425 | true | 0.0938 | false | -0.8363 | -0.1477 | false | -0.0438 | false | -0.1039 | -0.1275 | false | -0.0305 | false | -0.0969 |
-| employee_hire_evaluation | -0.7471 | true | 0.1708 | false | -0.9179 | -0.6272 | true | 0.1907 | false | -0.8179 | 0.0599 | false | 0.1918 | false | -0.1319 | 0.1072 | false | 0.1897 | false | -0.0824 |
-| european_football_2 | -0.5768 | true | -0.1198 | false | -0.4570 | -0.5365 | true | -0.1309 | false | -0.4057 | -0.1751 | false | -0.1296 | false | -0.0454 | -0.1965 | true | -0.1599 | false | -0.0366 |
-| financial | -0.2744 | true | N/A | N/A | N/A | -0.3026 | true | N/A | N/A | N/A | -0.1061 | false | N/A | N/A | N/A | -0.1214 | false | N/A | N/A | N/A |
-| flight_2 | -0.8000 | true | 0.2238 | true | -1.0238 | -0.8245 | true | 0.2238 | true | -1.0483 | -0.0512 | false | -0.1713 | false | +0.1201 | -0.0486 | false | -0.1728 | false | +0.1243 |
-| formula_1 | -0.4591 | true | 0.0210 | false | -0.4801 | -0.3981 | true | -0.0626 | false | -0.3354 | -0.0291 | false | -0.1033 | false | +0.0741 | -0.0141 | false | -0.0994 | false | +0.0853 |
-| museum_visit | -0.7678 | true | N/A | N/A | N/A | -0.7641 | true | N/A | N/A | N/A | -0.2036 | false | -0.2216 | false | +0.0181 | -0.1205 | false | -0.2345 | false | +0.1140 |
-| network_1 | -0.4275 | true | -0.1036 | false | -0.3239 | -0.4821 | true | -0.0136 | false | -0.4685 | -0.4764 | true | -0.1060 | false | -0.3704 | -0.4723 | true | -0.0919 | false | -0.3805 |
-| orchestra | -0.7826 | true | 0.1017 | false | -0.8844 | -0.7858 | true | 0.0882 | false | -0.8740 | -0.2588 | false | -0.0940 | false | -0.1648 | -0.2183 | false | 0.0097 | false | -0.2280 |
-| pets_1 | -0.8102 | true | -0.0083 | false | -0.8019 | -0.7990 | true | 0.0751 | false | -0.8740 | -0.3078 | true | -0.0095 | false | -0.2983 | -0.2882 | false | -0.0194 | false | -0.2687 |
-| poker_player | -0.3121 | true | -0.0299 | false | -0.2821 | -0.2134 | false | -0.0299 | false | -0.1835 | 0.2778 | false | 0.3655 | true | -0.0876 | 0.2901 | false | 0.3755 | true | -0.0854 |
-| real_estate_properties | -0.9113 | false | N/A | N/A | N/A | -0.8944 | false | N/A | N/A | N/A | 1.0000 | true | N/A | N/A | N/A | 1.0000 | true | N/A | N/A | N/A |
-| singer | -0.8014 | true | -0.0254 | false | -0.7760 | -0.7263 | true | 0.0745 | false | -0.8008 | 0.1281 | false | 0.2306 | false | -0.1026 | 0.0000 | false | 0.2384 | false | -0.2384 |
-| student_club | -0.4101 | true | -0.0088 | false | -0.4013 | -0.4045 | true | -0.0073 | false | -0.3971 | -0.1008 | false | 0.0501 | false | -0.1509 | -0.1364 | false | 0.0156 | false | -0.1520 |
-| student_transcripts_tracking | -0.7647 | true | -0.1176 | false | -0.6471 | -0.7350 | true | -0.1405 | false | -0.5944 | -0.2555 | true | -0.1730 | false | -0.0825 | -0.2550 | true | -0.1434 | false | -0.1116 |
-| superhero | -0.3404 | true | -0.0592 | false | -0.2812 | -0.3851 | true | -0.0729 | false | -0.3122 | -0.2013 | true | 0.0026 | false | -0.2038 | -0.2083 | true | 0.0052 | false | -0.2136 |
-| toxicology | -0.1592 | false | -0.0834 | false | -0.0757 | -0.1003 | false | -0.0910 | false | -0.0093 | -0.1320 | false | -0.1495 | false | +0.0175 | -0.1490 | false | -0.1772 | true | +0.0282 |
-| tvshow | -0.5174 | true | 0.0550 | false | -0.5724 | -0.5718 | true | 0.0354 | false | -0.6072 | -0.0774 | false | 0.3935 | true | -0.4709 | -0.1020 | false | 0.3441 | true | -0.4461 |
-| voter_1 | -0.2660 | false | 0.4432 | false | -0.7092 | -0.3154 | false | 0.4432 | false | -0.7586 | 0.1578 | false | 0.0651 | false | +0.0927 | 0.2755 | false | 0.1616 | false | +0.1139 |
-| **MODEL VERDICT** | **-0.5632** | **24/27** | **0.0153** | **1/25** | **-0.5785** | **-0.5566** | **23/27** | **0.0204** | **2/25** | **-0.5771** | **-0.0838** | **9/27** | **-0.0436** | **5/26** | **-0.0402** | **-0.0908** | **9/27** | **-0.0463** | **7/26** | **-0.0445** |
+| battle_death | -0.5571 | 0.0250 (true) | -0.2978 | 0.2625 (false) | -0.2592 | -0.5666 | 0.0221 (true) | -0.2739 | 0.3047 (false) | -0.2927 | -0.2340 | 0.3830 (false) | -0.4617 | 0.0718 (false) | +0.2277 | -0.2261 | 0.3998 (false) | -0.5200 | 0.0389 (true) | +0.2939 |
+| california_schools | -0.0039 | 0.9711 (false) | -0.0616 | 0.5665 (false) | +0.0577 | 0.0096 | 0.9287 (false) | -0.0678 | 0.5276 (false) | +0.0775 | 0.1322 | 0.2170 (false) | -0.0566 | 0.5985 (false) | +0.1887 | 0.1632 | 0.1266 (false) | -0.0643 | 0.5494 (false) | +0.2274 |
+| car_1 | -0.5108 | 1.96e-07 (true) | 0.1328 | 0.2071 (false) | -0.6436 | -0.5632 | 5.09e-09 (true) | 0.1474 | 0.1608 (false) | -0.7106 | -0.3593 | 0.0004 (true) | -0.4093 | 5.10e-05 (true) | +0.0499 | -0.3955 | 9.52e-05 (true) | -0.4668 | 2.73e-06 (true) | +0.0712 |
+| card_games | -0.5335 | 1.92e-15 (true) | 0.0047 | 0.9480 (false) | -0.5383 | -0.5176 | 1.74e-14 (true) | 0.0107 | 0.8827 (false) | -0.5284 | -0.1366 | 0.0595 (false) | -0.1780 | 0.0138 (true) | +0.0414 | -0.1577 | 0.0293 (true) | -0.2178 | 0.0025 (true) | +0.0601 |
+| codebase_community | -0.4793 | 4.51e-12 (true) | 0.0138 | 0.8514 (false) | -0.4931 | -0.4744 | 7.95e-12 (true) | 0.0095 | 0.8975 (false) | -0.4839 | -0.2337 | 0.0013 (true) | -0.1661 | 0.0234 (true) | -0.0675 | -0.2186 | 0.0027 (true) | -0.1750 | 0.0169 (true) | -0.0436 |
+| concert_singer | -0.5538 | 7.94e-05 (true) | -0.0559 | 0.7153 (false) | -0.4979 | -0.5527 | 8.24e-05 (true) | -0.0595 | 0.6980 (false) | -0.4933 | -0.1085 | 0.4779 (false) | -0.0727 | 0.6353 (false) | -0.0359 | -0.1015 | 0.5072 (false) | -0.0684 | 0.6551 (false) | -0.0330 |
+| course_teach | -0.5256 | 0.0029 (true) | -0.0673 | 0.7240 (false) | -0.4583 | -0.6134 | 0.0003 (true) | -0.0673 | 0.7240 (false) | -0.5461 | -0.3619 | 0.0494 (true) | -0.1915 | 0.3107 (false) | -0.1704 | -0.3801 | 0.0383 (true) | -0.1941 | 0.3041 (false) | -0.1860 |
+| cre_Doc_Template_Mgt | -0.6511 | 2.00e-11 (true) | 0.2072 | 0.0586 (false) | -0.8584 | -0.7139 | 2.49e-14 (true) | 0.2300 | 0.0353 (true) | -0.9439 | 0.1201 | 0.2765 (false) | 0.2189 | 0.0455 (true) | -0.0988 | 0.1080 | 0.3281 (false) | 0.2190 | 0.0453 (true) | -0.1110 |
+| debit_card_specializing | -0.3161 | 0.0109 (true) | -0.0623 | 0.6250 (false) | -0.2538 | -0.3319 | 0.0074 (true) | -0.0663 | 0.6026 (false) | -0.2656 | -0.0346 | 0.7858 (false) | 0.0913 | 0.4731 (false) | -0.1259 | 0.0146 | 0.9088 (false) | 0.1924 | 0.1278 (false) | -0.1778 |
+| dog_kennels | -0.6333 | 1.72e-10 (true) | 0.0340 | 0.7618 (false) | -0.6673 | -0.6003 | 2.51e-09 (true) | 0.0622 | 0.5787 (false) | -0.6625 | -0.1111 | 0.3204 (false) | -0.1324 | 0.2358 (false) | +0.0213 | -0.0982 | 0.3801 (false) | -0.1010 | 0.3667 (false) | +0.0028 |
+| employee_hire_evaluation | -0.6321 | 2.08e-05 (true) | -0.0475 | 0.7770 (false) | -0.5846 | -0.5778 | 0.0001 (true) | -0.0475 | 0.7770 (false) | -0.5303 | 0.0087 | 0.9584 (false) | -0.2260 | 0.1724 (false) | +0.2348 | 0.0222 | 0.8948 (false) | -0.2112 | 0.2032 (false) | +0.2334 |
+| european_football_2 | -0.4673 | 2.37e-08 (true) | 0.0437 | 0.6229 (false) | -0.5110 | -0.4359 | 2.43e-07 (true) | 0.0570 | 0.5215 (false) | -0.4928 | -0.1902 | 0.0308 (true) | -0.2060 | 0.0192 (true) | +0.0157 | -0.2424 | 0.0056 (true) | -0.2666 | 0.0023 (true) | +0.0242 |
+| financial | -0.2343 | 0.0156 (true) | NR | NR | NR | -0.2541 | 0.0086 (true) | NR | NR | NR | -0.1004 | 0.3057 (false) | NR | NR | NR | -0.1094 | 0.2643 (false) | NR | NR | NR |
+| flight_2 | -0.6733 | 7.81e-12 (true) | -0.0945 | 0.4044 (false) | -0.5788 | -0.6816 | 3.43e-12 (true) | -0.0945 | 0.4044 (false) | -0.5871 | -0.2249 | 0.0449 (true) | -0.0871 | 0.4422 (false) | -0.1378 | -0.2185 | 0.0515 (false) | -0.0807 | 0.4767 (false) | -0.1378 |
+| formula_1 | -0.4054 | 2.87e-08 (true) | -0.0125 | 0.8701 (false) | -0.3929 | -0.4218 | 6.75e-09 (true) | 0.0105 | 0.8909 (false) | -0.4323 | -0.1490 | 0.0497 (true) | -0.0829 | 0.2766 (false) | -0.0661 | -0.1187 | 0.1187 (false) | -0.0797 | 0.2960 (false) | -0.0391 |
+| museum_visit | -0.8318 | 1.87e-05 (true) | 0.1000 | 0.6930 (false) | -0.9318 | -0.8168 | 3.52e-05 (true) | 0.1000 | 0.6930 (false) | -0.9168 | -0.0585 | 0.8176 (false) | -0.1295 | 0.6084 (false) | +0.0710 | 0.0462 | 0.8556 (false) | -0.1096 | 0.6651 (false) | +0.1558 |
+| network_1 | -0.5516 | 1.05e-05 (true) | -0.2607 | 0.0523 (false) | -0.2909 | -0.5674 | 5.12e-06 (true) | -0.2576 | 0.0553 (false) | -0.3098 | -0.2559 | 0.0570 (false) | -0.1293 | 0.3423 (false) | -0.1266 | -0.2715 | 0.0430 (true) | -0.1405 | 0.3018 (false) | -0.1310 |
+| orchestra | -0.5361 | 0.0004 (true) | 0.2655 | 0.0977 (false) | -0.8016 | -0.5465 | 0.0003 (true) | 0.1619 | 0.3181 (false) | -0.7084 | 0.0711 | 0.6630 (false) | 0.0948 | 0.5608 (false) | -0.0237 | 0.0771 | 0.6365 (false) | 0.1695 | 0.2956 (false) | -0.0925 |
+| pets_1 | -0.7534 | 8.51e-09 (true) | -0.0871 | 0.5835 (false) | -0.6664 | -0.7864 | 6.73e-10 (true) | -0.0685 | 0.6663 (false) | -0.7179 | -0.2382 | 0.1288 (false) | 0.0663 | 0.6767 (false) | -0.3044 | -0.2379 | 0.1292 (false) | 0.0991 | 0.5323 (false) | -0.3370 |
+| poker_player | -0.4423 | 0.0043 (true) | 0.2480 | 0.1228 (false) | -0.6903 | -0.2696 | 0.0925 (false) | 0.2649 | 0.0985 (false) | -0.5345 | 0.4155 | 0.0077 (true) | 0.2399 | 0.1360 (false) | +0.1756 | 0.4681 | 0.0023 (true) | 0.2486 | 0.1219 (false) | +0.2195 |
+| real_estate_properties | NR | NR | -0.3333 | 0.6667 (false) | NR | NR | NR | -0.3333 | 0.6667 (false) | NR | NR | NR | -0.1325 | 0.8675 (false) | NR | NR | NR | 0.0000 | 1.0000 (false) | NR |
+| singer | -0.6334 | 0.0002 (true) | -0.1494 | 0.4307 (false) | -0.4840 | -0.5871 | 0.0006 (true) | -0.1758 | 0.3528 (false) | -0.4113 | 0.0210 | 0.9122 (false) | 0.0198 | 0.9172 (false) | +0.0012 | -0.0693 | 0.7158 (false) | -0.0840 | 0.6588 (false) | +0.0147 |
+| student_transcripts_tracking | -0.6004 | 6.25e-09 (true) | 0.0466 | 0.6852 (false) | -0.6470 | -0.6603 | 4.79e-11 (true) | 0.0730 | 0.5252 (false) | -0.7334 | -0.1238 | 0.2800 (false) | -0.1722 | 0.1317 (false) | +0.0483 | -0.1148 | 0.3168 (false) | -0.1627 | 0.1546 (false) | +0.0479 |
+| superhero | -0.3048 | 0.0004 (true) | 0.0915 | 0.3024 (false) | -0.3963 | -0.3698 | 1.61e-05 (true) | 0.0778 | 0.3808 (false) | -0.4476 | -0.2656 | 0.0023 (true) | 0.0579 | 0.5146 (false) | -0.3235 | -0.3011 | 0.0005 (true) | 0.0375 | 0.6730 (false) | -0.3386 |
+| toxicology | -0.5711 | 6.38e-14 (true) | -0.0642 | 0.4429 (false) | -0.5068 | -0.4312 | 6.15e-08 (true) | -0.0723 | 0.3876 (false) | -0.3589 | -0.1044 | 0.2114 (false) | 0.0147 | 0.8603 (false) | -0.1192 | -0.1201 | 0.1502 (false) | 0.0158 | 0.8506 (false) | -0.1359 |
+| tvshow | -0.4735 | 0.0001 (true) | 0.0196 | 0.8798 (false) | -0.4931 | -0.4848 | 6.52e-05 (true) | 0.0522 | 0.6867 (false) | -0.5371 | 0.0439 | 0.7347 (false) | 0.1829 | 0.1547 (false) | -0.1390 | -0.0343 | 0.7911 (false) | 0.0949 | 0.4630 (false) | -0.1293 |
+| voter_1 | -0.6162 | 0.0144 (true) | -0.2774 | 0.3169 (false) | -0.3388 | -0.6674 | 0.0066 (true) | -0.2774 | 0.3169 (false) | -0.3900 | 0.1166 | 0.6791 (false) | -0.1769 | 0.5283 (false) | +0.2934 | 0.1257 | 0.6554 (false) | -0.0337 | 0.9052 (false) | +0.1593 |
+| **MODEL VERDICT** | **-0.5163** | **4.33e-141 (true)** | **-0.0283** | **0.1993 (false)** | **-0.4881** | **-0.5356** | **1.22e-153 (true)** | **-0.0251** | **0.2542 (false)** | **-0.5105** | **-0.1641** | **6.15e-14 (true)** | **-0.1243** | **1.47e-08 (true)** | **-0.0399** | **-0.1631** | **8.98e-14 (true)** | **-0.1242** | **1.50e-08 (true)** | **-0.0389** |
+
