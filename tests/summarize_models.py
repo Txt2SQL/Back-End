@@ -18,6 +18,7 @@ from config import OUTPUT_DIR
 
 GENERATIONS_DIR = OUTPUT_DIR / "generations"
 MODEL_SUMMARIES_DIR = OUTPUT_DIR / "model_summaries"
+DATABASE_SUMMARY_FILENAME = "databases.md"
 DB_CONN_MODE = "db_conn"
 TEXT_MODE = "text"
 MODE_DIR_CANDIDATES = {
@@ -26,6 +27,8 @@ MODE_DIR_CANDIDATES = {
 }
 CORRECT_OUTCOME = "correct"
 INCORRECT_OUTCOMES = {"incorrect gen", "incorrect eval"}
+LOW_COMPLEXITY_MAX = 3
+MEDIUM_COMPLEXITY_MAX = 6
 
 
 @dataclass
@@ -275,6 +278,113 @@ def _collect_status_values(
     )
 
 
+def _metadata_report(database_reports: DatabaseReports) -> ModeReport:
+    return (
+        database_reports.modes.get(DB_CONN_MODE)
+        or database_reports.modes.get(TEXT_MODE)
+        or next(iter(database_reports.modes.values()))
+    )
+
+
+def _mode_success_rate(report: ModeReport | None) -> float | None:
+    if report is None:
+        return None
+
+    total = 0
+    success = 0
+    for payload in report.models.values():
+        if not isinstance(payload, dict):
+            continue
+        outcomes = _as_list(payload.get("outcomes"))
+        total += len(outcomes)
+        success += sum(1 for outcome in outcomes if outcome == CORRECT_OUTCOME)
+
+    if total == 0:
+        return None
+    return success / total * 100
+
+
+def _complexity_triplet(complexity_vector: list[float | None]) -> tuple[int, int, int]:
+    low = 0
+    medium = 0
+    high = 0
+
+    for score in complexity_vector:
+        if score is None:
+            continue
+        if score <= LOW_COMPLEXITY_MAX:
+            low += 1
+        elif score <= MEDIUM_COMPLEXITY_MAX:
+            medium += 1
+        else:
+            high += 1
+
+    return low, medium, high
+
+
+def _format_triplet(triplet: tuple[int, int, int]) -> str:
+    low, medium, high = triplet
+    return f"({low}/{medium}/{high})"
+
+
+def _database_overview_headers() -> list[str]:
+    return [
+        "Dataset",
+        "Database",
+        "Tables",
+        "Columns",
+        "avg columns",
+        "Requests",
+        "Triplet score",
+        "Complexity score",
+        "Success rate text",
+        "Success rate db_conn",
+    ]
+
+
+def _database_overview_row(database_reports: DatabaseReports) -> list[str]:
+    metadata = _metadata_report(database_reports)
+    num_tables = metadata.num_tables
+    num_columns = metadata.num_columns
+    avg_columns = (
+        num_columns / num_tables
+        if num_columns is not None and num_tables not in (None, 0)
+        else None
+    )
+    complexity_scores = [score for score in metadata.complexity_vector if score is not None]
+
+    return [
+        metadata.dataset or "N/A",
+        database_reports.database,
+        str(num_tables) if num_tables is not None else "N/A",
+        str(num_columns) if num_columns is not None else "N/A",
+        _format_number(avg_columns),
+        str(metadata.num_requests),
+        _format_triplet(_complexity_triplet(metadata.complexity_vector)),
+        _format_number(_average(complexity_scores)),
+        _format_percent(_mode_success_rate(database_reports.modes.get(TEXT_MODE))),
+        _format_percent(_mode_success_rate(database_reports.modes.get(DB_CONN_MODE))),
+    ]
+
+
+def _render_database_overview(databases: list[DatabaseReports], base_dir: Path) -> str:
+    rows = [_database_overview_row(database_reports) for database_reports in databases]
+    return "\n\n".join(
+        [
+            "# Database Overview",
+            f"**Base directory:** `{base_dir}`",
+            (
+                "Triplet score is formatted as `(low/medium/high)` with thresholds "
+                f"`low <= {LOW_COMPLEXITY_MAX}`, "
+                f"`medium <= {MEDIUM_COMPLEXITY_MAX}`, "
+                f"`high > {MEDIUM_COMPLEXITY_MAX}`."
+            ),
+            _markdown_table(_database_overview_headers(), rows),
+            "",
+        ]
+    )
+
+
 def _collect_correlation_values(
     databases: list[DatabaseReports],
     model: str,
@@ -320,6 +430,7 @@ def _status_row(database: str, db_status: ModeStatus, text_status: ModeStatus) -
         str(text_status.runtime),
         str(db_status.incorrect),
         str(text_status.incorrect),
+        _format_delta_int(db_status.incorrect - text_status.incorrect),
     ]
 
 
@@ -522,6 +633,7 @@ def _status_headers() -> list[str]:
         "Runtime text",
         "Incorrect db_conn",
         "Incorrect text",
+        "Incorrect delta",
     ]
 
 
@@ -608,6 +720,13 @@ def write_model_summaries(base_dir: Path, output_dir: Path) -> list[Path]:
         )
         written_paths.append(output_path)
 
+    database_summary_path = output_dir / DATABASE_SUMMARY_FILENAME
+    database_summary_path.write_text(
+        _render_database_overview(databases, base_dir),
+        encoding="utf-8",
+    )
+    written_paths.append(database_summary_path)
+
     return written_paths
 
 
@@ -630,7 +749,11 @@ def main() -> None:
     args = parser.parse_args()
 
     written_paths = write_model_summaries(args.base_dir, args.output_dir)
-    print(f"Wrote {len(written_paths)} model summaries to: {args.output_dir}")
+    model_summary_count = sum(1 for path in written_paths if path.name != DATABASE_SUMMARY_FILENAME)
+    print(
+        f"Wrote {model_summary_count} model summaries and "
+        f"{DATABASE_SUMMARY_FILENAME} to: {args.output_dir}"
+    )
 
 
 if __name__ == "__main__":

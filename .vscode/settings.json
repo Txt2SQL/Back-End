@@ -18,7 +18,7 @@
   "python.testing.pytestEnabled": true,
   "cSpell.words": ["deepseek", "Ollama", "punkt", "pvalue", "sqlcoder"],
   "windowColors.baseColor": "#5c2020",
-  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "python-envs.defaultEnvManager": "ms-python.python:venv",
   "sqltools.connections": [
     {
       "mysqlOptions": {
