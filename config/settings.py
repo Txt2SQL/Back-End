@@ -14,14 +14,6 @@ SCHEMA_MODELS = {
         "api_base": "CHAT_ADDRESS",
         "api_endpoint": "/api/chat/completions",
     },
-    "DeepSeek-V2.5": {
-        "provider": "openwebui",
-        "id": "DeepSeek-V2.5-Q6_K-00001-of-00005.gguf",
-        "api_type": "chat",      # 🔥 key addition
-        "api_key": "CHAT_API_KEY",
-        "api_base": "CHAT_ADDRESS",
-        "api_endpoint": "/api/chat/completions",
-    }
 }
 
 QUERY_MODELS = {
@@ -65,7 +57,7 @@ QUERY_MODELS = {
     # },
     "Qwen3-coder-next": {
         "provider": "openwebui",
-        "id": "qwen3-coder-next",
+        "id": "qwen3-coder-next-q4",
         "api_type": "chat",
         "api_endpoint": "/api/chat/completions",
         "log_file": "Qwen-coder",
