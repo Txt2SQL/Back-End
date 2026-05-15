@@ -207,6 +207,21 @@ def generator_thread(
         else:
             qs = None
 
+        logger.debug(f"Creating QueryOrchestrator")
+
+        # Pass db_client to orchestrator if schema requires it
+        # For SQLite datasets, we always need the client for execution
+        use_db_client = db_client if schema.source == SchemaSource.DB_CONNECTION else None
+        orch = QueryOrchestrator(
+            database_name=database_name,
+            schema_store=schema_store,
+            model_name=model_key,
+            database_client=use_db_client,
+            query_store=qs,
+            max_attempts=3,
+            instance_path=TMP_DIR,
+        )
+
         for idx, request in enumerate(requests, start=1):
             # Set the request index for all logs in this iteration
             LoggerManager.set_request_index(f"[Request: {idx}]")
@@ -218,20 +233,6 @@ def generator_thread(
             start_time = time.time()
 
             try:
-                logger.debug(f"Creating QueryOrchestrator")
-
-                # Pass db_client to orchestrator if schema requires it
-                # For SQLite datasets, we always need the client for execution
-                use_db_client = db_client if schema.source == SchemaSource.DB_CONNECTION else None
-                orch = QueryOrchestrator(
-                    database_name=database_name,
-                    schema_store=schema_store,
-                    model_name=model_key,
-                    database_client=use_db_client,
-                    query_store=qs,
-                    max_attempts=3,
-                    instance_path=TMP_DIR,
-                )
 
                 logger.debug(f"Starting generation")
 

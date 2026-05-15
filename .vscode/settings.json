@@ -16,7 +16,14 @@
   "python.testing.pytestArgs": ["test"],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "cSpell.words": ["deepseek", "Ollama", "punkt", "pvalue", "sqlcoder"],
+  "cSpell.words": [
+    "deepseek",
+    "Ollama",
+    "openwebui",
+    "punkt",
+    "pvalue",
+    "sqlcoder"
+  ],
   "windowColors.baseColor": "#5c2020",
   "python-envs.defaultEnvManager": "ms-python.python:venv",
   "sqltools.connections": [
