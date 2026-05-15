@@ -12,6 +12,7 @@ subprocess that exits with:
 
 import argparse, os, queue,shutil, sys, threading
 from pathlib import Path
+from typing import Sequence
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -98,9 +99,21 @@ def run_dataset_test(
     database_name: str | None,
     dataset_name: str | None,
     mode: str,
+    model_keys: Sequence[str] | None = None,
 ) -> None:
     print("=== DATASET TEST INITIALIZATION ===")
     main_logger.info("Starting dataset test")
+    selected_models = list(model_keys) if model_keys is not None else list(QUERY_MODELS.keys())
+
+    invalid_models = [model for model in selected_models if model not in QUERY_MODELS]
+    if invalid_models:
+        available_models = ", ".join(QUERY_MODELS.keys())
+        raise ValueError(
+            f"Unknown query model(s): {', '.join(invalid_models)}. "
+            f"Available models: {available_models}"
+        )
+    if not selected_models:
+        raise ValueError("At least one query model must be selected.")
 
     if dataset_name is None:
         dataset_name = select_dataset()
@@ -133,18 +146,29 @@ def run_dataset_test(
     thread_safe_query_store = ThreadSafeQueryStore(TMP_DIR / "vector_stores", query_store_lock)
 
     result_queue: queue.Queue = queue.Queue()
-    num_models = len(QUERY_MODELS)
+    num_models = len(selected_models)
     requests = dataset.get_requests(database_name)
 
     printer = threading.Thread(
         target=printer_thread,
-        args=(result_queue, database_name, dataset_name, num_models, len(requests), queries_dir, output_dir, requests, schema),
+        args=(
+            result_queue,
+            database_name,
+            dataset_name,
+            num_models,
+            len(requests),
+            queries_dir,
+            output_dir,
+            requests,
+            schema,
+            selected_models,
+        ),
     )
     printer.start()
     main_logger.info("Printer thread started")
 
     threads = []
-    for model_key in QUERY_MODELS.keys():
+    for model_key in selected_models:
         db_client = SQLiteClient(database_name)
         thread = threading.Thread(
             target=generator_thread,
@@ -194,10 +218,21 @@ def main() -> None:
         default="db_conn",
         help="Schema loading mode. Use 'db_conn' for database connection or 'text' for basic generation.",
     )
+    parser.add_argument(
+        "--llm",
+        dest="llms",
+        action="append",
+        choices=list(QUERY_MODELS.keys()),
+        default=None,
+        help=(
+            "Query model to test. Can be provided multiple times. "
+            "Defaults to all models in QUERY_MODELS."
+        ),
+    )
 
     args = parser.parse_args()
 
-    run_dataset_test(args.database_name, args.dataset, args.mode)
+    run_dataset_test(args.database_name, args.dataset, args.mode, args.llms)
 
 
 if __name__ == "__main__":

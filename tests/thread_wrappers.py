@@ -1,6 +1,6 @@
 import queue, shutil, sys, threading, time, re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 from classes.RAG_service.query_store import QueryStore
 from config import QUERY_MODELS, TIMEOUT_PER_REQUEST, TMP_DIR
@@ -36,6 +36,7 @@ def _progress_bar(done: int, total: int, width: int = 26) -> str:
 def _print_model_progress(
     database_name: str,
     model_progress: Dict[str, int],
+    model_keys: Sequence[str],
     num_requests: int,
     received: int,
     total_expected: int,
@@ -51,7 +52,7 @@ def _print_model_progress(
     )
     lines = [header, "─" * min(term_width, max(30, len(header)))]
 
-    for i, model in enumerate(QUERY_MODELS.keys(), 1):
+    for i, model in enumerate(model_keys, 1):
         done = model_progress.get(model, 0)
         pct = (done / num_requests * 100) if num_requests > 0 else 0
         bar = _progress_bar(done, num_requests)
@@ -67,6 +68,7 @@ def _write_request_file(
     results: Dict[str, RequestResult],
     requests: List[str],
     queries_dir: Path,
+    model_keys: Sequence[str],
 ) -> None:
     """Write a single request output file."""
     request_text = requests[index - 1]
@@ -80,8 +82,8 @@ def _write_request_file(
 
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(f"❇️[Request]\n{request_text}\n\n")
-        # Write results in the same order as models (from config)
-        for i, model_key in enumerate(QUERY_MODELS.keys(), 1):
+        # Write results in the same order selected by the runner.
+        for i, model_key in enumerate(model_keys, 1):
             res = results.get(model_key)
             if res is None:
                 f.write(f"{i}. 🤖[{model_key}]\n\nNo result\n\n")
@@ -103,6 +105,7 @@ def printer_thread(
     output_dir: Path,
     requests: List[str],
     schema: Schema,
+    model_keys: Sequence[str],
 ) -> None:
     """
     Collect results from all threads, write per-request files in order,
@@ -113,12 +116,12 @@ def printer_thread(
     next_index = 1
     total_expected = num_models * num_requests
     received = 0
-    model_progress = {model: 0 for model in QUERY_MODELS.keys()}
+    model_progress = {model: 0 for model in model_keys}
 
     # Use LoggerManager for printer thread
     logger = LoggerManager.get_logger("printer", log_file=output_dir / "logs" / "printer.log")
     logger.info(f"Printer started. Expecting {total_expected} results.")
-    _print_model_progress(database_name, model_progress, num_requests, received, total_expected)
+    _print_model_progress(database_name, model_progress, model_keys, num_requests, received, total_expected)
 
     while received < total_expected:
         try:
@@ -127,7 +130,7 @@ def printer_thread(
             logger.info(f"Received result for request: {idx}, model: {model}")
             if model in model_progress:
                 model_progress[model] += 1
-            _print_model_progress(database_name, model_progress, num_requests, received, total_expected)
+            _print_model_progress(database_name, model_progress, model_keys, num_requests, received, total_expected)
             if idx not in results_by_index:
                 results_by_index[idx] = {}
             results_by_index[idx][model] = res
@@ -140,7 +143,7 @@ def printer_thread(
             # Write any consecutive completed indices starting from next_index
             while next_index in completed_indices:
                 logger.info(f"Writing index {next_index}")
-                _write_request_file(next_index, results_by_index[next_index], requests, queries_dir)
+                _write_request_file(next_index, results_by_index[next_index], requests, queries_dir, model_keys)
                 next_index += 1
 
         except queue.Empty:
@@ -152,7 +155,7 @@ def printer_thread(
     for idx in sorted(results_by_index.keys()):
         if idx >= next_index:
             if len(results_by_index[idx]) == num_models:
-                _write_request_file(idx, results_by_index[idx], requests, queries_dir)
+                _write_request_file(idx, results_by_index[idx], requests, queries_dir, model_keys)
             else:
                 logger.warning(f"Incomplete results for index {idx} (should not happen)")
 
@@ -164,6 +167,7 @@ def printer_thread(
         output_dir / "final_stats.txt",
         num_tables,
         dataset_name,
+        model_keys,
     )
     logger.info("Printer finished.")
     if sys.stdout.isatty():

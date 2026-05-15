@@ -2,7 +2,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TypeAlias
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeAlias
 
 from config import OUTPUT_DIR, QUERY_MODELS
 from src.classes.domain_states import QuerySession, Records, QueryStatus
@@ -213,13 +213,15 @@ def _extract_error_category(session: Optional[QuerySession], fallback_status: Qu
 def aggregate_results(
     results_by_index: ResultsByIndex,
     num_requests: int,
+    model_keys: Sequence[str] | None = None,
 ) -> AggregatedStats:
     logger.info("Starting aggregate_results with num_requests=%d", num_requests)
+    selected_models = list(model_keys) if model_keys is not None else list(QUERY_MODELS.keys())
     stats = AggregatedStats(
         total_requests=num_requests,
-        models={model: ModelStats() for model in QUERY_MODELS.keys()},
+        models={model: ModelStats() for model in selected_models},
     )
-    logger.info("Initialized AggregatedStats with models: %s", list(QUERY_MODELS.keys()))
+    logger.info("Initialized AggregatedStats with models: %s", selected_models)
 
     for request_index, models_dict in results_by_index.items():
         logger.info("Processing request_index=%d with %d models", request_index, len(models_dict))
@@ -588,6 +590,7 @@ def _build_statistics_json(
     stats_path: Path,
     complexity_analysis: ComplexityAnalysis,
     database_report_entry: Dict[str, Any],
+    model_keys: Sequence[str] | None = None,
 ) -> Dict[str, object]:
     logger.info("Building statistics JSON: dataset=%s, num_requests=%d", dataset_name, num_requests)
     mode = _detect_report_mode(stats_path)
@@ -611,8 +614,9 @@ def _build_statistics_json(
                 database_report_entry.get("num_tables"), database_report_entry.get("num_columns"))
 
     models_report: Dict[str, object] = {}
+    selected_models = list(model_keys) if model_keys is not None else list(QUERY_MODELS.keys())
 
-    for model in QUERY_MODELS.keys():
+    for model in selected_models:
         logger.info("Building JSON for model: %s", model)
         attempts: List[Optional[int]] = []
         times: List[Optional[float]] = []
@@ -845,6 +849,7 @@ def write_statistics_report(
     stats_path: Path,
     num_tables: int,
     dataset_name: str,
+    model_keys: Sequence[str] | None = None,
 ) -> None:
     """Aggregate statistics and write to final_stats.txt and final_stats.json."""
     logger.info("=" * 60)
@@ -852,7 +857,7 @@ def write_statistics_report(
     logger.info("Parameters: num_requests=%d, stats_path=%s, num_tables=%d, dataset_name=%s",
                 num_requests, stats_path, num_tables, dataset_name)
     
-    stats = aggregate_results(results_by_index, num_requests)
+    stats = aggregate_results(results_by_index, num_requests, model_keys)
     logger.info("Aggregated stats completed")
 
     rankings = calculate_rankings(stats)
@@ -874,6 +879,7 @@ def write_statistics_report(
         stats_path,
         complexity_analysis,
         database_report_entry,
+        model_keys,
     )
     logger.info("Statistics JSON built")
 
