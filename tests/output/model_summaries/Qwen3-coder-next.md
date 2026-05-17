@@ -9,7 +9,7 @@ Each row compares the same database in `db_conn` mode against `text` mode. Delta
 | Database | Success db_conn | Success text | Success delta | Avg time db_conn | Avg time text | Avg time delta | Avg attempts db_conn | Avg attempts text | Avg attempts delta | Syntax db_conn | Syntax text | Syntax delta | Runtime db_conn | Runtime text | Incorrect db_conn | Incorrect text | Incorrect delta |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | battle_death | 93.75% | 87.5% | +6.25% | 8.07s | 5.6s | +2.48s | 1.38 | 1 | +0.38 | 0 | 0 | +0 | 0 | 0 | 1 | 2 | -1 |
-| california_schools | 34.83% | 24.72% | +10.11% | 12.6s | 7.16s | +5.45s | 1.6 | 2.11 | -0.52 | 0 | 0 | +0 | 0 | 11 | 47 | 26 | +21 |
+| california_schools | 33.71% | 24.72% | +8.99% | 7.84s | 7.16s | +0.68s | 1.78 | 2.11 | -0.34 | 0 | 0 | +0 | 0 | 11 | 50 | 26 | +24 |
 | car_1 | 56.52% | 59.78% | -3.26% | 10.35s | 5.62s | +4.73s | 1.43 | 1 | +0.43 | 0 | 0 | +0 | 0 | 3 | 40 | 34 | +6 |
 | card_games | 37.7% | 31.94% | +5.76% | 14.24s | 8.54s | +5.71s | 1.71 | 1.03 | +0.68 | 0 | 0 | +0 | 0 | 9 | 117 | 119 | -2 |
 | codebase_community | 52.15% | 47.31% | +4.84% | 9.8s | 6.53s | +3.27s | 1.6 | 1 | +0.6 | 0 | 0 | +0 | 0 | 22 | 81 | 69 | +12 |
@@ -31,18 +31,21 @@ Each row compares the same database in `db_conn` mode against `text` mode. Delta
 | real_estate_properties | 50% | 75% | -25% | 11.13s | 4.17s | +6.96s | 2.5 | 1 | +1.5 | 0 | 0 | +0 | 0 | 1 | 2 | 0 | +2 |
 | singer | 100% | 93.33% | +6.67% | 5.42s | 3.58s | +1.85s | 1.03 | 1 | +0.03 | 0 | 0 | +0 | 0 | 0 | 0 | 2 | -2 |
 | student_transcripts_tracking | 66.67% | 61.54% | +5.13% | 11.52s | 5.3s | +6.22s | 1.63 | 1 | +0.63 | 0 | 0 | +0 | 2 | 7 | 23 | 23 | +0 |
-| superhero | 34.88% | 31.78% | +3.1% | 18.59s | 4.14s | +14.45s | 2.78 | 1 | +1.78 | 0 | 0 | +0 | 29 | 51 | 51 | 35 | +16 |
+| superhero | 33.33% | 31.78% | +1.55% | 10.91s | 4.14s | +6.77s | 2.78 | 1 | +1.78 | 0 | 0 | +0 | 28 | 51 | 53 | 35 | +18 |
+| thrombosis_prediction | 14.72% | 6.75% | +7.98% | 8.52s | 3.18s | +5.34s | 1.9 | 1.84 | +0.06 | 0 | 0 | +0 | 0 | 53 | 137 | 69 | +68 |
 | toxicology | 19.31% | 20% | -0.69% | 11.83s | 3.57s | +8.26s | 1.66 | 1 | +0.66 | 0 | 0 | +0 | 2 | 6 | 114 | 109 | +5 |
 | tvshow | 85.48% | 77.42% | +8.06% | 7.8s | 4.53s | +3.28s | 1.74 | 1 | +0.74 | 0 | 0 | +0 | 0 | 5 | 9 | 9 | +0 |
 | voter_1 | 93.33% | 66.67% | +26.67% | 6.3s | 4.08s | +2.22s | 1.27 | 1 | +0.27 | 0 | 0 | +0 | 0 | 4 | 1 | 1 | +0 |
-| **MODEL VERDICT** | **56.76%** | **51.43%** | **+5.33%** | **12.32s** | **5.65s** | **+6.67s** | **1.67** | **1.06** | **+0.61** | **0** | **0** | **+0** | **53** | **269** | **806** | **689** | **+117** |
+| world_1 | 85% | 75.83% | +9.17% | 7.85s | 3.75s | +4.1s | 1.57 | 1 | +0.57 | 0 | 0 | +0 | 0 | 16 | 18 | 13 | +5 |
+| wta_1 | 79.03% | 72.58% | +6.45% | 8.28s | 4.13s | +4.15s | 1.55 | 1 | +0.55 | 0 | 0 | +0 | 3 | 8 | 10 | 9 | +1 |
+| **MODEL VERDICT** | **55.77%** | **50.17%** | **+5.6%** | **11.15s** | **5.35s** | **+5.8s** | **1.68** | **1.1** | **+0.58** | **0** | **0** | **+0** | **55** | **346** | **976** | **780** | **+196** |
 
 ## Correlations
 
 | Database | Attempts Pearson stats db_conn | Attempts Pearson p-value db_conn | Attempts Pearson stats text | Attempts Pearson p-value text | Attempts Pearson delta | Attempts Spearman stats db_conn | Attempts Spearman p-value db_conn | Attempts Spearman stats text | Attempts Spearman p-value text | Attempts Spearman delta | Complexity Pearson stats db_conn | Complexity Pearson p-value db_conn | Complexity Pearson stats text | Complexity Pearson p-value text | Complexity Pearson delta | Complexity Spearman stats db_conn | Complexity Spearman p-value db_conn | Complexity Spearman stats text | Complexity Spearman p-value text | Complexity Spearman delta |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | battle_death | 0.1615 | 0.5501 (false) | NR | NR | NR | 0.1721 | 0.5238 (false) | NR | NR | NR | -0.3386 | 0.1996 (false) | -0.2794 | 0.2947 (false) | -0.0592 | -0.3756 | 0.1517 (false) | -0.4018 | 0.1229 (false) | +0.0262 |
-| california_schools | -0.2610 | 0.0135 (true) | -0.3640 | 0.0005 (true) | +0.1030 | -0.2512 | 0.0176 (true) | -0.3750 | 0.0003 (true) | +0.1238 | -0.2128 | 0.0453 (true) | -0.2488 | 0.0187 (true) | +0.0360 | -0.1942 | 0.0682 (false) | -0.2638 | 0.0125 (true) | +0.0696 |
+| california_schools | -0.2070 | 0.0516 (false) | -0.3640 | 0.0005 (true) | +0.1570 | -0.1788 | 0.0937 (false) | -0.3750 | 0.0003 (true) | +0.1962 | -0.1766 | 0.0978 (false) | -0.2488 | 0.0187 (true) | +0.0722 | -0.1404 | 0.1894 (false) | -0.2638 | 0.0125 (true) | +0.1234 |
 | car_1 | -0.4013 | 7.35e-05 (true) | NR | NR | NR | -0.3646 | 0.0004 (true) | NR | NR | NR | 0.0192 | 0.8559 (false) | -0.0790 | 0.4542 (false) | +0.0982 | 0.0415 | 0.6942 (false) | -0.0866 | 0.4119 (false) | +0.1281 |
 | card_games | -0.1751 | 0.0154 (true) | -0.0420 | 0.5642 (false) | -0.1331 | -0.1388 | 0.0556 (false) | -0.0420 | 0.5642 (false) | -0.0968 | -0.1944 | 0.0070 (true) | -0.2564 | 0.0003 (true) | +0.0620 | -0.1871 | 0.0095 (true) | -0.2652 | 0.0002 (true) | +0.0781 |
 | codebase_community | -0.3602 | 4.41e-07 (true) | NR | NR | NR | -0.3246 | 6.19e-06 (true) | NR | NR | NR | -0.1349 | 0.0665 (false) | -0.1474 | 0.0446 (true) | +0.0126 | -0.1036 | 0.1595 (false) | -0.1361 | 0.0639 (false) | +0.0326 |
@@ -64,9 +67,12 @@ Each row compares the same database in `db_conn` mode against `text` mode. Delta
 | real_estate_properties | -0.4851 | 0.5149 (false) | NR | NR | NR | -0.2357 | 0.7643 (false) | NR | NR | NR | -0.2294 | 0.7706 (false) | 0.6623 | 0.3377 (false) | -0.8917 | 0.0000 | 1.0000 (false) | 0.8165 | 0.1835 (false) | -0.8165 |
 | singer | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR | 0.1984 | 0.2932 (false) | NR | NR | NR | 0.2065 | 0.2737 (false) | NR |
 | student_transcripts_tracking | -0.4089 | 0.0002 (true) | NR | NR | NR | -0.3891 | 0.0004 (true) | NR | NR | NR | -0.3545 | 0.0014 (true) | -0.2258 | 0.0469 (true) | -0.1287 | -0.3572 | 0.0013 (true) | -0.1985 | 0.0815 (false) | -0.1587 |
-| superhero | -0.4945 | 2.58e-09 (true) | NR | NR | NR | -0.4738 | 1.42e-08 (true) | NR | NR | NR | -0.0639 | 0.4721 (false) | -0.0154 | 0.8628 (false) | -0.0485 | -0.0925 | 0.2971 (false) | -0.0069 | 0.9377 (false) | -0.0856 |
+| superhero | -0.4207 | 6.89e-07 (true) | NR | NR | NR | -0.3944 | 3.75e-06 (true) | NR | NR | NR | -0.0797 | 0.3690 (false) | -0.0154 | 0.8628 (false) | -0.0644 | -0.1139 | 0.1988 (false) | -0.0069 | 0.9377 (false) | -0.1069 |
+| thrombosis_prediction | -0.0967 | 0.2194 (false) | -0.0819 | 0.2986 (false) | -0.0148 | -0.0676 | 0.3909 (false) | -0.0592 | 0.4531 (false) | -0.0085 | -0.1902 | 0.0150 (true) | -0.1159 | 0.1406 (false) | -0.0743 | -0.1871 | 0.0168 (true) | -0.1102 | 0.1615 (false) | -0.0770 |
 | toxicology | -0.2581 | 0.0017 (true) | NR | NR | NR | -0.2879 | 0.0004 (true) | NR | NR | NR | -0.2657 | 0.0012 (true) | -0.2263 | 0.0062 (true) | -0.0393 | -0.3123 | 0.0001 (true) | -0.2803 | 0.0006 (true) | -0.0320 |
 | tvshow | -0.0819 | 0.5267 (false) | NR | NR | NR | -0.0540 | 0.6770 (false) | NR | NR | NR | -0.2068 | 0.1067 (false) | -0.3768 | 0.0025 (true) | +0.1699 | -0.2010 | 0.1173 (false) | -0.3025 | 0.0168 (true) | +0.1016 |
 | voter_1 | -0.4432 | 0.0980 (false) | NR | NR | NR | -0.4432 | 0.0980 (false) | NR | NR | NR | -0.2796 | 0.3129 (false) | 0.6110 | 0.0155 (true) | -0.8906 | -0.2864 | 0.3007 (false) | 0.6904 | 0.0044 (true) | -0.9768 |
-| **MODEL VERDICT** | **-0.4042** | **5.27e-82 (true)** | **-0.1261** | **8.94e-09 (true)** | **-0.2781** | **-0.3843** | **1.18e-73 (true)** | **-0.1318** | **1.84e-09 (true)** | **-0.2525** | **-0.2050** | **5.03e-21 (true)** | **-0.1536** | **2.24e-12 (true)** | **-0.0513** | **-0.2122** | **1.90e-22 (true)** | **-0.1676** | **1.75e-14 (true)** | **-0.0445** |
+| world_1 | -0.3201 | 0.0004 (true) | NR | NR | NR | -0.2737 | 0.0025 (true) | NR | NR | NR | -0.2025 | 0.0265 (true) | -0.1281 | 0.1633 (false) | -0.0745 | -0.2275 | 0.0125 (true) | -0.1457 | 0.1122 (false) | -0.0817 |
+| wta_1 | -0.5829 | 6.67e-07 (true) | NR | NR | NR | -0.4296 | 0.0005 (true) | NR | NR | NR | 0.0278 | 0.8301 (false) | -0.1469 | 0.2544 (false) | +0.1747 | 0.0458 | 0.7239 (false) | -0.1274 | 0.3238 (false) | +0.1732 |
+| **MODEL VERDICT** | **-0.3872** | **5.11e-87 (true)** | **-0.1643** | **4.87e-16 (true)** | **-0.2229** | **-0.3646** | **1.20e-76 (true)** | **-0.1684** | **8.56e-17 (true)** | **-0.1961** | **-0.1977** | **1.17e-22 (true)** | **-0.1503** | **1.18e-13 (true)** | **-0.0473** | **-0.2071** | **9.47e-25 (true)** | **-0.1681** | **9.78e-17 (true)** | **-0.0390** |
 

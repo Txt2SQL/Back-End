@@ -63,6 +63,13 @@ class ModeStatus:
             return None
         return self.success / self.total * 100
 
+    @property
+    def incorrect_rate(self) -> float | None:
+        executable = self.success + self.incorrect
+        if executable == 0:
+            return None
+        return self.incorrect / executable * 100
+
 
 @dataclass
 class CorrelationResult:
@@ -431,6 +438,9 @@ def _status_row(database: str, db_status: ModeStatus, text_status: ModeStatus) -
         str(db_status.incorrect),
         str(text_status.incorrect),
         _format_delta_int(db_status.incorrect - text_status.incorrect),
+        _format_percent(db_status.incorrect_rate),
+        _format_percent(text_status.incorrect_rate),
+        _format_delta_percent(_delta(db_status.incorrect_rate, text_status.incorrect_rate)),
     ]
 
 
@@ -634,6 +644,9 @@ def _status_headers() -> list[str]:
         "Incorrect db_conn",
         "Incorrect text",
         "Incorrect delta",
+        "Incorrect perc db_conn",
+        "Incorrect perc text",
+        "Incorrect perc delta",
     ]
 
 

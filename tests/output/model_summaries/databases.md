@@ -7,10 +7,10 @@ Triplet score is formatted as `(low/medium/high)` with thresholds `low <= 3`, `m
 | Dataset | Database | Tables | Columns | avg columns | Requests | Triplet score | Complexity score | Success rate text | Success rate db_conn |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | spider | battle_death | 3 | 18 | 6 | 16 | (12/3/1) | 2.56 | 47.92% | 71.88% |
-| bird | california_schools | 3 | 89 | 29.67 | 89 | (52/34/3) | 3 | 8.24% | 21.54% |
+| bird | california_schools | 3 | 89 | 29.67 | 89 | (52/34/3) | 3 | 8.61% | 23.78% |
 | spider | car_1 | 6 | 23 | 3.83 | 92 | (42/36/14) | 4.37 | 29.35% | 48.73% |
-| bird | card_games | 6 | 115 | 19.17 | 191 | (142/45/4) | 2.25 | 12.74% | 24.96% |
-| bird | codebase_community | 8 | 71 | 8.88 | 186 | (122/53/11) | 3.05 | 20.97% | 36.92% |
+| bird | card_games | 6 | 115 | 19.17 | 191 | (142/45/4) | 2.25 | 12.74% | 27.14% |
+| bird | codebase_community | 8 | 71 | 8.88 | 186 | (122/53/11) | 3.05 | 20.97% | 44.27% |
 | spider | concert_singer | 4 | 21 | 5.25 | 45 | (26/19/0) | 2.87 | 50.37% | 76.3% |
 | spider | course_teach | 3 | 10 | 3.33 | 30 | (14/14/2) | 2.87 | 43.89% | 78.33% |
 | spider | cre_Doc_Template_Mgt | 4 | 17 | 4.25 | 84 | (50/34/0) | 2.69 | 38.89% | 78.17% |
@@ -18,9 +18,9 @@ Triplet score is formatted as `(low/medium/high)` with thresholds `low <= 3`, `m
 | spider | dog_kennels | 8 | 49 | 6.12 | 82 | (54/14/14) | 3.22 | 29.88% | 62.2% |
 | spider | employee_hire_evaluation | 4 | 17 | 4.25 | 38 | (24/14/0) | 2.63 | 58.77% | 88.6% |
 | bird | european_football_2 | 7 | 199 | 28.43 | 129 | (76/38/15) | 3.5 | 19.38% | 34.5% |
-| bird | financial | 8 | 55 | 6.88 | 106 | (21/69/16) | 4.64 | 6.13% | 15.88% |
+| bird | financial | 8 | 55 | 6.88 | 106 | (21/69/16) | 4.64 | 5.97% | 15.88% |
 | spider | flight_2 | 3 | 13 | 4.33 | 80 | (44/32/4) | 3.05 | 43.96% | 74.58% |
-| bird | formula_1 | 13 | 94 | 7.23 | 174 | (103/52/19) | 3.31 | 11.88% | 27.01% |
+| bird | formula_1 | 13 | 94 | 7.23 | 174 | (103/52/19) | 3.31 | 11.88% | 33.05% |
 | spider | museum_visit | 3 | 12 | 4 | 18 | (11/5/2) | 3.11 | 49.07% | 87.96% |
 | spider | network_1 | 3 | 7 | 2.33 | 56 | (20/30/6) | 3.79 | 39.58% | 69.05% |
 | spider | orchestra | 4 | 23 | 5.75 | 40 | (26/10/4) | 2.6 | 46.25% | 89.58% |
@@ -29,8 +29,11 @@ Triplet score is formatted as `(low/medium/high)` with thresholds `low <= 3`, `m
 | spider | real_estate_properties | 5 | 37 | 7.4 | 4 | (3/1/0) | 2.25 | 29.17% | 41.67% |
 | spider | singer | 2 | 10 | 5 | 30 | (20/8/2) | 2.27 | 66.67% | 90.56% |
 | spider | student_transcripts_tracking | 11 | 56 | 5.09 | 78 | (46/24/8) | 2.95 | 26.28% | 54.06% |
-| bird | superhero | 10 | 31 | 3.1 | 129 | (49/68/12) | 3.95 | 12.14% | 22.09% |
-| bird | toxicology | 4 | 11 | 2.75 | 145 | (83/44/18) | 3.39 | 7.59% | 12.87% |
+| bird | superhero | 10 | 31 | 3.1 | 129 | (49/68/12) | 3.95 | 11.89% | 27.13% |
+| bird | thrombosis_prediction | 3 | 64 | 21.33 | 163 | (78/82/3) | 3.28 | 2.25% | 10.63% |
+| bird | toxicology | 4 | 11 | 2.75 | 145 | (83/44/18) | 3.39 | 7.59% | 15.4% |
 | spider | tvshow | 3 | 25 | 8.33 | 62 | (46/16/0) | 1.87 | 34.95% | 71.51% |
 | spider | voter_1 | 3 | 9 | 3 | 15 | (10/3/2) | 2.93 | 42.22% | 71.11% |
+| spider | world_1 | 4 | 26 | 6.5 | 120 | (66/42/12) | 3.13 | 34.44% | 65.83% |
+| spider | wta_1 | 3 | 43 | 14.33 | 62 | (36/26/0) | 2.65 | 35.75% | 68.55% |
 

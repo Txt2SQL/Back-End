@@ -254,9 +254,29 @@ class SpiderDataset(BaseDataset):
 
             command = self._build_spider_command(gold_file, pred_file)
 
-            exec_result = subprocess.run(
-                command, capture_output=True, text=True, check=False, env=nltk_env
-            )
+            try:
+                exec_result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env=nltk_env,
+                    timeout=300,
+                )
+            except subprocess.TimeoutExpired as exc:
+                self.logger.warning(
+                    "Spider evaluation timed out after %s seconds for db_id=%s question_index=%s",
+                    exc.timeout,
+                    db_id,
+                    question_index,
+                )
+                return OfficialEvalReport(
+                    execution_accuracy=0.0,
+                    official_match=False,
+                    returncode=-1,
+                    stdout=exc.stdout or "", # pyright: ignore[reportArgumentType]
+                    stderr=exc.stderr or "Spider evaluation timed out after 300 seconds.", # pyright: ignore[reportArgumentType]
+                )
 
             execution_accuracy = self._extract_metric(exec_result.stdout, "Execution Accuracy")
             official_match = execution_accuracy == 1.0
