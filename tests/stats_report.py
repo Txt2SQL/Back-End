@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeAlias
 
-from config import OUTPUT_DIR, QUERY_MODELS
+from config import QUERY_MODELS, INPUT_DIR
 from src.classes.domain_states import QuerySession, Records, QueryStatus
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ class RequestResult:
 
 ResultsByIndex: TypeAlias = Dict[int, Dict[str, RequestResult]]
 
-DATABASE_REPORT_PATH = OUTPUT_DIR / "database_report.json"
+DATABASE_REPORT_PATH = INPUT_DIR / "datasets" / "database_report.json"
 
 
 @dataclass

@@ -18,7 +18,7 @@ from config import OUTPUT_DIR
 
 
 GENERATIONS_DIR = OUTPUT_DIR / "generations"
-MODEL_SUMMARIES_DIR = OUTPUT_DIR / "model_summaries"
+STATS_DIR = OUTPUT_DIR / "stats"
 DATABASE_SUMMARY_FILENAME = "databases.md"
 MODEL_SUMMARY_FILENAME = "summary.md"
 STATUS_CSV_FILENAME = "status.csv"
@@ -807,8 +807,8 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=MODEL_SUMMARIES_DIR,
-        help="Directory where model Markdown summaries are written. Defaults to tests/output/model_summaries.",
+        default=STATS_DIR,
+        help="Directory where model Markdown summaries are written. Defaults to tests/output/stats.",
     )
     args = parser.parse_args()
 

@@ -9,7 +9,7 @@ from typing import Any
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config import OUTPUT_DIR
+from config import INPUT_DIR
 from src.classes.datasets import BirdDataset, SpiderDataset
 from src.classes.datasets.base_dataset import BaseDataset
 
@@ -93,7 +93,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=OUTPUT_DIR / "database_report.json",
+        default=INPUT_DIR / "datasets" / "database_report.json",
         help="Output JSON path. Defaults to tests/output/database_report.json.",
     )
     args = parser.parse_args()
