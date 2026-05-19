@@ -588,30 +588,16 @@ def _build_statistics_json(
     num_requests: int,
     dataset_name: str,
     stats_path: Path,
-    complexity_analysis: ComplexityAnalysis,
-    database_report_entry: Dict[str, Any],
     model_keys: Sequence[str] | None = None,
 ) -> Dict[str, object]:
     logger.info("Building statistics JSON: dataset=%s, num_requests=%d", dataset_name, num_requests)
     mode = _detect_report_mode(stats_path)
     logger.info("Report mode: %s", mode)
-    complexity_average = complexity_analysis.average_score
-    logger.info("Complexity average: %s", complexity_average)
 
     json_report: Dict[str, object] = {
         "dataset": dataset_name,
-        "num_tables": database_report_entry.get("num_tables"),
-        "num_columns": database_report_entry.get("num_columns"),
-        "num_requests": num_requests,
-        "complexity_vector": [
-            complexity_analysis.request_scores[index]
-            for index in range(1, num_requests + 1)
-        ],
-        "complexity_average_score": round(complexity_average, 2) if complexity_average is not None else None,
         "models": {},
     }
-    logger.info("JSON report metadata: num_tables=%s, num_columns=%s",
-                database_report_entry.get("num_tables"), database_report_entry.get("num_columns"))
 
     models_report: Dict[str, object] = {}
     selected_models = list(model_keys) if model_keys is not None else list(QUERY_MODELS.keys())
@@ -877,8 +863,6 @@ def write_statistics_report(
         num_requests,
         dataset_name,
         stats_path,
-        complexity_analysis,
-        database_report_entry,
         model_keys,
     )
     logger.info("Statistics JSON built")

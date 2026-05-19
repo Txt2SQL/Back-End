@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 import math
 import os
@@ -19,6 +20,9 @@ from config import OUTPUT_DIR
 GENERATIONS_DIR = OUTPUT_DIR / "generations"
 MODEL_SUMMARIES_DIR = OUTPUT_DIR / "model_summaries"
 DATABASE_SUMMARY_FILENAME = "databases.md"
+MODEL_SUMMARY_FILENAME = "summary.md"
+STATUS_CSV_FILENAME = "status.csv"
+CORRELATIONS_CSV_FILENAME = "correlations.csv"
 DB_CONN_MODE = "db_conn"
 TEXT_MODE = "text"
 MODE_DIR_CANDIDATES = {
@@ -620,8 +624,13 @@ def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
-def _filename_for_model(model: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", model).strip("_") + ".md"
+def _safe_name_for_model(model: str) -> str:
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", model).strip("_")
+    return safe_name or "model"
+
+
+def _report_dirname_for_model(model: str) -> str:
+    return f"{_safe_name_for_model(model)}_report"
 
 
 def _status_headers() -> list[str]:
@@ -676,7 +685,10 @@ def _correlation_headers() -> list[str]:
     ]
 
 
-def _render_model_summary(model: str, databases: list[DatabaseReports], base_dir: Path) -> str:
+def _model_summary_tables(
+    model: str,
+    databases: list[DatabaseReports],
+) -> tuple[list[list[str]], list[list[str]]]:
     status_rows: list[list[str]] = []
     correlation_rows: list[list[str]] = []
 
@@ -696,8 +708,21 @@ def _render_model_summary(model: str, databases: list[DatabaseReports], base_dir
 
     db_status_total = _collect_status_values(databases, model, DB_CONN_MODE)
     text_status_total = _collect_status_values(databases, model, TEXT_MODE)
-    status_rows.append(_bold_row(_status_row("MODEL VERDICT", db_status_total, text_status_total)))
-    correlation_rows.append(_bold_row(_model_verdict_correlation_row(databases, model)))
+    status_rows.append(_status_row("MODEL VERDICT", db_status_total, text_status_total))
+    correlation_rows.append(_model_verdict_correlation_row(databases, model))
+
+    return status_rows, correlation_rows
+
+
+def _render_model_summary(
+    model: str,
+    databases: list[DatabaseReports],
+    base_dir: Path,
+    status_rows: list[list[str]] | None = None,
+    correlation_rows: list[list[str]] | None = None,
+) -> str:
+    if status_rows is None or correlation_rows is None:
+        status_rows, correlation_rows = _model_summary_tables(model, databases)
 
     return "\n\n".join(
         [
@@ -705,16 +730,29 @@ def _render_model_summary(model: str, databases: list[DatabaseReports], base_dir
             f"**Base directory:** `{base_dir}`",
             "Each row compares the same database in `db_conn` mode against `text` mode. Deltas are `db_conn - text`.",
             "## Status",
-            _markdown_table(_status_headers(), status_rows),
+            _markdown_table(_status_headers(), _with_bold_total_row(status_rows)),
             "## Correlations",
-            _markdown_table(_correlation_headers(), correlation_rows),
+            _markdown_table(_correlation_headers(), _with_bold_total_row(correlation_rows)),
             "",
         ]
     )
 
 
+def _with_bold_total_row(rows: list[list[str]]) -> list[list[str]]:
+    if not rows:
+        return rows
+    return [*rows[:-1], _bold_row(rows[-1])]
+
+
 def _bold_row(row: list[str]) -> list[str]:
     return [cell if cell.startswith("**") and cell.endswith("**") else f"**{cell}**" for cell in row]
+
+
+def _write_csv(path: Path, headers: list[str], rows: list[list[str]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(headers)
+        writer.writerows(rows)
 
 
 def write_model_summaries(base_dir: Path, output_dir: Path) -> list[Path]:
@@ -726,12 +764,25 @@ def write_model_summaries(base_dir: Path, output_dir: Path) -> list[Path]:
     written_paths: list[Path] = []
 
     for model in _all_models(databases):
-        output_path = output_dir / _filename_for_model(model)
-        output_path.write_text(
-            _render_model_summary(model, databases, base_dir),
+        model_output_dir = output_dir / _report_dirname_for_model(model)
+        model_output_dir.mkdir(parents=True, exist_ok=True)
+
+        status_rows, correlation_rows = _model_summary_tables(model, databases)
+
+        summary_path = model_output_dir / MODEL_SUMMARY_FILENAME
+        summary_path.write_text(
+            _render_model_summary(model, databases, base_dir, status_rows, correlation_rows),
             encoding="utf-8",
         )
-        written_paths.append(output_path)
+        written_paths.append(summary_path)
+
+        status_csv_path = model_output_dir / STATUS_CSV_FILENAME
+        _write_csv(status_csv_path, _status_headers(), status_rows)
+        written_paths.append(status_csv_path)
+
+        correlations_csv_path = model_output_dir / CORRELATIONS_CSV_FILENAME
+        _write_csv(correlations_csv_path, _correlation_headers(), correlation_rows)
+        written_paths.append(correlations_csv_path)
 
     database_summary_path = output_dir / DATABASE_SUMMARY_FILENAME
     database_summary_path.write_text(
@@ -762,9 +813,9 @@ def main() -> None:
     args = parser.parse_args()
 
     written_paths = write_model_summaries(args.base_dir, args.output_dir)
-    model_summary_count = sum(1 for path in written_paths if path.name != DATABASE_SUMMARY_FILENAME)
+    model_summary_count = sum(1 for path in written_paths if path.name == MODEL_SUMMARY_FILENAME)
     print(
-        f"Wrote {model_summary_count} model summaries and "
+        f"Wrote {model_summary_count} model report folders and "
         f"{DATABASE_SUMMARY_FILENAME} to: {args.output_dir}"
     )
 
