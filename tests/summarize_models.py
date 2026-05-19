@@ -19,8 +19,9 @@ from config import OUTPUT_DIR
 
 GENERATIONS_DIR = OUTPUT_DIR / "generations"
 STATS_DIR = OUTPUT_DIR / "stats"
-DATABASE_SUMMARY_FILENAME = "databases.md"
+DATABASE_REPORT_DIRNAME = "databases_report"
 MODEL_SUMMARY_FILENAME = "summary.md"
+SUMMARY_CSV_FILENAME = "summary.csv"
 STATUS_CSV_FILENAME = "status.csv"
 CORRELATIONS_CSV_FILENAME = "correlations.csv"
 DB_CONN_MODE = "db_conn"
@@ -378,8 +379,18 @@ def _database_overview_row(database_reports: DatabaseReports) -> list[str]:
     ]
 
 
-def _render_database_overview(databases: list[DatabaseReports], base_dir: Path) -> str:
-    rows = [_database_overview_row(database_reports) for database_reports in databases]
+def _database_overview_rows(databases: list[DatabaseReports]) -> list[list[str]]:
+    return [_database_overview_row(database_reports) for database_reports in databases]
+
+
+def _render_database_overview(
+    databases: list[DatabaseReports],
+    base_dir: Path,
+    rows: list[list[str]] | None = None,
+) -> str:
+    if rows is None:
+        rows = _database_overview_rows(databases)
+
     return "\n\n".join(
         [
             "# Database Overview",
@@ -784,12 +795,20 @@ def write_model_summaries(base_dir: Path, output_dir: Path) -> list[Path]:
         _write_csv(correlations_csv_path, _correlation_headers(), correlation_rows)
         written_paths.append(correlations_csv_path)
 
-    database_summary_path = output_dir / DATABASE_SUMMARY_FILENAME
+    database_output_dir = output_dir / DATABASE_REPORT_DIRNAME
+    database_output_dir.mkdir(parents=True, exist_ok=True)
+    database_rows = _database_overview_rows(databases)
+
+    database_summary_path = database_output_dir / MODEL_SUMMARY_FILENAME
     database_summary_path.write_text(
-        _render_database_overview(databases, base_dir),
+        _render_database_overview(databases, base_dir, database_rows),
         encoding="utf-8",
     )
     written_paths.append(database_summary_path)
+
+    database_csv_path = database_output_dir / SUMMARY_CSV_FILENAME
+    _write_csv(database_csv_path, _database_overview_headers(), database_rows)
+    written_paths.append(database_csv_path)
 
     return written_paths
 
@@ -813,10 +832,14 @@ def main() -> None:
     args = parser.parse_args()
 
     written_paths = write_model_summaries(args.base_dir, args.output_dir)
-    model_summary_count = sum(1 for path in written_paths if path.name == MODEL_SUMMARY_FILENAME)
+    model_summary_count = sum(
+        1
+        for path in written_paths
+        if path.name == MODEL_SUMMARY_FILENAME and path.parent.name != DATABASE_REPORT_DIRNAME
+    )
     print(
         f"Wrote {model_summary_count} model report folders and "
-        f"{DATABASE_SUMMARY_FILENAME} to: {args.output_dir}"
+        f"{DATABASE_REPORT_DIRNAME} to: {args.output_dir}"
     )
 
 
