@@ -74,7 +74,7 @@ Each row compares the same database in `db_conn` mode against `text` mode. Delta
 | voter_1 | -0.2549 | 0.3592 (false) | NR | NR | NR | -0.1815 | 0.5174 (false) | NR | NR | NR |
 | world_1 | -0.1257 | 0.1714 (false) | NR | NR | NR | -0.0381 | 0.6793 (false) | NR | NR | NR |
 | wta_1 | -0.3840 | 0.0021 (true) | NR | NR | NR | -0.1952 | 0.1284 (false) | NR | NR | NR |
-| **MODEL VERDICT** | **-0.3601** | **1.06e-74 (true)** | **-0.0940** | **3.76e-06 (true)** | **-0.2661** | **-0.3388** | **8.16e-66 (true)** | **-0.1004** | **7.90e-07 (true)** | **-0.2385** |
+| **MODEL'S TOTAL** | **-0.3601** | **1.06e-74 (true)** | **-0.0940** | **3.76e-06 (true)** | **-0.2661** | **-0.3388** | **8.16e-66 (true)** | **-0.1004** | **7.90e-07 (true)** | **-0.2385** |
 
 ## Complexity Correlations
 
@@ -110,41 +110,6 @@ Each row compares the same database in `db_conn` mode against `text` mode. Delta
 | voter_1 | -0.3434 | 0.2102 (false) | -0.1427 | 0.6119 (false) | -0.2007 | -0.3036 | 0.2714 (false) | -0.1868 | 0.5050 (false) | -0.1168 |
 | world_1 | -0.2760 | 0.0023 (true) | -0.2783 | 0.0021 (true) | +0.0023 | -0.3023 | 0.0008 (true) | -0.2842 | 0.0017 (true) | -0.0181 |
 | wta_1 | -0.1245 | 0.3349 (false) | -0.3744 | 0.0027 (true) | +0.2498 | -0.1129 | 0.3825 (false) | -0.3665 | 0.0034 (true) | +0.2536 |
-| **MODEL VERDICT** | **-0.2035** | **5.96e-24 (true)** | **-0.1959** | **2.80e-22 (true)** | **-0.0076** | **-0.2135** | **3.07e-26 (true)** | **-0.2080** | **5.75e-25 (true)** | **-0.0055** |
-
-## Avg columns correlations
-
-| Database | Pearson stats db_conn | Pearson p-value db_conn | Pearson stats text | Pearson p-value text | Pearson delta | Spearman stats db_conn | Spearman p-value db_conn | Spearman stats text | Spearman p-value text | Spearman delta |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| battle_death | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| california_schools | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| car_1 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| card_games | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| codebase_community | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| concert_singer | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| course_teach | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| cre_Doc_Template_Mgt | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| debit_card_specializing | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| dog_kennels | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| employee_hire_evaluation | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| european_football_2 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| financial | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| flight_2 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| formula_1 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| museum_visit | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| network_1 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| orchestra | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| pets_1 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| poker_player | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| real_estate_properties | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| singer | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| student_transcripts_tracking | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| superhero | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| thrombosis_prediction | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| toxicology | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| tvshow | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| voter_1 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| world_1 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| wta_1 | NR | NR | NR | NR | NR | NR | NR | NR | NR | NR |
-| **MODEL VERDICT** | **-0.2776** | **6.72e-44 (true)** | **-0.2240** | **8.52e-29 (true)** | **-0.0536** | **-0.2124** | **5.66e-26 (true)** | **-0.2057** | **1.98e-24 (true)** | **-0.0067** |
+| **MODEL'S TOTAL** | -0.2035 | 5.96e-24 (true) | -0.1959 | 2.80e-22 (true) | -0.0076 | -0.2135 | 3.07e-26 (true) | -0.2080 | 5.75e-25 (true) | -0.0055 |
+| **AVG COLUMNS** | **-0.2776** | **6.72e-44 (true)** | **-0.2240** | **8.52e-29 (true)** | **-0.0536** | **-0.2124** | **5.66e-26 (true)** | **-0.2057** | **1.98e-24 (true)** | **-0.0067** |
 

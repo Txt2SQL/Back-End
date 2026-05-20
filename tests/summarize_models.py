@@ -372,13 +372,20 @@ def _database_overview_headers() -> list[str]:
         "avg columns",
         "Requests",
         "Triplet score",
+        "avg query complexity",
+        "avg table complexity",
         "Complexity score",
         "Success rate text",
         "Success rate db_conn",
     ]
 
 
-def _database_overview_row(database_reports: DatabaseReports) -> list[str]:
+def _database_overview_row(
+    database_reports: DatabaseReports,
+    avg_query_complexity: float | None,
+    avg_table_complexity: float | None,
+    final_db_complexity: float | None,
+) -> list[str]:
     metadata = _metadata_report(database_reports)
     num_tables = metadata.num_tables
     num_columns = metadata.num_columns
@@ -387,7 +394,6 @@ def _database_overview_row(database_reports: DatabaseReports) -> list[str]:
         if num_columns is not None and num_tables not in (None, 0)
         else None
     )
-    complexity_scores = [score for score in metadata.query_complexity_vector if score is not None]
 
     return [
         metadata.dataset or "N/A",
@@ -397,14 +403,58 @@ def _database_overview_row(database_reports: DatabaseReports) -> list[str]:
         _format_number(avg_columns),
         str(metadata.num_requests),
         _format_triplet(_complexity_triplet(metadata.query_complexity_vector)),
-        _format_number(_average(complexity_scores)),
+        _format_number(avg_query_complexity),
+        _format_number(avg_table_complexity),
+        _format_number(final_db_complexity),
         _format_percent(_mode_success_rate(database_reports.modes.get(TEXT_MODE))),
         _format_percent(_mode_success_rate(database_reports.modes.get(DB_CONN_MODE))),
     ]
 
 
 def _database_overview_rows(databases: list[DatabaseReports]) -> list[list[str]]:
-    return [_database_overview_row(database_reports) for database_reports in databases]
+    data: list[tuple[DatabaseReports, float | None, float | None]] = []
+    max_table_complexity = 0.0
+
+    for database_reports in databases:
+        metadata = _metadata_report(database_reports)
+
+        # Query complexity (Q)
+        complexity_scores = [score for score in metadata.query_complexity_vector if score is not None]
+        q = _average(complexity_scores)
+
+        # Table complexity (SchemaComplexity)
+        table_complexity = (
+            metadata.num_columns / metadata.num_tables
+            if metadata.num_columns is not None and metadata.num_tables not in (None, 0)
+            else None
+        )
+
+        if table_complexity is not None and table_complexity > max_table_complexity:
+            max_table_complexity = table_complexity
+
+        data.append((database_reports, q, table_complexity))
+
+    rows = []
+    for database_reports, q, table_complexity in data:
+        # Normalized Schema component (S)
+        s = 0.0
+        if table_complexity is not None and max_table_complexity > 0:
+            s = table_complexity / max_table_complexity
+
+        # Final DB Complexity = Q * (1 + 0.25 * S)
+        final_db_complexity = None
+        if q is not None:
+            final_db_complexity = q * (1 + 0.25 * s)
+
+        rows.append(
+            _database_overview_row(
+                database_reports,
+                q,
+                table_complexity,
+                final_db_complexity,
+            )
+        )
+    return rows
 
 
 def _render_database_overview(
@@ -550,7 +600,7 @@ def _format_correlation_row(
     ]
 
 
-def _model_verdict_correlation_row(databases: list[DatabaseReports], model: str, source: str) -> list[str]:
+def _model_verdict_correlation_row(databases: list[DatabaseReports], model: str, source: str, label: str = "**MODEL'S TOTAL**") -> list[str]:
     results: dict[tuple[str, str, str], CorrelationResult] = {}
 
     for method in ("pearson", "spearman"):
@@ -559,7 +609,7 @@ def _model_verdict_correlation_row(databases: list[DatabaseReports], model: str,
             results[(source, method, mode)] = _correlation(x_values, y_values, method)
 
     return _format_correlation_row(
-        "**MODEL VERDICT**",
+        label,
         results[(source, "pearson", DB_CONN_MODE)],
         results[(source, "pearson", TEXT_MODE)],
         results[(source, "spearman", DB_CONN_MODE)],
@@ -721,7 +771,6 @@ def _model_summary_tables(
     correlation_rows_by_source: dict[str, list[list[str]]] = {
         "attempts": [],
         "complexity": [],
-        "avg_columns": [],
     }
 
     for database_reports in databases:
@@ -744,6 +793,11 @@ def _model_summary_tables(
     status_rows.append(_status_row("MODEL VERDICT", db_status_total, text_status_total))
     for source, rows in correlation_rows_by_source.items():
         rows.append(_model_verdict_correlation_row(databases, model, source))
+
+    # Add avg columns verdict to complexity table
+    correlation_rows_by_source["complexity"].append(
+        _model_verdict_correlation_row(databases, model, "avg_columns", label="**AVG COLUMNS**")
+    )
 
     return status_rows, correlation_rows_by_source
 
@@ -769,8 +823,6 @@ def _render_model_summary(
             _markdown_table(_correlation_headers(), _with_bold_total_row(correlation_rows_by_source["attempts"])),
             "## Complexity Correlations",
             _markdown_table(_correlation_headers(), _with_bold_total_row(correlation_rows_by_source["complexity"])),
-            "## Avg columns correlations",
-            _markdown_table(_correlation_headers(), _with_bold_total_row(correlation_rows_by_source["avg_columns"])),
             "",
         ]
     )
@@ -825,7 +877,6 @@ def write_model_summaries(base_dir: Path, output_dir: Path) -> list[Path]:
         correlation_csv_files = {
             "attempts": ATTEMPTS_CORRELATIONS_CSV_FILENAME,
             "complexity": COMPLEXITY_CORRELATIONS_CSV_FILENAME,
-            "avg_columns": AVG_COLUMNS_CORRELATIONS_CSV_FILENAME,
         }
         for source, filename in correlation_csv_files.items():
             correlations_csv_path = model_output_dir / filename
