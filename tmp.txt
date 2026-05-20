@@ -1,0 +1,51 @@
+qui di seguito ti riporto il totale delle correlazioni tra successi e complessità/avg columns di ciascun modello:
+
+codestral:
+
+(complexity)
+| **MODEL VERDICT** | **-0.2035** | **5.96e-24 (true)** | **-0.1959** | **2.80e-22 (true)** | **-0.0076** | **-0.2135** | **3.07e-26 (true)** | **-0.2080** | **5.75e-25 (true)** | **-0.0055** |
+
+(avg columns)
+| **MODEL VERDICT** | **-0.2776** | **6.72e-44 (true)** | **-0.2240** | **8.52e-29 (true)** | **-0.0536** | **-0.2124** | **5.66e-26 (true)** | **-0.2057** | **1.98e-24 (true)** | **-0.0067** |
+
+gpt-4o:
+
+(complexity)
+| **MODEL VERDICT** | **-0.1909** | **3.22e-21 (true)** | **0.0153** | **0.4530 (false)** | **-0.2062** | **-0.2082** | **5.11e-25 (true)** | **0.0102** | **0.6161 (false)** | **-0.2185** |
+
+(avg columns)
+| **MODEL VERDICT** | **-0.1668** | **1.67e-16 (true)** | **-0.0326** | **0.1097 (false)** | **-0.1342** | **-0.1214** | **2.22e-09 (true)** | **-0.0227** | **0.2648 (false)** | **-0.0987** |
+
+gpt-5-mini:
+
+(complexity)
+| **MODEL VERDICT** | **-0.1968** | **1.86e-22 (true)** | **-0.0582** | **0.0043 (true)** | **-0.1386** | **-0.2124** | **5.59e-26 (true)** | **-0.0588** | **0.0039 (true)** | **-0.1535** |
+
+(avg columns)
+| **MODEL VERDICT** | **-0.1682** | **9.41e-17 (true)** | **-0.0397** | **0.0515 (false)** | **-0.1285** | **-0.1253** | **6.76e-10 (true)** | **-0.0141** | **0.4878 (false)** | **-0.1111** |
+
+Qwen3-coder-next:
+
+(complexity)
+| **MODEL VERDICT** | **-0.1977** | **1.17e-22 (true)** | **-0.1503** | **1.18e-13 (true)** | **-0.0473** | **-0.2071** | **9.47e-25 (true)** | **-0.1681** | **9.78e-17 (true)** | **-0.0390** |
+
+(avg columns)
+| **MODEL VERDICT** | **-0.1907** | **3.51e-21 (true)** | **-0.2186** | **1.83e-27 (true)** | **+0.0279** | **-0.1437** | **1.36e-12 (true)** | **-0.1861** | **3.17e-20 (true)** | **+0.0424** |
+
+codellama:
+
+(complexity)
+| **MODEL VERDICT** | **-0.1754** | **4.24e-18 (true)** | **-0.1535** | **3.49e-14 (true)** | **-0.0218** | **-0.1814** | **2.85e-19 (true)** | **-0.1587** | **4.65e-15 (true)** | **-0.0227** |
+
+(avg columns)
+| **MODEL VERDICT** | **-0.2928** | **7.28e-49 (true)** | **-0.2267** | **1.84e-29 (true)** | **-0.0661** | **-0.2266** | **1.92e-29 (true)** | **-0.2060** | **1.66e-24 (true)** | **-0.0206** |
+
+sqlcoder:
+
+(complexity)
+| **MODEL VERDICT** | **-0.1607** | **2.12e-15 (true)** | **-0.1207** | **2.82e-09 (true)** | **-0.0400** | **-0.1629** | **8.51e-16 (true)** | **-0.1235** | **1.18e-09 (true)** | **-0.0394** |
+
+(avg columns)
+| **MODEL VERDICT** | **-0.1798** | **5.89e-19 (true)** | **-0.1740** | **7.63e-18 (true)** | **-0.0058** | **-0.1314** | **9.47e-11 (true)** | **-0.1386** | **8.18e-12 (true)** | **+0.0072** |
+
+ho bisogno che mi dici quale delle due correlazione incide di più sul raggiungimento del risultato corretto

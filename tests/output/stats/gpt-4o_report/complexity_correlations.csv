@@ -1,0 +1,32 @@
+Database,Pearson stats db_conn,Pearson p-value db_conn,Pearson stats text,Pearson p-value text,Pearson delta,Spearman stats db_conn,Spearman p-value db_conn,Spearman stats text,Spearman p-value text,Spearman delta
+battle_death,-0.2634,0.3242 (false),-0.0811,0.7652 (false),-0.1823,-0.4479,0.0819 (false),-0.0423,0.8764 (false),-0.4056
+california_schools,-0.1541,0.1494 (false),-0.0330,0.7586 (false),-0.1211,-0.1218,0.2556 (false),-0.0259,0.8096 (false),-0.0959
+car_1,0.0010,0.9921 (false),0.0255,0.8092 (false),-0.0245,0.0397,0.7068 (false),0.0556,0.5983 (false),-0.0159
+card_games,-0.2551,0.0004 (true),-0.0001,0.9990 (false),-0.2550,-0.2581,0.0003 (true),0.0174,0.8108 (false),-0.2755
+codebase_community,-0.1881,0.0101 (true),0.0114,0.8773 (false),-0.1995,-0.1642,0.0251 (true),0.0122,0.8690 (false),-0.1764
+concert_singer,-0.3242,0.0298 (true),0.3342,0.0248 (true),-0.6584,-0.3176,0.0335 (true),0.3330,0.0254 (true),-0.6505
+course_teach,-0.3278,0.0770 (false),0.0824,0.6649 (false),-0.4103,-0.3536,0.0552 (false),0.0893,0.6389 (false),-0.4429
+cre_Doc_Template_Mgt,-0.0663,0.5491 (false),NR,NR,NR,-0.0734,0.5070 (false),NR,NR,NR
+debit_card_specializing,-0.2059,0.1026 (false),-0.0942,0.4591 (false),-0.1117,-0.3097,0.0128 (true),-0.1710,0.1767 (false),-0.1387
+dog_kennels,-0.3790,0.0004 (true),0.1954,0.0786 (false),-0.5743,-0.3861,0.0003 (true),0.1676,0.1323 (false),-0.5537
+employee_hire_evaluation,-0.1495,0.3703 (false),0.0500,0.7656 (false),-0.1995,-0.1532,0.3585 (false),0.0544,0.7458 (false),-0.2076
+european_football_2,-0.2066,0.0188 (true),-0.0426,0.6318 (false),-0.1641,-0.2579,0.0032 (true),-0.0537,0.5457 (false),-0.2042
+financial,-0.0774,0.4303 (false),NR,NR,NR,-0.0727,0.4588 (false),NR,NR,NR
+flight_2,-0.0697,0.5387 (false),-0.0265,0.8157 (false),-0.0433,-0.0640,0.5730 (false),-0.0092,0.9355 (false),-0.0548
+formula_1,-0.0946,0.2142 (false),0.1826,0.0159 (true),-0.2772,-0.1111,0.1444 (false),0.1337,0.0786 (false),-0.2448
+museum_visit,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+network_1,0.0328,0.8102 (false),NR,NR,NR,0.0130,0.9245 (false),NR,NR,NR
+orchestra,-0.0920,0.5724 (false),NR,NR,NR,-0.1425,0.3805 (false),NR,NR,NR
+pets_1,-0.1066,0.5016 (false),0.1236,0.4354 (false),-0.2302,-0.1167,0.4618 (false),0.0935,0.5557 (false),-0.2102
+poker_player,NR,NR,0.2580,0.1079 (false),NR,NR,NR,0.2247,0.1633 (false),NR
+real_estate_properties,-0.2294,0.7706 (false),NR,NR,NR,0.0000,1.0000 (false),NR,NR,NR
+singer,NR,NR,0.3798,0.0384 (true),NR,NR,NR,0.3782,0.0394 (true),NR
+student_transcripts_tracking,-0.3518,0.0016 (true),NR,NR,NR,-0.3552,0.0014 (true),NR,NR,NR
+superhero,-0.0720,0.4172 (false),0.0485,0.5851 (false),-0.1205,-0.0960,0.2792 (false),0.0715,0.4206 (false),-0.1675
+thrombosis_prediction,-0.1698,0.0303 (true),0.0476,0.5464 (false),-0.2173,-0.1610,0.0401 (true),0.0372,0.6372 (false),-0.1982
+toxicology,-0.2327,0.0049 (true),NR,NR,NR,-0.2617,0.0015 (true),NR,NR,NR
+tvshow,-0.0916,0.4791 (false),NR,NR,NR,-0.0860,0.5062 (false),NR,NR,NR
+voter_1,-0.3434,0.2102 (false),0.7447,0.0014 (true),-1.0881,-0.3036,0.2714 (false),0.6071,0.0164 (true),-0.9107
+world_1,-0.1577,0.0854 (false),0.0469,0.6107 (false),-0.2046,-0.2238,0.0140 (true),0.0351,0.7038 (false),-0.2589
+wta_1,0.0397,0.7595 (false),NR,NR,NR,0.0557,0.6671 (false),NR,NR,NR
+**MODEL VERDICT**,-0.1909,3.22e-21 (true),0.0153,0.4530 (false),-0.2062,-0.2082,5.11e-25 (true),0.0102,0.6161 (false),-0.2185

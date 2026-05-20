@@ -408,10 +408,12 @@ def _load_complexity_vector(
 ) -> List[float]:
     database_name = database_report_entry.get("database_name", "unknown")
     logger.info("Loading complexity vector for database %s, num_requests=%d", database_name, num_requests)
-    vector = database_report_entry.get("complexity_vector")
+    vector = database_report_entry.get("query_complexity_vector")
+    if vector is None:
+        vector = database_report_entry.get("complexity_vector")
     if not isinstance(vector, list):
-        logger.error("Missing complexity_vector for database %s", database_name)
-        raise ValueError(f"Missing complexity_vector for database {database_name!r}.")
+        logger.error("Missing query_complexity_vector for database %s", database_name)
+        raise ValueError(f"Missing query_complexity_vector for database {database_name!r}.")
     # if len(vector) != num_requests:
     #     logger.error("Complexity vector length mismatch for database %s: expected %d, found %d", database_name, num_requests, len(vector))
     #     raise ValueError(
@@ -588,14 +590,35 @@ def _build_statistics_json(
     num_requests: int,
     dataset_name: str,
     stats_path: Path,
+    database_report_entry: Dict[str, Any],
     model_keys: Sequence[str] | None = None,
 ) -> Dict[str, object]:
     logger.info("Building statistics JSON: dataset=%s, num_requests=%d", dataset_name, num_requests)
     mode = _detect_report_mode(stats_path)
     logger.info("Report mode: %s", mode)
 
+    query_complexity_vector = database_report_entry.get(
+        "query_complexity_vector",
+        database_report_entry.get("complexity_vector", []),
+    )
+    query_complexity_scores = [
+        float(score)
+        for score in query_complexity_vector
+        if isinstance(score, (int, float)) and not isinstance(score, bool)
+    ]
+
     json_report: Dict[str, object] = {
         "dataset": dataset_name,
+        "num_tables": database_report_entry.get("num_tables"),
+        "num_columns": database_report_entry.get("num_columns"),
+        "num_requests": num_requests,
+        "query_complexity_vector": query_complexity_vector,
+        "table_complexity_vector": database_report_entry.get("table_complexity_vector", []),
+        "complexity_average_score": (
+            round(sum(query_complexity_scores) / len(query_complexity_scores), 2)
+            if query_complexity_scores
+            else None
+        ),
         "models": {},
     }
 
@@ -863,6 +886,7 @@ def write_statistics_report(
         num_requests,
         dataset_name,
         stats_path,
+        database_report_entry,
         model_keys,
     )
     logger.info("Statistics JSON built")

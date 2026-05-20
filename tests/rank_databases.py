@@ -41,6 +41,75 @@ def count_schema_columns(schema: dict[str, Any]) -> int:
     )
 
 
+def _column_has_constraint(column: dict[str, Any], constraint_name: str) -> bool:
+    constraints = column.get("constraints", [])
+    if not isinstance(constraints, list):
+        return False
+
+    normalized_constraint_name = constraint_name.upper()
+    return any(
+        isinstance(constraint, str)
+        and normalized_constraint_name in constraint.upper()
+        for constraint in constraints
+    )
+
+
+def _structural_column_weight(column: dict[str, Any]) -> float:
+    is_primary_key = _column_has_constraint(column, "PRIMARY KEY")
+    is_foreign_key = _column_has_constraint(column, "FOREIGN KEY")
+
+    if is_primary_key and is_foreign_key:
+        return 2.5
+    if is_foreign_key:
+        return 2.0
+    if is_primary_key:
+        return 1.5
+    return 1.0
+
+
+def _semantic_type_bonus(sql_type: Any) -> float:
+    if not isinstance(sql_type, str):
+        return 0.0
+
+    normalized_type = sql_type.upper()
+    if "TEXT" in normalized_type or "VARCHAR" in normalized_type:
+        return 0.2
+    if any(temporal_type in normalized_type for temporal_type in ("DATE", "DATETIME", "TIME", "TIMESTAMP")):
+        return 0.1
+    return 0.0
+
+
+def _column_complexity(column: dict[str, Any]) -> float:
+    return _structural_column_weight(column) + _semantic_type_bonus(column.get("type"))
+
+
+def _outgoing_foreign_key_count(table: dict[str, Any]) -> int:
+    return sum(
+        1
+        for column in table.get("columns", [])
+        if isinstance(column, dict) and _column_has_constraint(column, "FOREIGN KEY")
+    )
+
+
+def compute_table_complexity_vector(schema: dict[str, Any]) -> list[float]:
+    table_complexities: list[float] = []
+
+    for table in schema.get("tables", []):
+        if not isinstance(table, dict):
+            continue
+
+        table_complexity = 0.0
+        for column in table.get("columns", []):
+            if isinstance(column, dict):
+                table_complexity += _column_complexity(column)
+
+        relation_factor = 1 + 0.15 * _outgoing_foreign_key_count(table)
+        final_table_complexity = table_complexity * relation_factor
+        table_complexities.append(round(final_table_complexity, 2))
+
+    return table_complexities
+
+
 def summarize_database(dataset: BaseDataset, db_name: str, table_count: int) -> dict[str, Any] | None:
     requests = dataset.get_requests(db_name)
     num_requests = len(requests)
@@ -48,11 +117,11 @@ def summarize_database(dataset: BaseDataset, db_name: str, table_count: int) -> 
         return None
 
     schema = dataset.get_schema(db_name)
-    complexity_scores: list[int] = []
+    query_complexity_scores: list[int] = []
 
     for request in requests:
         gold_sql = dataset._get_gold_sql(db_name, request)
-        complexity_scores.append(compute_query_complexity(gold_sql))
+        query_complexity_scores.append(compute_query_complexity(gold_sql))
 
     return {
         "dataset": dataset.name,
@@ -60,7 +129,8 @@ def summarize_database(dataset: BaseDataset, db_name: str, table_count: int) -> 
         "num_tables": table_count,
         "num_columns": count_schema_columns(schema),
         "num_requests": num_requests,
-        "complexity_vector": complexity_scores,
+        "query_complexity_vector": query_complexity_scores,
+        "table_complexity_vector": compute_table_complexity_vector(schema),
     }
 
 

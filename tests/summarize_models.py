@@ -24,6 +24,9 @@ MODEL_SUMMARY_FILENAME = "summary.md"
 SUMMARY_CSV_FILENAME = "summary.csv"
 STATUS_CSV_FILENAME = "status.csv"
 CORRELATIONS_CSV_FILENAME = "correlations.csv"
+ATTEMPTS_CORRELATIONS_CSV_FILENAME = "attempts_correlations.csv"
+COMPLEXITY_CORRELATIONS_CSV_FILENAME = "complexity_correlations.csv"
+AVG_COLUMNS_CORRELATIONS_CSV_FILENAME = "avg_columns_correlations.csv"
 DB_CONN_MODE = "db_conn"
 TEXT_MODE = "text"
 MODE_DIR_CANDIDATES = {
@@ -42,7 +45,7 @@ class ModeReport:
     num_tables: int | None
     num_columns: int | None
     num_requests: int
-    complexity_vector: list[float | None]
+    query_complexity_vector: list[float | None]
     models: dict[str, dict[str, list[Any]]]
 
 
@@ -85,9 +88,10 @@ class CorrelationResult:
 
 def _load_report(path: Path) -> ModeReport:
     raw = json.loads(path.read_text(encoding="utf-8"))
-    complexity_vector = [
+    raw_query_complexity_vector = raw.get("query_complexity_vector", raw.get("complexity_vector", []))
+    query_complexity_vector = [
         float(value) if _is_number(value) else None
-        for value in raw.get("complexity_vector", [])
+        for value in raw_query_complexity_vector
     ]
 
     return ModeReport(
@@ -95,7 +99,7 @@ def _load_report(path: Path) -> ModeReport:
         num_tables=_optional_int(raw.get("num_tables")),
         num_columns=_optional_int(raw.get("num_columns")),
         num_requests=_optional_int(raw.get("num_requests")) or 0,
-        complexity_vector=complexity_vector,
+        query_complexity_vector=query_complexity_vector,
         models=raw.get("models", {}),
     )
 
@@ -247,7 +251,27 @@ def _complexity_correlation(report: ModeReport | None, model: str, method: str) 
         return CorrelationResult(None, None)
 
     outcomes = _as_list(payload.get("outcomes"))
-    x_values, y_values = _aligned_numeric_and_success(report.complexity_vector if report else [], outcomes)
+    x_values, y_values = _aligned_numeric_and_success(report.query_complexity_vector if report else [], outcomes)
+    return _correlation(x_values, y_values, method)
+
+
+def _avg_columns(report: ModeReport | None) -> float | None:
+    if report is None or report.num_columns is None or report.num_tables in (None, 0):
+        return None
+    return report.num_columns / report.num_tables
+
+
+def _avg_columns_correlation(report: ModeReport | None, model: str, method: str) -> CorrelationResult:
+    payload = _model_payload(report, model)
+    avg_columns = _avg_columns(report)
+    if payload is None or avg_columns is None:
+        return CorrelationResult(None, None)
+
+    outcomes = _as_list(payload.get("outcomes"))
+    x_values, y_values = _aligned_numeric_and_success(
+        [avg_columns] * len(outcomes),
+        outcomes,
+    )
     return _correlation(x_values, y_values, method)
 
 
@@ -363,7 +387,7 @@ def _database_overview_row(database_reports: DatabaseReports) -> list[str]:
         if num_columns is not None and num_tables not in (None, 0)
         else None
     )
-    complexity_scores = [score for score in metadata.complexity_vector if score is not None]
+    complexity_scores = [score for score in metadata.query_complexity_vector if score is not None]
 
     return [
         metadata.dataset or "N/A",
@@ -372,7 +396,7 @@ def _database_overview_row(database_reports: DatabaseReports) -> list[str]:
         str(num_columns) if num_columns is not None else "N/A",
         _format_number(avg_columns),
         str(metadata.num_requests),
-        _format_triplet(_complexity_triplet(metadata.complexity_vector)),
+        _format_triplet(_complexity_triplet(metadata.query_complexity_vector)),
         _format_number(_average(complexity_scores)),
         _format_percent(_mode_success_rate(database_reports.modes.get(TEXT_MODE))),
         _format_percent(_mode_success_rate(database_reports.modes.get(DB_CONN_MODE))),
@@ -422,7 +446,16 @@ def _collect_correlation_values(
         if report is None or payload is None:
             continue
 
-        values = payload.get("attempts") if source == "attempts" else report.complexity_vector
+        if source == "attempts":
+            values = payload.get("attempts")
+        elif source == "complexity":
+            values = report.query_complexity_vector
+        elif source == "avg_columns":
+            avg_columns = _avg_columns(report)
+            outcomes = _as_list(payload.get("outcomes"))
+            values = [avg_columns] * len(outcomes) if avg_columns is not None else []
+        else:
+            raise ValueError(f"Unknown correlation source: {source}")
         x_part, y_part = _aligned_numeric_and_success(
             _as_list(values),
             _as_list(payload.get("outcomes")),
@@ -459,84 +492,78 @@ def _status_row(database: str, db_status: ModeStatus, text_status: ModeStatus) -
     ]
 
 
-def _correlation_row(database: str, db_report: ModeReport | None, text_report: ModeReport | None, model: str) -> list[str]:
-    attempts_pearson_db = _attempts_correlation(db_report, model, "pearson")
-    attempts_pearson_text = _attempts_correlation(text_report, model, "pearson")
-    attempts_spearman_db = _attempts_correlation(db_report, model, "spearman")
-    attempts_spearman_text = _attempts_correlation(text_report, model, "spearman")
-    complexity_pearson_db = _complexity_correlation(db_report, model, "pearson")
-    complexity_pearson_text = _complexity_correlation(text_report, model, "pearson")
-    complexity_spearman_db = _complexity_correlation(db_report, model, "spearman")
-    complexity_spearman_text = _complexity_correlation(text_report, model, "spearman")
+def _correlation_for_source(
+    report: ModeReport | None,
+    model: str,
+    method: str,
+    source: str,
+) -> CorrelationResult:
+    if source == "attempts":
+        return _attempts_correlation(report, model, method)
+    if source == "complexity":
+        return _complexity_correlation(report, model, method)
+    if source == "avg_columns":
+        return _avg_columns_correlation(report, model, method)
+    raise ValueError(f"Unknown correlation source: {source}")
+
+
+def _correlation_row(
+    database: str,
+    db_report: ModeReport | None,
+    text_report: ModeReport | None,
+    model: str,
+    source: str,
+) -> list[str]:
+    pearson_db = _correlation_for_source(db_report, model, "pearson", source)
+    pearson_text = _correlation_for_source(text_report, model, "pearson", source)
+    spearman_db = _correlation_for_source(db_report, model, "spearman", source)
+    spearman_text = _correlation_for_source(text_report, model, "spearman", source)
 
     return _format_correlation_row(
         database,
-        attempts_pearson_db,
-        attempts_pearson_text,
-        attempts_spearman_db,
-        attempts_spearman_text,
-        complexity_pearson_db,
-        complexity_pearson_text,
-        complexity_spearman_db,
-        complexity_spearman_text,
+        pearson_db,
+        pearson_text,
+        spearman_db,
+        spearman_text,
     )
 
 
 def _format_correlation_row(
     database: str,
-    attempts_pearson_db: CorrelationResult,
-    attempts_pearson_text: CorrelationResult,
-    attempts_spearman_db: CorrelationResult,
-    attempts_spearman_text: CorrelationResult,
-    complexity_pearson_db: CorrelationResult,
-    complexity_pearson_text: CorrelationResult,
-    complexity_spearman_db: CorrelationResult,
-    complexity_spearman_text: CorrelationResult,
+    pearson_db: CorrelationResult,
+    pearson_text: CorrelationResult,
+    spearman_db: CorrelationResult,
+    spearman_text: CorrelationResult,
 ) -> list[str]:
     return [
         database,
-        _format_stat(attempts_pearson_db),
-        _format_pvalue(attempts_pearson_db),
-        _format_stat(attempts_pearson_text),
-        _format_pvalue(attempts_pearson_text),
-        _format_delta_stat(attempts_pearson_db, attempts_pearson_text),
-        _format_stat(attempts_spearman_db),
-        _format_pvalue(attempts_spearman_db),
-        _format_stat(attempts_spearman_text),
-        _format_pvalue(attempts_spearman_text),
-        _format_delta_stat(attempts_spearman_db, attempts_spearman_text),
-        _format_stat(complexity_pearson_db),
-        _format_pvalue(complexity_pearson_db),
-        _format_stat(complexity_pearson_text),
-        _format_pvalue(complexity_pearson_text),
-        _format_delta_stat(complexity_pearson_db, complexity_pearson_text),
-        _format_stat(complexity_spearman_db),
-        _format_pvalue(complexity_spearman_db),
-        _format_stat(complexity_spearman_text),
-        _format_pvalue(complexity_spearman_text),
-        _format_delta_stat(complexity_spearman_db, complexity_spearman_text),
+        _format_stat(pearson_db),
+        _format_pvalue(pearson_db),
+        _format_stat(pearson_text),
+        _format_pvalue(pearson_text),
+        _format_delta_stat(pearson_db, pearson_text),
+        _format_stat(spearman_db),
+        _format_pvalue(spearman_db),
+        _format_stat(spearman_text),
+        _format_pvalue(spearman_text),
+        _format_delta_stat(spearman_db, spearman_text),
     ]
 
 
-def _model_verdict_correlation_row(databases: list[DatabaseReports], model: str) -> list[str]:
+def _model_verdict_correlation_row(databases: list[DatabaseReports], model: str, source: str) -> list[str]:
     results: dict[tuple[str, str, str], CorrelationResult] = {}
 
-    for source in ("attempts", "complexity"):
-        for method in ("pearson", "spearman"):
-            for mode in (DB_CONN_MODE, TEXT_MODE):
-                x_values, y_values = _collect_correlation_values(databases, model, mode, source)
-                results[(source, method, mode)] = _correlation(x_values, y_values, method)
+    for method in ("pearson", "spearman"):
+        for mode in (DB_CONN_MODE, TEXT_MODE):
+            x_values, y_values = _collect_correlation_values(databases, model, mode, source)
+            results[(source, method, mode)] = _correlation(x_values, y_values, method)
 
     return _format_correlation_row(
         "**MODEL VERDICT**",
-        results[("attempts", "pearson", DB_CONN_MODE)],
-        results[("attempts", "pearson", TEXT_MODE)],
-        results[("attempts", "spearman", DB_CONN_MODE)],
-        results[("attempts", "spearman", TEXT_MODE)],
-        results[("complexity", "pearson", DB_CONN_MODE)],
-        results[("complexity", "pearson", TEXT_MODE)],
-        results[("complexity", "spearman", DB_CONN_MODE)],
-        results[("complexity", "spearman", TEXT_MODE)],
+        results[(source, "pearson", DB_CONN_MODE)],
+        results[(source, "pearson", TEXT_MODE)],
+        results[(source, "spearman", DB_CONN_MODE)],
+        results[(source, "spearman", TEXT_MODE)],
     )
 
 
@@ -673,35 +700,29 @@ def _status_headers() -> list[str]:
 def _correlation_headers() -> list[str]:
     return [
         "Database",
-        "Attempts Pearson stats db_conn",
-        "Attempts Pearson p-value db_conn",
-        "Attempts Pearson stats text",
-        "Attempts Pearson p-value text",
-        "Attempts Pearson delta",
-        "Attempts Spearman stats db_conn",
-        "Attempts Spearman p-value db_conn",
-        "Attempts Spearman stats text",
-        "Attempts Spearman p-value text",
-        "Attempts Spearman delta",
-        "Complexity Pearson stats db_conn",
-        "Complexity Pearson p-value db_conn",
-        "Complexity Pearson stats text",
-        "Complexity Pearson p-value text",
-        "Complexity Pearson delta",
-        "Complexity Spearman stats db_conn",
-        "Complexity Spearman p-value db_conn",
-        "Complexity Spearman stats text",
-        "Complexity Spearman p-value text",
-        "Complexity Spearman delta",
+        "Pearson stats db_conn",
+        "Pearson p-value db_conn",
+        "Pearson stats text",
+        "Pearson p-value text",
+        "Pearson delta",
+        "Spearman stats db_conn",
+        "Spearman p-value db_conn",
+        "Spearman stats text",
+        "Spearman p-value text",
+        "Spearman delta",
     ]
 
 
 def _model_summary_tables(
     model: str,
     databases: list[DatabaseReports],
-) -> tuple[list[list[str]], list[list[str]]]:
+) -> tuple[list[list[str]], dict[str, list[list[str]]]]:
     status_rows: list[list[str]] = []
-    correlation_rows: list[list[str]] = []
+    correlation_rows_by_source: dict[str, list[list[str]]] = {
+        "attempts": [],
+        "complexity": [],
+        "avg_columns": [],
+    }
 
     for database_reports in databases:
         db_report = database_reports.modes.get(DB_CONN_MODE)
@@ -713,16 +734,18 @@ def _model_summary_tables(
                 _status_for(text_report, model),
             )
         )
-        correlation_rows.append(
-            _correlation_row(database_reports.database, db_report, text_report, model)
-        )
+        for source, rows in correlation_rows_by_source.items():
+            rows.append(
+                _correlation_row(database_reports.database, db_report, text_report, model, source)
+            )
 
     db_status_total = _collect_status_values(databases, model, DB_CONN_MODE)
     text_status_total = _collect_status_values(databases, model, TEXT_MODE)
     status_rows.append(_status_row("MODEL VERDICT", db_status_total, text_status_total))
-    correlation_rows.append(_model_verdict_correlation_row(databases, model))
+    for source, rows in correlation_rows_by_source.items():
+        rows.append(_model_verdict_correlation_row(databases, model, source))
 
-    return status_rows, correlation_rows
+    return status_rows, correlation_rows_by_source
 
 
 def _render_model_summary(
@@ -730,10 +753,10 @@ def _render_model_summary(
     databases: list[DatabaseReports],
     base_dir: Path,
     status_rows: list[list[str]] | None = None,
-    correlation_rows: list[list[str]] | None = None,
+    correlation_rows_by_source: dict[str, list[list[str]]] | None = None,
 ) -> str:
-    if status_rows is None or correlation_rows is None:
-        status_rows, correlation_rows = _model_summary_tables(model, databases)
+    if status_rows is None or correlation_rows_by_source is None:
+        status_rows, correlation_rows_by_source = _model_summary_tables(model, databases)
 
     return "\n\n".join(
         [
@@ -742,8 +765,12 @@ def _render_model_summary(
             "Each row compares the same database in `db_conn` mode against `text` mode. Deltas are `db_conn - text`.",
             "## Status",
             _markdown_table(_status_headers(), _with_bold_total_row(status_rows)),
-            "## Correlations",
-            _markdown_table(_correlation_headers(), _with_bold_total_row(correlation_rows)),
+            "## Attempts Correlations",
+            _markdown_table(_correlation_headers(), _with_bold_total_row(correlation_rows_by_source["attempts"])),
+            "## Complexity Correlations",
+            _markdown_table(_correlation_headers(), _with_bold_total_row(correlation_rows_by_source["complexity"])),
+            "## Avg columns correlations",
+            _markdown_table(_correlation_headers(), _with_bold_total_row(correlation_rows_by_source["avg_columns"])),
             "",
         ]
     )
@@ -778,11 +805,11 @@ def write_model_summaries(base_dir: Path, output_dir: Path) -> list[Path]:
         model_output_dir = output_dir / _report_dirname_for_model(model)
         model_output_dir.mkdir(parents=True, exist_ok=True)
 
-        status_rows, correlation_rows = _model_summary_tables(model, databases)
+        status_rows, correlation_rows_by_source = _model_summary_tables(model, databases)
 
         summary_path = model_output_dir / MODEL_SUMMARY_FILENAME
         summary_path.write_text(
-            _render_model_summary(model, databases, base_dir, status_rows, correlation_rows),
+            _render_model_summary(model, databases, base_dir, status_rows, correlation_rows_by_source),
             encoding="utf-8",
         )
         written_paths.append(summary_path)
@@ -791,9 +818,23 @@ def write_model_summaries(base_dir: Path, output_dir: Path) -> list[Path]:
         _write_csv(status_csv_path, _status_headers(), status_rows)
         written_paths.append(status_csv_path)
 
-        correlations_csv_path = model_output_dir / CORRELATIONS_CSV_FILENAME
-        _write_csv(correlations_csv_path, _correlation_headers(), correlation_rows)
-        written_paths.append(correlations_csv_path)
+        legacy_correlations_csv_path = model_output_dir / CORRELATIONS_CSV_FILENAME
+        if legacy_correlations_csv_path.exists():
+            legacy_correlations_csv_path.unlink()
+
+        correlation_csv_files = {
+            "attempts": ATTEMPTS_CORRELATIONS_CSV_FILENAME,
+            "complexity": COMPLEXITY_CORRELATIONS_CSV_FILENAME,
+            "avg_columns": AVG_COLUMNS_CORRELATIONS_CSV_FILENAME,
+        }
+        for source, filename in correlation_csv_files.items():
+            correlations_csv_path = model_output_dir / filename
+            _write_csv(
+                correlations_csv_path,
+                _correlation_headers(),
+                correlation_rows_by_source[source],
+            )
+            written_paths.append(correlations_csv_path)
 
     database_output_dir = output_dir / DATABASE_REPORT_DIRNAME
     database_output_dir.mkdir(parents=True, exist_ok=True)

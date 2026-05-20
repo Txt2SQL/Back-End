@@ -1,0 +1,32 @@
+Database,Pearson stats db_conn,Pearson p-value db_conn,Pearson stats text,Pearson p-value text,Pearson delta,Spearman stats db_conn,Spearman p-value db_conn,Spearman stats text,Spearman p-value text,Spearman delta
+battle_death,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+california_schools,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+car_1,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+card_games,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+codebase_community,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+concert_singer,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+course_teach,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+cre_Doc_Template_Mgt,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+debit_card_specializing,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+dog_kennels,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+employee_hire_evaluation,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+european_football_2,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+financial,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+flight_2,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+formula_1,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+museum_visit,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+network_1,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+orchestra,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+pets_1,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+poker_player,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+real_estate_properties,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+singer,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+student_transcripts_tracking,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+superhero,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+thrombosis_prediction,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+toxicology,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+tvshow,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+voter_1,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+world_1,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+wta_1,NR,NR,NR,NR,NR,NR,NR,NR,NR,NR
+**MODEL VERDICT**,-0.2776,6.72e-44 (true),-0.2240,8.52e-29 (true),-0.0536,-0.2124,5.66e-26 (true),-0.2057,1.98e-24 (true),-0.0067
