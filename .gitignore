@@ -9,3 +9,5 @@ tests/tmp
 tests/output/generations/*/*
 tests/output/runs/*/
 my_backend.egg-info/
+CLAUDE.md
+.claude/*

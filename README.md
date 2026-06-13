@@ -84,19 +84,6 @@ mysql://webuser:PietroGasparini237317@87.9.229.214:3306/supermarket?allowPublicK
 
 ## Test commands
 
-### Custom database
-
-```bash
-python .\tests\test_sql_generation.py --database-name supermarket  --output-name text
-python .\tests\test_sql_generation.py --database-name hacker_news  --output-name text
-python .\tests\test_sql_generation.py --database-name akaunting  --output-name text
-python .\tests\test_sql_generation.py --database-name monica  --output-name text
-python .\tests\test_sql_generation.py --database-name supermarket --output-name mysql
-python .\tests\test_sql_generation.py --database-name hacker_news --output-name mysql
-python .\tests\test_sql_generation.py --database-name akaunting --output-name mysql
-python .\tests\test_sql_generation.py --database-name monica --output-name mysql
-```
-
 ### BIRD dataset
 
 ```bash
