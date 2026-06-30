@@ -1,15 +1,3 @@
-"""
-Spider evaluation runner for QueryOrchestrator.
-
-Loads Spider dev examples and table metadata, builds a text-based schema for a
-selected database, then runs all configured query models concurrently. Each
-generated SQL query is evaluated through the Spider execution evaluator in a
-subprocess that exits with:
-
-- 0 when execution matches the gold query
-- 1 when execution does not match
-"""
-
 import argparse, os, queue,shutil, sys, threading
 from pathlib import Path
 from typing import Sequence

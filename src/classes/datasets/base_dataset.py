@@ -19,7 +19,6 @@ class ComparisonResult(Enum):
     EXACT_MATCH = "exact_match"
     SUPERSET_COLUMNS_MATCH = "superset_columns_match"
     SET_MATCH = "set_match"
-    PARTIAL_MATCH = "partial_match"
     ROW_COUNT_MISMATCH = "row_count_mismatch"
     NO_MATCH = "no_match"
 
@@ -300,15 +299,6 @@ class BaseDataset(ABC):
         # 4. multiset match (order-insensitive, duplicates matter)
         if Counter(pred_norm) == Counter(gold_norm):
             return ComparisonResult.SET_MATCH
-
-        # 5. partial match (based on overlapping rows with multiplicity)
-        gold_counter = Counter(gold_norm)
-        pred_counter = Counter(pred_norm)
-        intersection_count = sum((gold_counter & pred_counter).values())
-        ratio = intersection_count / max(sum(gold_counter.values()), 1)
-
-        if ratio > 0.8:
-            return ComparisonResult.PARTIAL_MATCH
 
         return ComparisonResult.NO_MATCH
     
